@@ -198,7 +198,7 @@ public class DesktopPlacesTest {
         SwingUtilities.invokeAndWait(()->{try{app[0]=new Desktop(folder,true);app[0].show();}catch(Exception e){throw new RuntimeException(e);}});
         Desktop pad=app[0];
         try {
-            await(()->pad.page.isEditable()&&pad.store.latest()!=null);settle(pad);
+            await(()->pad.page.isEditable()&&pad.store.latest()!=null);if(System.getenv("MININOTES_SMALL")!=null)SwingUtilities.invokeAndWait(()->pad.frame.setBounds(-8,0,1040,728));settle(pad);
             NoteStore store=pad.store;
             NoteStore.Shelf kitchen=store.addCollection("Kitchen"),pantry=store.addCollection("Pantry");
             store.moveInto(NoteStore.Branch.Kind.COLLECTION,pantry.id,kitchen.id);
@@ -234,14 +234,19 @@ public class DesktopPlacesTest {
             SwingUtilities.invokeAndWait(()->{JComponent head=pad.home.folder.head;carryTo(pad,head,head.getWidth()/2,head.getHeight()/2);});
             Thread.sleep(900);settle(pad);
             SwingUtilities.invokeAndWait(()->{assertFalse(pad.home.folder.aside());assertEquals(kitchen.id,pad.home.folder.id());});
-            // An empty cell of Home that the card does not cover.
-            int[] free=onEdt(()->{for(int row=0;row<8;row++)for(int col=0;col<home.columns();col++)if(home.in(row,col)==null){
+            // Out of the card over Home's bar, where no cell is and the card is not: it steps aside. Then an empty cell of
+            // Home that the card, aside, does not cover, among the rows this page has: in a small window (the release
+            // machine's screen is 1024 by 768) there are three, and a fourth aimed at put it on Home in no cell at all.
+            SwingUtilities.invokeAndWait(()->{carryTo(pad,home,home.getWidth()/2,2);
+                assertTrue("out of the card, it stepped aside",pad.home.folder.aside());});
+            Thread.sleep(200);SwingUtilities.invokeAndWait(pad.frame::validate);
+            int[] free=onEdt(()->{for(int row=0;row<home.rows();row++)for(int col=0;col<home.columns();col++)if(home.in(row,col)==null){
                 Rectangle r=home.cellBounds(row,col);Point p=new Point(r.x+r.width/2,r.y+40);SwingUtilities.convertPointToScreen(p,home);
                 Point q=new Point(p);SwingUtilities.convertPointFromScreen(q,pad.home.folder.card);
                 if(!new Rectangle(pad.home.folder.card.getSize()).contains(q)&&home.getVisibleRect().contains(r.x+r.width/2,r.y+40))return new int[]{row,col};}return null;});
             assertNotNull("an empty cell beside the card",free);
             SwingUtilities.invokeAndWait(()->{Rectangle r=home.cellBounds(free[0],free[1]);carryTo(pad,home,r.x+r.width/2,r.y+40);
-                assertTrue("out of the card, it stepped aside",pad.home.folder.aside());letGo(pad,home,r.x+r.width/2,r.y+40);});
+                assertTrue("still aside",pad.home.folder.aside());letGo(pad,home,r.x+r.width/2,r.y+40);});
             settle(pad);
             NoteStore.Branch onHome=byName(onEdt(()->store.contents(Things.HOME))).get("Shopping");
             assertNotNull("back on Home",onHome);assertEquals(shopping.id,onHome.id);
