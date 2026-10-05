@@ -42,7 +42,8 @@ public class DesktopUiTest {
             // reaches - said by being seen: no words, and no box under the pointer. A note nobody has: the empty ring.
             await(()->pad.noteMark!=null);
             assertEquals(SyncMark.HERE,pad.noteMark);assertTrue(pad.syncMark.isVisible());assertNull(pad.syncMark.getToolTipText());
-            assertEquals(0,pad.rounds.getComponentCount());assertTrue(pad.peopleShown.isEmpty());
+            // No rounds, only the + that adds somebody (the owner, 2026-10-05).
+            assertEquals(1,pad.rounds.getComponentCount());assertTrue(pad.peopleShown.isEmpty());
             assertEquals(SyncMark.HERE.said("this PC"),pad.syncMark.getAccessibleContext().getAccessibleName());
             SwingUtilities.invokeAndWait(()->{
                 try {
@@ -71,6 +72,34 @@ public class DesktopUiTest {
             String id=pad.store.latest().id;pad.disk.flush(10000);
             SwingUtilities.invokeAndWait(()->pad.shutdown(false));await(()->!pad.frame.isDisplayable());
             try(NoteStore reopened=new NoteStore(new org.mininotes.desktop.platform.content.Context(folder.toFile()))){assertEquals("Saturday",reopened.get(id).title);assertTrue(reopened.get(id).body.contains("wandering"));}
+        } finally {if(pad.frame.isDisplayable()){SwingUtilities.invokeAndWait(()->pad.shutdown(false));await(()->!pad.frame.isDisplayable());}}
+    }
+    /** The owner, 2026-10-05: Home's colour is the whole app's on the laptop, and This note is first on a page's right-click. */
+    @Test public void theWholeAppTakesHomesColourAndThisNoteIsFirst() throws Exception {
+        Path folder=temp.newFolder("ui-colour").toPath();Desktop[] app=new Desktop[1];
+        SwingUtilities.invokeAndWait(()->{try{app[0]=new Desktop(folder,true);app[0].show();}catch(Exception e){throw new RuntimeException(e);}});
+        Desktop pad=app[0];
+        try {
+            await(()->pad.page.isEditable()&&pad.store.latest()!=null);
+            pad.disk.flush(10000);SwingUtilities.invokeAndWait(()->{});
+            java.awt.Color plain=pad.tree.getBackground(),paper=pad.page.getBackground();
+            SwingUtilities.invokeAndWait(()->pad.paintHome(6));
+            await(()->!pad.tree.getBackground().equals(plain));
+            assertEquals("the side list as the tree",pad.tree.getBackground(),pad.openList.getBackground());
+            assertNotEquals("a note with no colour of its own is in the app's",paper,pad.page.getBackground());
+            SwingUtilities.invokeAndWait(()->{pad.title.setText("Colours");pad.page.setText("Plain, __underlined__ and plain again.");pad.page.setCaretPosition(0);});
+            pad.disk.flush(10000);Thread.sleep(300);
+            SwingUtilities.invokeAndWait(()->{
+                try {
+                    var image=new java.awt.image.BufferedImage(pad.frame.getWidth(),pad.frame.getHeight(),java.awt.image.BufferedImage.TYPE_INT_RGB);
+                    var g=image.createGraphics();pad.frame.paint(g);g.dispose();
+                    javax.imageio.ImageIO.write(image,"png",Path.of("build","verification","windows-app-colour.png").toFile());
+                }catch(Exception e){throw new RuntimeException(e);}
+                javax.swing.JPopupMenu menu=pad.paperMenu(pad.page,null);
+                assertTrue(menu.getComponent(0) instanceof javax.swing.JMenu first&&"This note".equals(first.getText()));
+            });
+            SwingUtilities.invokeAndWait(()->pad.paintHome(Tint.NONE));
+            await(()->pad.tree.getBackground().equals(plain));
         } finally {if(pad.frame.isDisplayable()){SwingUtilities.invokeAndWait(()->pad.shutdown(false));await(()->!pad.frame.isDisplayable());}}
     }
     private static JButton findButton(java.awt.Container parent,String text) {

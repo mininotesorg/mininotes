@@ -69,14 +69,29 @@ final class DesktopIconPicker {
     /** Opened from a thing's menu, or from its icon before a note's title or a card's name: what it wears is read first. */
     static void open(Desktop pad,NoteStore.Branch thing) {
         NoteStore.Branch.Kind kind=kindOf(thing);if(kind==null)return;
-        pad.disk.submit(()->new Object[]{pad.store.colourOf(kind,thing.id),pad.store.iconOf(kind,thing.id),pad.store.imageOf(kind,thing.id)!=null,readsOnly(pad.store,kind,thing.id)},
-            got->new DesktopIconPicker(pad,thing,kind,(Integer)got[0],(String)got[1],(Boolean)got[2],(Boolean)got[3]).show(),pad::failed);
+        pad.disk.submit(()->new Object[]{pad.store.colourOf(kind,thing.id),pad.store.iconOf(kind,thing.id),pad.store.imageOf(kind,thing.id)!=null,readsOnly(pad.store,kind,thing.id),
+                pad.store.ownLook(kind,thing.id),!pad.store.everybodyIn(kind,thing.id).isEmpty()||pad.store.theirs(kind,thing.id)},
+            got->{
+                String[] own=(String[])got[4];boolean reads=(Boolean)got[3];
+                DesktopIconPicker box=new DesktopIconPicker(pad,thing,kind,(Integer)got[0],(String)got[1],(Boolean)got[2],false);
+                // For whom the look is chosen (the owner, 2026-10-03): a look of this PC's own is always its own to choose,
+                // even on a thing it only reads; what is not shared is everybody's and this PC's at once.
+                box.shared=(Boolean)got[5];box.everybody=!reads;box.mine=own!=null||reads;
+                box.ownWorn=own==null?"":own[0];box.ownPictured=own!=null&&!own[1].isEmpty();
+                box.show();
+            },pad::failed);
     }
 
     /** An icon worn - or Default, the thing's own look, again - kept, drawn everywhere, and sent. It takes a picture off (decision 34). */
-    static void wear(Desktop pad,NoteStore.Branch thing,NoteStore.Branch.Kind kind,String icon) {
-        pad.disk.submit(()->{pad.store.setIcon(kind,thing.id,icon);return null;},done->{
-            pad.status.setToolTipText(null);pad.status.setText(DEFAULT.equals(icon)?"Back to its own icon":"Icon changed");
+    static void wear(Desktop pad,NoteStore.Branch thing,NoteStore.Branch.Kind kind,String icon){wear(pad,thing,kind,icon,false);}
+    /** @param mine for this PC only: Default is then the look everybody sees, again */
+    static void wear(Desktop pad,NoteStore.Branch thing,NoteStore.Branch.Kind kind,String icon,boolean mine) {
+        pad.disk.submit(()->{
+            if(!mine)pad.store.setIcon(kind,thing.id,icon);
+            else if(DEFAULT.equals(icon)||icon==null||icon.isEmpty())pad.store.dropOwnLook(kind,thing.id);
+            else pad.store.setOwnIcon(kind,thing.id,icon);
+            return null;},done->{
+            pad.status.setToolTipText(null);pad.status.setText(mine?(DEFAULT.equals(icon)?"Back to the icon everybody sees":"Icon changed, only on this PC"):DEFAULT.equals(icon)?"Back to its own icon":"Icon changed");
             pad.lookChanged(kind,thing.id);
         },e->failed(pad,e,"Could not change the icon. Nothing was changed."));
     }
@@ -84,7 +99,9 @@ final class DesktopIconPicker {
     /** Remove the picture, from a thing's menu: the icon under it is worn again. */
     static void removePicture(Desktop pad,NoteStore.Branch thing) {
         NoteStore.Branch.Kind kind=kindOf(thing);if(kind==null)return;
-        pad.disk.submit(()->{pad.store.setImage(kind,thing.id,null);return null;},done->{
+        // This PC's own picture where it has one, else the one everybody sees.
+        pad.disk.submit(()->{String[] own=pad.store.ownLook(kind,thing.id);
+            if(own!=null&&!own[1].isEmpty())pad.store.setOwnImage(kind,thing.id,null);else pad.store.setImage(kind,thing.id,null);return null;},done->{
             pad.status.setToolTipText(null);pad.status.setText("Picture removed");
             pad.lookChanged(kind,thing.id);
         },e->failed(pad,e,"Could not remove the picture. Nothing was changed."));
@@ -96,13 +113,14 @@ final class DesktopIconPicker {
      *
      * @param from the file's name, to say which picture; null for one pasted
      */
-    static void picture(Desktop pad,NoteStore.Branch thing,NoteStore.Branch.Kind kind,String from,Background.Work<DesktopIcons.Chosen> read) {
+    static void picture(Desktop pad,NoteStore.Branch thing,NoteStore.Branch.Kind kind,String from,Background.Work<DesktopIcons.Chosen> read){picture(pad,thing,kind,from,read,false);}
+    static void picture(Desktop pad,NoteStore.Branch thing,NoteStore.Branch.Kind kind,String from,Background.Work<DesktopIcons.Chosen> read,boolean mine) {
         pad.status.setToolTipText(null);pad.status.setText(from==null?"Making the picture…":"Making the picture from “"+from+"”…");
         pad.disk.submit(()->{
             DesktopIcons.Chosen chosen=read.run();
             byte[] thumb=DesktopIcons.thumb(chosen.picture(),chosen.turn());
             if(thumb==null)throw new IllegalArgumentException("That picture could not be made small enough to keep.");
-            pad.store.setImage(kind,thing.id,thumb);
+            if(mine)pad.store.setOwnImage(kind,thing.id,thumb);else pad.store.setImage(kind,thing.id,thumb);
             return thumb.length;
         },size->{pad.status.setText("Picture set");pad.lookChanged(kind,thing.id);},
           e->failed(pad,e,"Mininotes could not read that picture. Nothing was changed."));
@@ -146,7 +164,11 @@ final class DesktopIconPicker {
     // ---- the box ------------------------------------------------------------------------------------------------------
 
     private final Desktop pad;private final NoteStore.Branch thing;private final NoteStore.Branch.Kind kind;
-    private final String worn;private final boolean pictured,readOnly;
+    private String worn;private boolean pictured;private final boolean readOnly;
+    /** Whether the thing is shared, whether this PC may change the look everybody sees, and whether the box chooses its own. */
+    boolean shared,everybody=true,mine;
+    /** This PC's own look, where the box is switched to it: swapped with the one everybody sees. */
+    String ownWorn="";boolean ownPictured;
     private int colour;
     private JDialog box;
     final JTextField search=new JTextField();
@@ -162,9 +184,23 @@ final class DesktopIconPicker {
     private void show() {
         JPanel top=DesktopUi.column();
         tintRow();DesktopUi.add(top,tints);
+        if(mine){String w=worn;boolean p=pictured;worn=ownWorn;pictured=ownPictured;ownWorn=w;ownPictured=p;}
+        if(shared&&everybody) {
+            DesktopUi.gap(top,DesktopUi.S);
+            JComboBox<String> whom=new JComboBox<>(new String[]{"For everybody","Only for me"});whom.setSelectedIndex(mine?1:0);
+            whom.getAccessibleContext().setAccessibleName("For whom the icon is chosen");
+            whom.addActionListener(e->{
+                boolean now=whom.getSelectedIndex()==1;if(now==mine)return;mine=now;
+                String w=worn;boolean p=pictured;worn=ownWorn;pictured=ownPictured;ownWorn=w;ownPictured=p;grid.repaint();
+            });
+            JPanel line=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0));line.setOpaque(false);line.add(whom);DesktopUi.add(top,line);
+        } else if(shared) {
+            DesktopUi.gap(top,DesktopUi.S);
+            DesktopUi.add(top,DesktopUi.note("Only on this PC: you can only read it.",CELL*ACROSS,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f)));
+        }
         if(readOnly) {
             DesktopUi.gap(top,DesktopUi.S);
-            DesktopUi.add(top,DesktopUi.note((note()?"This note is":"This collection is")+" read only here, so it keeps the icon it came with. Its colour is yours to choose.",
+            DesktopUi.add(top,DesktopUi.note((note()?"This note is":"This folder is")+" read only here, so it keeps the icon it came with. Its colour is yours to choose.",
                 CELL*ACROSS,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f)));
         }
         DesktopUi.gap(top,12);
@@ -242,14 +278,14 @@ final class DesktopIconPicker {
         pick.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Pictures (JPEG, PNG, GIF, BMP, WebP)","jpg","jpeg","png","gif","bmp","webp"));
         if(pick.showOpenDialog(box)!=JFileChooser.APPROVE_OPTION||pick.getSelectedFile()==null)return;
         File file=pick.getSelectedFile();box.dispose();
-        picture(pad,thing,kind,file.getName(),()->DesktopIcons.read(file.toPath()));
+        picture(pad,thing,kind,file.getName(),()->DesktopIcons.read(file.toPath()),mine);
     }
 
     /** An icon clicked, or Entered: worn, and the box gone. */
     private void pick(int at) {
         if(readOnly||at<0||at>=grid.names.size())return;
         String name=grid.names.get(at);box.dispose();
-        wear(pad,thing,kind,name);
+        wear(pad,thing,kind,name,mine);
     }
 
     /** Whether this cell is what the thing wears now: ringed, as its colour is. A picture is worn over them all. */
@@ -272,7 +308,7 @@ final class DesktopIconPicker {
             if(readOnly)return false;
             Offered offered=offered(s.getTransferable());if(offered==null)return false;
             // After the drop has finished: Explorer's drag is held until the one taking it returns.
-            SwingUtilities.invokeLater(()->{box.dispose();DesktopIconPicker.picture(pad,thing,kind,offered.name(),offered.read());});
+            SwingUtilities.invokeLater(()->{box.dispose();DesktopIconPicker.picture(pad,thing,kind,offered.name(),offered.read(),mine);});
             return true;
         }
         @Override public int getSourceActions(JComponent c){return was==null?NONE:was.getSourceActions(c);}

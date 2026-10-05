@@ -312,6 +312,20 @@ public class DesktopGalleryTest {
             dialog(pad,"02-share",pad::share);
             dialog(pad,"03-profile",()->DesktopProfile.open(pad));
             dialog(pad,"04-people",()->pad.people(null));
+            // Groups (decision 100): Ben in Friends, a second group with nobody in it, and the note given to Friends: People
+            // and devices in its parts, and Who has access with the group's line, Ben under it, and Ana given it on her own.
+            store.pairedWith("MxGalleryBen@127.0.0.1:9010","Ben",false,Envelope.keys().getPublic().getEncoded(),Envelope.keys().getPublic().getEncoded());
+            String friends=store.makeGroup("Friends");store.makeGroup("Colleagues");
+            store.putInGroup(friends,"MxGalleryBen@127.0.0.1:9010",true);
+            store.shareWithGroup(Sharing.Scope.PAGE,id,friends,Sharing.Level.WRITE);
+            // Decision 103: the People view with each person's groups under their name, the Groups view, a group's page, My
+            // devices' page and a person's page.
+            dialog(pad,"04b-people-groups",()->{turnTo("People and devices","People");pad.people(null);});
+            dialogAfter(pad,"04c-people-groups-view",()->pad.people(null),"Groups view");
+            dialogAfter(pad,"04d-group-page",()->pad.people(null),"Groups view","Open Friends");
+            dialogAfter(pad,"04e-my-devices-page",()->pad.people(null),"Groups view","Open My devices");
+            dialogAfter(pad,"04f-person-page",()->pad.people(null),"Open Ben");
+            dialog(pad,"02b-share-groups",pad::share);
             dialog(pad,"05-versions",pad::versions);
             dialog(pad,"06-bin",()->pad.restore(true));
             dialog(pad,"07-scanner",()->DesktopScanner.open(pad.frame,code->{}));
@@ -407,7 +421,7 @@ public class DesktopGalleryTest {
             // Looking everywhere, from the foot of Home: what is found in the grid's place, each saying where it is.
             SwingUtilities.invokeAndWait(()->pad.home.search.setText("ferry"));Thread.sleep(500);settle(pad);shoot(pad.frame,"98-search");
             SwingUtilities.invokeAndWait(()->pad.home.search.setText(""));Thread.sleep(400);settle(pad);
-            // The overview: what is open, as cards, the newest first; Ctrl+Tab chooses the one before the one on the screen.
+            // The overview: Recent, as cards, the newest first; Ctrl+Tab chooses the one after the one on the screen (decision 86).
             SwingUtilities.invokeAndWait(()->pad.openCollection(kitchen.id));settle(pad);
             SwingUtilities.invokeAndWait(()->pad.open(tuesday.id));settle(pad);
             SwingUtilities.invokeAndWait(()->pad.open(id));settle(pad);
@@ -415,7 +429,8 @@ public class DesktopGalleryTest {
             SwingUtilities.invokeAndWait(()->pad.overview.close());
             SwingUtilities.invokeAndWait(()->pad.overview.cycle(false));settle(pad);Thread.sleep(300);shoot(pad.frame,"93b-overview-ctrl-tab");
             SwingUtilities.invokeAndWait(()->{pad.overview.goChosen();});settle(pad);
-            SwingUtilities.invokeAndWait(()->assertEquals("Ctrl+Tab went back to the note before",tuesday.id,pad.noteShown()));
+            // What was written lately is in Recent too, so the one before is not always Tuesday's: only never the one shown.
+            SwingUtilities.invokeAndWait(()->assertNotEquals("Ctrl+Tab went to another than the one on the screen",id,pad.noteShown()));
             // What could not go, by device and thing, and the one thing to do about it: a device only named in a list, and one away.
             dialog(pad,"60-unsent-not-paired",()->pad.tellUnsent(new Post.Done(0,3,"",java.util.List.of(
                 new Unsent.Problem(Unsent.Why.ONLY_LISTED,"Ana's laptop","Kitchen","Kitchen","","MxGalleryListed@127.0.0.1:9009"),
@@ -471,7 +486,9 @@ public class DesktopGalleryTest {
             SwingUtilities.invokeAndWait(()->pad.showTree(false));
             SwingUtilities.invokeAndWait(()->{pad.newestKnown="";pad.updateShown();});
             dialog(pad,"20-password",()->DesktopLock.askPassword(pad.frame,"Show recovery words","Type your password to see your recovery words.","Show the words"));
+            // Share with (decision 103): groups first, then people, the rights beside each name; and a group folded open.
             dialog(pad,"12-add-someone",()->pad.people(new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,id,"","Saturday","",0,0,false)));
+            dialogAfter(pad,"12b-share-with-group-open",()->pad.people(new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,id,"","Saturday","",0,0,false)),"Show who is in Friends");
             // A click beside a box, on the shade over the window behind it, closes the box and takes the shade away.
             SwingUtilities.invokeLater(()->DesktopUi.tell(pad.frame,"About",DesktopUi.body("Synthetic")));
             JDialog[] about={null};
@@ -502,6 +519,17 @@ public class DesktopGalleryTest {
             menuShot(pad,"82-round-writing-colour",()->pad.personClicked(pad.peopleShown.get(0),pad.rounds.getComponent(0)));
             // The same round right-clicked: the phone's hold on it.
             menuShot(pad,"82b-round-menu",()->rightClick(pad.rounds.getComponent(0),6,6));
+            // Contact on Parlons! (decision 101): with no address yet the round's box asks for one, in the box People and
+            // devices opens on her card; with one, it contacts her. Made-up addresses, in the shape Parlons! gives them.
+            SwingUtilities.invokeAndWait(()->assertEquals(Parlons.ADD,pad.parlonsWords("MxGallery@127.0.0.1:9001")));
+            menuShot(pad,"82c-round-box-parlons-add",()->pad.personClicked(pad.peopleShown.get(0),pad.rounds.getComponent(0)));
+            dialog(pad,"82d-parlons-box",()->pad.parlonsBox(store.address("MxGallery@127.0.0.1:9001"),null));
+            store.setParlons("MxGallery@127.0.0.1:9001","MxG18HGGGALLERYANA00000000000000000000@78.141.237.9:9501",System.currentTimeMillis());
+            SwingUtilities.invokeAndWait(()->pad.open(together.id));pad.disk.flush(10000);Thread.sleep(300);SwingUtilities.invokeAndWait(()->{});
+            SwingUtilities.invokeAndWait(()->assertEquals(Parlons.CONTACT,pad.parlonsWords("MxGallery@127.0.0.1:9001")));
+            menuShot(pad,"82e-round-box-parlons-contact",()->pad.personClicked(pad.peopleShown.get(0),pad.rounds.getComponent(0)));
+            dialog(pad,"82f-parlons-box-set",()->pad.parlonsBox(store.address("MxGallery@127.0.0.1:9001"),null));
+            dialogAfter(pad,"82g-people-parlons",()->pad.people(null),"Open Ana's phone");
             // Your own colour chosen: your lines in it too.
             store.chooseInk(Writers.ME,6);
             SwingUtilities.invokeAndWait(()->pad.open(together.id));pad.disk.flush(10000);Thread.sleep(300);
@@ -540,6 +568,16 @@ public class DesktopGalleryTest {
         }).start();
     }
 
+    /** The same, in any window, once it is open, by its title. */
+    private static void turnTo(String title,String words) {
+        new javax.swing.Timer(300,e->{((javax.swing.Timer)e.getSource()).stop();
+            for(Window w:Window.getWindows())if(w instanceof JDialog d&&d.isShowing()&&title.equals(d.getTitle())){
+                Component heading=showing(d.getContentPane(),words);
+                JScrollPane pane=heading==null?null:(JScrollPane)SwingUtilities.getAncestorOfClass(JScrollPane.class,heading);
+                if(pane!=null)pane.getVerticalScrollBar().setValue(SwingUtilities.convertPoint(heading,0,0,pane.getViewport().getView()).y-8);}
+        }).start();
+    }
+
     /** Opens a window, waits for it to be drawn, keeps a picture of it and closes it. */
     /** The first component showing these words, for a picture that has to be turned to it. */
     private static Component showing(Container in,String words) {
@@ -569,6 +607,39 @@ public class DesktopGalleryTest {
         assertTrue(name+" did not open",done.await(30,TimeUnit.SECONDS));
         if(failure.get()!=null)throw new AssertionError(failure.get());
         pad.disk.flush(10000);SwingUtilities.invokeAndWait(()->{});
+    }
+    /** A box opened, the buttons with these names (as a screen reader says them) pressed in turn, and what is then shown pictured. */
+    private static void dialogAfter(Desktop pad,String name,Runnable open,String... presses) throws Exception {
+        CountDownLatch done=new CountDownLatch(1);AtomicReference<Throwable> failure=new AtomicReference<>();
+        java.util.Set<Window> before=new java.util.HashSet<>(java.util.Arrays.asList(Window.getWindows()));
+        SwingUtilities.invokeLater(()->{
+            long[] seen={0};int[] pressed={0};
+            javax.swing.Timer look=new javax.swing.Timer(150,event->{
+                for(Window window:Window.getWindows())if(window instanceof JDialog dialog&&dialog.isShowing()&&!before.contains(window)) {
+                    // Let whatever it fetches on opening, and after each press, arrive before the next thing is done.
+                    if(seen[0]==0){seen[0]=System.nanoTime();return;}
+                    if(System.nanoTime()-seen[0]<TimeUnit.MILLISECONDS.toNanos(900))return;
+                    if(pressed[0]<presses.length) {
+                        AbstractButton press=calledIn(dialog.getContentPane(),presses[pressed[0]]);
+                        if(press==null){((javax.swing.Timer)event.getSource()).stop();failure.set(new AssertionError(name+": nothing called "+presses[pressed[0]]));dialog.dispose();done.countDown();return;}
+                        pressed[0]++;seen[0]=System.nanoTime();press.doClick(0);return;
+                    }
+                    ((javax.swing.Timer)event.getSource()).stop();
+                    try{shootNow(dialog,name);}catch(Throwable error){failure.set(error);}finally{dialog.dispose();done.countDown();}
+                    return;
+                }
+            });look.start();open.run();
+        });
+        assertTrue(name+" did not open",done.await(30,TimeUnit.SECONDS));
+        if(failure.get()!=null)throw new AssertionError(failure.get());
+        pad.disk.flush(10000);SwingUtilities.invokeAndWait(()->{});
+    }
+    private static AbstractButton calledIn(Container in,String name) {
+        for(Component c:in.getComponents()) {
+            if(c instanceof AbstractButton b&&c.isShowing()&&name.equals(b.getAccessibleContext().getAccessibleName()))return b;
+            if(c instanceof Container k){AbstractButton f=calledIn(k,name);if(f!=null)return f;}
+        }
+        return null;
     }
     /** The popup menu open now, however Swing chose to show it. */
     private static JPopupMenu openPopup(Desktop pad) {

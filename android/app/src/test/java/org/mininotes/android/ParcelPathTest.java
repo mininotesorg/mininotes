@@ -58,6 +58,41 @@ public class ParcelPathTest {
         assertNull(Parcel.open(without).path);
     }
 
+    /**
+     * The sender's own colour rides after the path (the owner, 2026-10-03: everybody sees each person's colour): read back
+     * whole, and everything before it is what a build from before reads; never said where the sender never chose one.
+     */
+    @Test public void theSendersColourRidesAfterThePath() throws IOException {
+        Parcel.Sent going=sent(List.of(),PATH);
+        byte[] plain=Parcel.wrap(going);
+        assertEquals("never chosen, never said",0L,Parcel.open(plain).inkAt);
+        going.ink=Tint.count()-1;going.inkAt=1_700_000_000_000L;
+        byte[] inked=Parcel.wrap(going);
+        assertArrayEquals("what came before is unchanged",plain,Arrays.copyOf(inked,plain.length));
+        Parcel.Sent in=Parcel.open(inked);
+        assertEquals(Tint.count()-1,in.ink);assertEquals(1_700_000_000_000L,in.inkAt);
+        assertEquals("the path still reads",3,in.path.size());
+        // Without a path there is nowhere for it: a build that knows no trees is not told.
+        Parcel.Sent old=sent(List.of(),null);old.ink=2;old.inkAt=5L;
+        assertEquals(0L,Parcel.open(Parcel.wrap(old)).inkAt);
+        // And a parcel made to fit keeps it.
+        Parcel.Sent fitted=Parcel.open(Parcel.wrap(going,Envelope.MAX_TEXT));
+        assertEquals(Tint.count()-1,fitted.ink);
+    }
+
+    /** When a note is to be gone rides after the path too, with the colour or without it, and is read back whole. */
+    @Test public void whenItIsToBeGoneRidesAfterThePath() throws IOException {
+        Parcel.Sent going=sent(List.of(),PATH);
+        assertEquals("unsaid",-1L,Parcel.open(Parcel.wrap(going)).until);
+        going.until=0L;
+        assertEquals("not temporary, said",0L,Parcel.open(Parcel.wrap(going)).until);
+        going.until=1_800_000_000_000L;going.ink=2;going.inkAt=7L;
+        Parcel.Sent in=Parcel.open(Parcel.wrap(going));
+        assertEquals(1_800_000_000_000L,in.until);assertEquals(2,in.ink);assertEquals(7L,in.inkAt);
+        going.inkAt=0L;
+        assertEquals("without the colour before it",1_800_000_000_000L,Parcel.open(Parcel.wrap(going)).until);
+    }
+
     /** Where there were no texts to say, none are said, so the path still stands behind them. */
     @Test public void withNoTextsHeldBeforeTheyAreSaidAsNone() throws IOException {
         Parcel.Sent in=Parcel.open(Parcel.wrap(sent(null,PATH)));

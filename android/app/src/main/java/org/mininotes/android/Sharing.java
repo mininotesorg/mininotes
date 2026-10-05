@@ -22,9 +22,10 @@ final class Sharing {
     /**
      * The level a rule was set at. COLLECTION, BOOK and PAGE are the three levels a 0.1 device knows, and rows that
      * came from one keep them; THING is a collection at any depth, for rules made since collections nest (see
-     * docs/HOME.md, decision 12). Added last: a scope travels and is kept by its name.
+     * docs/HOME.md, decision 12). Added last: a scope travels and is kept by its name. FILE is a file kept loose on Home or
+     * in a collection, shared on its own like a note (decision 92; see {@link Sleeve}), its target the file's id.
      */
-    enum Scope { LIBRARY, COLLECTION, BOOK, PAGE, THING }
+    enum Scope { LIBRARY, COLLECTION, BOOK, PAGE, THING, FILE }
     /** The target of a library rule: there is only one library, so it needs no id. */
     static final String EVERYTHING="*";
 
@@ -270,7 +271,20 @@ final class Sharing {
     }
 
     /**
+     * The last words of the box a file's move asks in, where it changes who has the file (decision 93): what happens to
+     * whoever starts or stops having it, and, for one shared on its own, that its own people keep it whatever the move.
+     */
+    static String fileMoveSaid(boolean alone) {
+        return "Whoever starts receiving it gets it now. What has already reached somebody stays with them."
+            +(alone?" The people it is shared with on its own keep it, wherever it is.":"");
+    }
+
+    /** What a file's share code says to whoever shows it (decision 93): a build from before files went on their own cannot take one. */
+    static final String FILE_NEEDS="They need Mininotes 0.2.026 or later to take a file shared on its own.";
+
+    /**
      * Where a thing stands: on this device alone, going to your own devices, going to somebody else, or
+
      * having come from somebody else. It is said on the thing itself rather than kept in a list somewhere,
      * because the one moment it matters is the moment you are looking at the thing.
      *
@@ -322,8 +336,9 @@ final class Sharing {
     /** What is being shared, in as few words as a title can carry — the thing, and what kind of thing. */
     static String shortly(Scope scope,String name) {
         switch(scope) {
-            case COLLECTION: case BOOK: case THING: return name+" collection";
+            case COLLECTION: case BOOK: case THING: return name+" folder";
             case PAGE: return "this note";
+            case FILE: return name;
             default: return "everything";
         }
     }
@@ -337,8 +352,19 @@ final class Sharing {
         switch(scope) {
             case COLLECTION: case BOOK: case THING: return "the collection "+name;
             case PAGE: return "the note "+name;
+            case FILE: return "the file "+name;
             default: return "everything on their pad";
         }
+    }
+
+    /**
+     * An offer as it travels, said to whoever reads it here: the words "the collection" stay on the way, which every build
+     * reads (see {@link NoteStore#acceptingOffer}), and are said "the folder" (decision 94, the owner: "let's use the term
+     * folder instead of collection, people know what they are").
+     */
+    static String shown(String offer) {
+        if(offer==null)return "";
+        return offer.startsWith("the collection ")?"the folder "+offer.substring(15):offer;
     }
 
     /** What that mark means, said in full for anybody who cannot see it. */
@@ -354,8 +380,9 @@ final class Sharing {
     /** What the reader is told they are sharing, at each level. */
     static String describe(Scope scope,String name) {
         switch(scope) {
-            case LIBRARY: return "every collection and note";
-            case COLLECTION: case BOOK: case THING: return "the collection "+name+", and everything in it";
+            case LIBRARY: return "every folder and note";
+            case COLLECTION: case BOOK: case THING: return "the folder "+name+", and everything in it";
+            case FILE: return "the file "+name;
             default: return "this note";
         }
     }

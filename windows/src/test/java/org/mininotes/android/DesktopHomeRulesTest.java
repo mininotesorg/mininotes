@@ -108,7 +108,7 @@ public class DesktopHomeRulesTest {
     }
 
     @Test public void aCollectionsFaceShowsHowMuchItHolds() {
-        assertEquals(5,DesktopHome.countIn("2 collections · 3 notes"));
+        assertEquals(5,DesktopHome.countIn("2 folders · 3 notes"));
         assertEquals(1,DesktopHome.countIn("1 note"));
         assertEquals(0,DesktopHome.countIn("Empty"));
         assertEquals(0,DesktopHome.countIn(null));

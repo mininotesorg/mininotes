@@ -49,7 +49,7 @@ final class DesktopSettings {
         JPanel sync=DesktopUi.column();sync.add(DesktopUi.switchRow("Sync automatically",syncing));
         sync.add(DesktopUi.row(DesktopUi.body("Send changes"),afterHolder));
         DesktopUi.add(sync,DesktopUi.note(NoteStore.RIGHT_AWAY_COSTS,380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));DesktopUi.gap(sync,DesktopUi.S);
-        DesktopUi.add(sync,DesktopUi.note("Off, a note goes when you click its mark under the title, or Sync now. A note or a collection can also keep a timing of its own, in its Share box.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
+        DesktopUi.add(sync,DesktopUi.note("Off, a note goes when you click its mark under the title, or Sync now. A note or a folder can also keep a timing of its own, in its Share box.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         DesktopUi.add(body,DesktopUi.card(null,sync));
         DesktopUi.gap(body,DesktopUi.L);
 
@@ -79,7 +79,7 @@ final class DesktopSettings {
         java.util.function.Consumer<DesktopFirewall.State> shown=state->{
             quiet[0]=true;direct.setSelected(state.allowed());quiet[0]=false;direct.setEnabled(true);
             directSaid.setText(!state.allowed()
-                ?"Off: Windows keeps other devices out, so yours cannot reach this PC directly. On, your devices at home - and, when your router allows it, from anywhere - send to this PC straight. Windows asks your permission."
+                ?"Off: Windows keeps other devices out, so yours cannot reach this PC directly. On, your devices at home (and, when your router allows it, from anywhere) send to this PC straight. Windows asks your permission."
                 :state.publicHere()
                     ?"On, but Windows calls this network public, so it stays closed here. It opens on networks set as private, like your home."
                     :"On: your devices reach this PC without a relay at home, and from outside when your router opens a port. Only messages sealed to this PC are accepted.");
@@ -87,7 +87,7 @@ final class DesktopSettings {
         app.connectivity.submit(DesktopFirewall::read,shown::accept,e->directSaid.setText("Windows did not say whether it lets devices in."));
         direct.addActionListener(e->{
             if(quiet[0])return;boolean want=direct.isSelected();
-            direct.setEnabled(false);directSaid.setText(want?"Waiting for your answer in Windows' permission box…":"Closing it again - Windows asks your permission…");
+            direct.setEnabled(false);directSaid.setText(want?"Waiting for your answer in Windows' permission box…":"Closing it again. Windows asks your permission…");
             app.connectivity.submit(()->DesktopFirewall.set(want),shown::accept,failure->{
                 directSaid.setText(failure.getMessage()==null?"Nothing was changed.":failure.getMessage());
                 app.connectivity.submit(DesktopFirewall::read,shown::accept,none->direct.setEnabled(true));
@@ -118,18 +118,66 @@ final class DesktopSettings {
         JCheckBox tree=DesktopUi.toggle("Show the tree",app.treeShown());
         tree.addActionListener(e->app.showTree(tree.isSelected()));
         JPanel window=DesktopUi.column();window.add(DesktopUi.switchRow("Show the tree",tree));
-        DesktopUi.add(window,DesktopUi.note("Every collection and note as a list, beside Home and the page. ⋯ → Tree, or Ctrl+B, does the same.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
+        // What Home shows, under one heading, each by its name only (the owner, 2026-10-04: "instead of repeating Show at each
+        // element, change the title of the section to Show on Home and use only the element name"; decision 95).
+        DesktopUi.gap(window,DesktopUi.M);DesktopUi.add(window,DesktopUi.quiet("Show on Home"));
+        // Recent, listed down the right of the window (decisions 77 and 86).
+        JCheckBox opened=DesktopUi.toggle("Recent",app.openListWanted());
+        opened.addActionListener(e->app.setOpenListWanted(opened.isSelected()));
+        DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.switchRow("Recent",opened));
+        DesktopUi.add(window,DesktopUi.note("Every folder and note as a list, beside Home and the page. ⋯ → Tree, or Ctrl+B, does the same.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         // The archive and the bin as icons on Home, as a phone keeps its bin on its desktop (decision 41); off, in ⋯.
-        JCheckBox away=DesktopUi.toggle("Show the archive and the bin on Home",app.awayOnHome());
-        away.addActionListener(e->app.setAwayOnHome(away.isSelected()));
-        DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.switchRow("Show the archive and the bin on Home",away));
-        DesktopUi.add(window,DesktopUi.note("Off, they are in ⋯ → Put away.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
+        // Home's places, each on Home or not, as Home's right-click switches them (decision 78).
+        for(String[] place:Desktop.PLACES_ON_HOME) {
+            String id=place[0];JCheckBox placeOn=DesktopUi.toggle(place[1],app.onHome(id));
+            placeOn.addActionListener(e->app.setOnHome(id,placeOn.isSelected()));
+            DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.switchRow(place[1],placeOn));
+        }
+        DesktopUi.add(window,DesktopUi.note("Off, each is in ⋯.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
+        // How long what is carried onto Temp stays (decision 79).
+        JComboBox<String> stay=new JComboBox<>(Desktop.TEMP_SPANS);stay.setSelectedIndex(app.tempSpan());
+        stay.addActionListener(e->app.setTempSpan(stay.getSelectedIndex()));
+        JPanel stayRow=new JPanel(new BorderLayout(12,0));stayRow.setOpaque(false);stayRow.add(DesktopUi.body("Temp: things stay"),BorderLayout.WEST);
+        JPanel holdStay=new JPanel(new FlowLayout(FlowLayout.RIGHT,0,0));holdStay.setOpaque(false);holdStay.add(stay);stayRow.add(holdStay,BorderLayout.EAST);
+        DesktopUi.gap(window,DesktopUi.S);DesktopUi.add(window,stayRow);
+        // Temp as a note to self (decision 84).
+        JCheckBox toMine=DesktopUi.toggle("Temp: send to my devices",app.tempToMine());
+        toMine.addActionListener(e->app.setTempToMine(toMine.isSelected()));
+        DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.switchRow("Temp: send to my devices",toMine));
+        DesktopUi.add(window,DesktopUi.note("What is let go on Temp goes to your other devices too, as a note to yourself.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
+        // Where what comes on Temp from my other devices shows: in Temp only, unless this is on (decision 98).
+        JCheckBox tempHome=DesktopUi.toggle("Temp: also show on Home",app.store.tempOnHome());
+        tempHome.addActionListener(e->app.setTempOnHome(tempHome.isSelected()));
+        DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.switchRow("Temp: also show on Home",tempHome));
+        DesktopUi.add(window,DesktopUi.note("What comes on Temp from your other devices is in Temp. On, it is on Home as well.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
+        // How long Recent keeps what was opened (the owner: "an option letting the user decide for how long").
+        int[] keepDays={1,3,7,30};int kept=java.util.Arrays.binarySearch(keepDays,app.recentDays());
+        JComboBox<String> keeps=new JComboBox<>(new String[]{"A day","Three days","A week","A month"});keeps.setSelectedIndex(Math.max(0,kept));
+        keeps.addActionListener(e->app.setRecentDays(keepDays[keeps.getSelectedIndex()]));
+        JPanel keepRow=new JPanel(new BorderLayout(12,0));keepRow.setOpaque(false);keepRow.add(DesktopUi.body("Recent keeps"),BorderLayout.WEST);
+        JPanel holdKeeps=new JPanel(new FlowLayout(FlowLayout.RIGHT,0,0));holdKeeps.setOpaque(false);holdKeeps.add(keeps);keepRow.add(holdKeeps,BorderLayout.EAST);
+        DesktopUi.gap(window,DesktopUi.S);DesktopUi.add(window,keepRow);
+        // Where a file somebody shares with this PC on its own is shown (the owner, 2026-10-04: "by default let's have a
+        // folder, Shared with me, but this setting could be changed by the user"; decision 92): Home, the place Shared with
+        // me (decision 94), or any folder on Home. Kept on Home all the same, so it never goes on with a folder.
+        JComboBox<String> sharedTo=new JComboBox<>(new String[]{"Home",NoteStore.SHARED_WITH_ME});sharedTo.setEnabled(false);
+        java.util.List<String> sharedIds=new java.util.ArrayList<>(java.util.List.of(Things.HOME,""));
+        app.disk.submit(()->app.store.collections(),shelves->{
+            for(NoteStore.Shelf one:shelves){sharedTo.addItem(one.name);sharedIds.add(one.id);}
+            sharedTo.setSelectedIndex(Math.max(0,sharedIds.indexOf(app.context.getSharedPreferences("settings",0).getString(NoteStore.SHARED_TO,""))));
+            sharedTo.addActionListener(e->{int picked=sharedTo.getSelectedIndex();if(picked>=0)app.context.getSharedPreferences("settings",0).edit().putString(NoteStore.SHARED_TO,sharedIds.get(picked)).apply();});
+            sharedTo.setEnabled(true);
+        },app::failed);
+        JPanel sharedRow=new JPanel(new BorderLayout(12,0));sharedRow.setOpaque(false);sharedRow.add(DesktopUi.body("Shared with me goes to"),BorderLayout.WEST);
+        JPanel holdShared=new JPanel(new FlowLayout(FlowLayout.RIGHT,0,0));holdShared.setOpaque(false);holdShared.add(sharedTo);sharedRow.add(holdShared,BorderLayout.EAST);
+        DesktopUi.gap(window,DesktopUi.S);DesktopUi.add(window,sharedRow);
+        DesktopUi.add(window,DesktopUi.note("Where a file somebody shares with you on its own shows. It stays on Home, so it never goes on with a folder.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         // Favourites and the search on Home (decision 47), as Home's right-click switches them.
-        JCheckBox dockOn=DesktopUi.toggle("Show favourites",app.showing(Desktop.SHOW_DOCK));
+        JCheckBox dockOn=DesktopUi.toggle("Dock",app.showing(Desktop.SHOW_DOCK));
         dockOn.addActionListener(e->app.setShowing(Desktop.SHOW_DOCK,dockOn.isSelected()));
-        JCheckBox searchOn=DesktopUi.toggle("Show search",app.showing(Desktop.SHOW_SEARCH));
+        JCheckBox searchOn=DesktopUi.toggle("Search",app.showing(Desktop.SHOW_SEARCH));
         searchOn.addActionListener(e->app.setShowing(Desktop.SHOW_SEARCH,searchOn.isSelected()));
-        DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.switchRow("Show favourites",dockOn));window.add(DesktopUi.switchRow("Show search",searchOn));
+        DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.switchRow("Dock",dockOn));window.add(DesktopUi.switchRow("Search",searchOn));
         DesktopUi.add(window,DesktopUi.note("On Home's first page. Off, favourites are still in the Favourites icon, and search is Ctrl+F.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         // The same ladder as in a note's menu and on the phone: ten rungs. Here it is this PC's, for every note that
         // has no size of its own; one that has keeps it (see Reading).

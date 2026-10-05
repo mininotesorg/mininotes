@@ -41,7 +41,7 @@ public class FeedbackTest {
 
     /** The title says what it is, where it is, and how it starts, so a list of them can be read down. */
     @Test public void theTitleSaysWhatItIs() {
-        assertEquals("Something is broken — Attachments: A photo would not open",
+        assertEquals("Something is broken: Attachments: A photo would not open",
             Feedback.title(Feedback.Kind.BROKEN,Feedback.Area.FILES,
                 "A photo would not open\nI tapped it twice and nothing happened."));
     }

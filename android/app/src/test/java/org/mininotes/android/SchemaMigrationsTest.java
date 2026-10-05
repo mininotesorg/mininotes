@@ -284,13 +284,127 @@ public class SchemaMigrationsTest {
             try{SchemaMigrations.upgrade(range[0],range[1]);fail("Accepted "+range[0]+" to "+range[1]);}catch(IllegalArgumentException expected){}
     }
     @Test public void everyIconStandsOnAPageAndNoneHasOneYet() {
-        assertEquals(33,SchemaMigrations.VERSION);
+        assertTrue(SchemaMigrations.VERSION>=33);
         String fresh=String.join(" ",SchemaMigrations.create());
         String step=String.join(" ",SchemaMigrations.upgrade(32,33));
         for(String sql:new String[]{fresh,step})
             for(String table:new String[]{"things","notes","files"})
                 assertTrue(table,sql.contains("ALTER TABLE "+table+" ADD COLUMN page INTEGER NOT NULL DEFAULT "+Layout.NO_PAGE));
         // Columns only: a cell kept before pages is read as the long grid it was (Layout.pages).
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+    @Test public void writingLinesAreOnUntilSwitchedOffAndWhatIsOnItsWayHasANameToWaitUnder() {
+        assertTrue(SchemaMigrations.VERSION>=34);
+        String fresh=String.join(" ",SchemaMigrations.create());
+        String step=String.join(" ",SchemaMigrations.upgrade(33,34));
+        for(String sql:new String[]{fresh,step}) {
+            assertTrue(sql.contains("ALTER TABLE notes ADD COLUMN lines INTEGER NOT NULL DEFAULT 1"));
+            assertTrue(sql.contains("ALTER TABLE accepting ADD COLUMN what TEXT NOT NULL DEFAULT ''"));
+            assertTrue(sql.contains("ALTER TABLE accepting ADD COLUMN kind TEXT NOT NULL DEFAULT ''"));
+        }
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+    @Test public void whereAThingIsShownAndALookOfItsOwnAreThisDevicesAndEmptyUntilChosen() {
+        assertTrue(SchemaMigrations.VERSION>=35);
+        String fresh=String.join(" ",SchemaMigrations.create());
+        String step=String.join(" ",SchemaMigrations.upgrade(34,35));
+        for(String sql:new String[]{fresh,step})
+            for(String table:new String[]{"notes","things"})
+                for(String column:new String[]{"shown","myicon","myimage"})
+                    assertTrue(table+"."+column,sql.contains("ALTER TABLE "+table+" ADD COLUMN "+column+" TEXT NOT NULL DEFAULT ''"));
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+    @Test public void theColourEachPersonChoseIsATableOfItsOwn() {
+        assertTrue(SchemaMigrations.VERSION>=36);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(35,36));
+        for(String sql:new String[]{fresh,step})
+            assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS said_inks(writer TEXT PRIMARY KEY,colour INTEGER NOT NULL,at INTEGER NOT NULL)"));
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+    @Test public void whenAThingIsToBeGoneAndWhenItWasOpenedStartAtNothing() {
+        assertTrue(SchemaMigrations.VERSION>=37);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(36,37));
+        for(String sql:new String[]{fresh,step})
+            for(String table:new String[]{"notes","things"})
+                for(String column:new String[]{"until","touched"})
+                    assertTrue(table+"."+column,sql.contains("ALTER TABLE "+table+" ADD COLUMN "+column+" INTEGER NOT NULL DEFAULT 0"));
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+    @Test public void aFileIsInNoPlaceUntilItIsPutInOne() {
+        // Decision 87: a file archived or binned, temporary, starred - none of them, for every file there is.
+        assertTrue(SchemaMigrations.VERSION>=38);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(37,38));
+        for(String sql:new String[]{fresh,step})
+            for(String column:new String[]{"away","until","starred"})
+                assertTrue("files."+column,sql.contains("ALTER TABLE files ADD COLUMN "+column+" INTEGER NOT NULL DEFAULT 0"));
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+    @Test public void aFileIsNobodysAndShownWhereItIsUntilItIsSharedOnItsOwn() {
+        // Decision 92: a file shared like a note (theirs, its revision, gone for everybody, where it is shown, and one waited
+        // for on its own): nothing of it for every file and every wait there is.
+        assertTrue(SchemaMigrations.VERSION>=39);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(38,39));
+        for(String sql:new String[]{fresh,step}) {
+            for(String column:new String[]{"theirs","revision","gone"})
+                assertTrue("files."+column,sql.contains("ALTER TABLE files ADD COLUMN "+column+" INTEGER NOT NULL DEFAULT 0"));
+            assertTrue("files.shown",sql.contains("ALTER TABLE files ADD COLUMN shown TEXT NOT NULL DEFAULT ''"));
+            assertTrue("incoming.alone",sql.contains("ALTER TABLE incoming ADD COLUMN alone INTEGER NOT NULL DEFAULT 0"));
+        }
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+    @Test public void noFileIsOnItsWayToTempYet() {
+        // Decision 95: a file on its way from Temp on another of my devices carries when it is to be gone; none is yet.
+        assertTrue(SchemaMigrations.VERSION>=41);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(40,41));
+        for(String sql:new String[]{fresh,step})
+            assertTrue("incoming.until",sql.contains("ALTER TABLE incoming ADD COLUMN until INTEGER NOT NULL DEFAULT 0"));
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+    @Test public void nobodyHasAParlonsAddressYet() {
+        // Decision 101: a person's Parlons! address and when it was decided, on their card: empty and never decided for
+        // everybody already here, so the first address chosen on any device of the owner's stands.
+        assertTrue(SchemaMigrations.VERSION>=43);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(42,43));
+        for(String sql:new String[]{fresh,step}) {
+            assertTrue("addresses.parlons",sql.contains("ALTER TABLE addresses ADD COLUMN parlons TEXT NOT NULL DEFAULT ''"));
+            assertTrue("addresses.parlonsDecided",sql.contains("ALTER TABLE addresses ADD COLUMN parlonsDecided INTEGER NOT NULL DEFAULT 0"));
+        }
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+    @Test public void nobodyIsInAGroupYetAndEveryRuleWasGivenDirectly() {
+        // Decision 100: groups, who is in each, what each was given, and the group a rule came from: none of it for any
+        // rule there is, so every rule already here stays one given to its person on their own.
+        assertTrue(SchemaMigrations.VERSION>=42);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(41,42));
+        for(String sql:new String[]{fresh,step}) {
+            assertTrue("groups",sql.contains("CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY,name TEXT NOT NULL,decided INTEGER NOT NULL,gone INTEGER NOT NULL DEFAULT 0)"));
+            assertTrue("members",sql.contains("CREATE TABLE IF NOT EXISTS members(grp TEXT NOT NULL,signing TEXT NOT NULL,decided INTEGER NOT NULL,gone INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(grp,signing))"));
+            assertTrue("group_shares",sql.contains("CREATE TABLE IF NOT EXISTS group_shares(grp TEXT NOT NULL,scope TEXT NOT NULL,target TEXT NOT NULL,level TEXT NOT NULL,decided INTEGER NOT NULL,PRIMARY KEY(grp,scope,target))"));
+            assertTrue("shares.grp",sql.contains("ALTER TABLE shares ADD COLUMN grp TEXT NOT NULL DEFAULT ''"));
+        }
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+    @Test public void noFileHasBeenRenamedOrReplacedByAnybodyYet() {
+        // Decision 93: when a file's name was chosen and its bytes replaced, what this device changed, and a wait's owner and
+        // whether it is a new version: nothing of it for every file and every wait there is.
+        assertTrue(SchemaMigrations.VERSION>=40);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(39,40));
+        for(String sql:new String[]{fresh,step}) {
+            for(String column:new String[]{"named","replaced","changed"})
+                assertTrue("files."+column,sql.contains("ALTER TABLE files ADD COLUMN "+column+" INTEGER NOT NULL DEFAULT 0"));
+            assertTrue("incoming.owner",sql.contains("ALTER TABLE incoming ADD COLUMN owner TEXT NOT NULL DEFAULT ''"));
+            assertTrue("incoming.replaces",sql.contains("ALTER TABLE incoming ADD COLUMN replaces INTEGER NOT NULL DEFAULT 0"));
+        }
         String upper=step.toUpperCase(java.util.Locale.ROOT);
         assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
     }

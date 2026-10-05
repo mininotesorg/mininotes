@@ -89,8 +89,8 @@ public class LockChoiceTest {
         String noPassword=LockChoice.means(true,true,true,false);
         assertTrue(noPassword.contains("There is no password."));
         assertTrue(noPassword.contains("Your backups open with the 12 recovery words."));
-        assertTrue(LockChoice.means(true,true,false,true).contains("switch on fingerprint or screen lock below"));
-        assertFalse(LockChoice.means(true,false,false,true).contains("switch on"));
+        assertTrue(LockChoice.means(true,true,false,true).contains("Switch on fingerprint or screen lock below"));
+        assertFalse(LockChoice.means(true,false,false,true).contains("Switch on"));
         assertTrue(LockChoice.means(true,true,false,false).startsWith("Mininotes opens only with your 12 recovery words now."));
         assertEquals("Backup password",LockChoice.passwordName(true));
         assertEquals("Password",LockChoice.passwordName(false));

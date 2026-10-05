@@ -49,9 +49,9 @@ final class NoteLine {
     static String couldNot(List<Unsent.Problem> problems,int sent) {
         Unsent.Problem first=Unsent.first(problems);
         if(first!=null&&first.why==Unsent.Why.LINKING)return Unsent.linking(first.who);
-        if(sent>0)return "Some of it went - see why";
-        if(first!=null&&!first.who.isEmpty()&&Unsent.distinct(problems).size()==1)return "Could not reach "+first.who+" - see why";
-        return "Could not go - see why";
+        if(sent>0)return "Some of it went. See why";
+        if(first!=null&&!first.who.isEmpty()&&Unsent.distinct(problems).size()==1)return "Could not reach "+first.who+". See why";
+        return "Could not go. See why";
     }
 
     /** The colour of what couldNot says: amber for a link that is on its way, red for the rest. */

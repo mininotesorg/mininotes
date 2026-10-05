@@ -139,7 +139,7 @@ public class ThingsTest {
         assertEquals("Empty",Things.holds(0,0));
         assertEquals("1 note",Things.holds(0,1));
         assertEquals("5 notes",Things.holds(0,5));
-        assertEquals("3 collections",Things.holds(3,0));
-        assertEquals("1 collection · 2 notes",Things.holds(1,2));
+        assertEquals("3 folders",Things.holds(3,0));
+        assertEquals("1 folder · 2 notes",Things.holds(1,2));
     }
 }

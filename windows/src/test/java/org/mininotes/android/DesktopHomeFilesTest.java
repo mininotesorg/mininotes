@@ -222,7 +222,7 @@ public class DesktopHomeFilesTest {
         // Collections and notes, then the files: the received one last, new, from where it came.
         assertEquals(FILE,home.get(home.size()-1).kind);assertEquals(beach,home.get(home.size()-1).id);
         assertEquals(Set.of(SchemaMigrations.FIRST_COLLECTION,kitchen.id,loose.id),new HashSet<>(ids(home.subList(0,home.size()-1))));
-        assertEquals("1 collection · 1 note",line(home,kitchen.id).detail);
+        assertEquals("1 folder · 1 note",line(home,kitchen.id).detail);
         assertEquals(PAGE,line(home,loose.id).kind);assertEquals(Sharing.EVERYTHING,line(home,loose.id).parent);
         // One order for both kinds, as the owner leaves it.
         store.order(List.of(line(home,loose.id),line(home,SchemaMigrations.FIRST_COLLECTION),line(home,beach),line(home,kitchen.id)));
@@ -279,7 +279,9 @@ public class DesktopHomeFilesTest {
         assertEquals(List.of(n.get(1),n.get(3),n.get(4),n.get(2)),ids(store.dock()));
         assertTrue(store.favourite(PAGE,n.get(0)));
         assertEquals(List.of(shelf,n.get(0)),ids(store.favouritesBeyondDock()));
-        assertEquals(4,count(store,"SELECT MAX(dock) FROM (SELECT dock FROM things UNION ALL SELECT dock FROM notes)"));
+        // Its place let go of and nothing else moved: the favourite past the dock keeps its place there (decision 74).
+        assertEquals(0,count(store,"SELECT dock FROM notes WHERE id=?",n.get(0)));
+        assertEquals(6,count(store,"SELECT dock FROM things WHERE id=?",shelf));
         // A star fills the first free place again.
         store.keepToHand(PAGE,n.get(5),true);
         assertEquals(List.of(n.get(1),n.get(3),n.get(4),n.get(2),n.get(5)),ids(store.dock()));
@@ -292,7 +294,8 @@ public class DesktopHomeFilesTest {
         assertEquals(List.of(n.get(1),n.get(3),n.get(2),n.get(5)),ids(store.dock()));
         store.toDock(COLLECTION,shelf,9);
         assertEquals(List.of(n.get(1),n.get(3),n.get(2),n.get(5),shelf),ids(store.dock()));
-        assertEquals(0,count(store,"SELECT dock FROM notes WHERE id=?",n.get(4)));
+        // Pushed out of the dock, it keeps a place in the one order of favourites, after the dock's (decision 74).
+        assertTrue(count(store,"SELECT dock FROM notes WHERE id=?",n.get(4))>Things.DOCK_PHONE);
         store.restore(PAGE,n.get(4));
         assertTrue(ids(store.favouritesBeyondDock()).contains(n.get(4)));
         // The dock is this device's own: the lines are the Favourites collection's, marks and all.
@@ -385,7 +388,7 @@ public class DesktopHomeFilesTest {
         assertThrows(IllegalArgumentException.class,()->store.addCollectionIn(UUID.randomUUID().toString(),"Nowhere"));
         // Never inside itself, or inside anything it holds.
         IllegalArgumentException inside=assertThrows(IllegalArgumentException.class,()->store.moveInto(COLLECTION,top,low));
-        assertEquals("A collection cannot go inside itself, or inside anything it holds.",inside.getMessage());
+        assertEquals("A folder cannot go inside itself, or inside anything it holds.",inside.getMessage());
         assertThrows(IllegalArgumentException.class,()->store.moveInto(COLLECTION,top,top));
         assertEquals(List.of(top,middle),store.above(low));
         store.moveInto(COLLECTION,low,Things.HOME);assertEquals(List.of(),store.above(low));
@@ -393,7 +396,7 @@ public class DesktopHomeFilesTest {
         NoteStore.Note note=note(store,Things.HOME,"Loose","Synthetic loose"),other=note(store,Things.HOME,"Other","Synthetic other");
         store.moveInto(PAGE,note.id,middle);assertEquals(List.of(top,middle),store.above(note.id));
         store.moveInto(PAGE,note.id,Sharing.EVERYTHING);assertEquals(Things.HOME,store.get(note.id).book);
-        assertEquals("Only a collection can hold a note.",assertThrows(IllegalArgumentException.class,()->store.moveInto(PAGE,note.id,other.id)).getMessage());
+        assertEquals("Only a folder can hold a note.",assertThrows(IllegalArgumentException.class,()->store.moveInto(PAGE,note.id,other.id)).getMessage());
         // A file off Home into a collection, then into a note, whose file it then is - this device's own there, not new.
         String file=received(store,A,"plan.txt",bytes(10,11));
         store.moveInto(FILE,file,middle);

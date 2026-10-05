@@ -24,7 +24,7 @@ final class DesktopFolder extends JComponent {
     private final Desktop pad;
     /** The card itself, and in it the bar, the grid and the +. */
     final JPanel card;
-    private final JPanel head=new JPanel(new BorderLayout(8,0));
+    final JPanel head=new JPanel(new BorderLayout(8,0));
     final DesktopHome.Icons grid;
     private final JScrollPane scroll;
     private final JButton plus;
@@ -86,18 +86,31 @@ final class DesktopFolder extends JComponent {
     }
 
     /** The card's paper: the collection's colour washed over it, as a room is, so the card is the collection you stand in. */
-    private Color ground(){return DesktopLook.wash(thing==null?Tint.NONE:thing.colour,DesktopUi.PAPER,0.12f,0.72f,pad.tone);}
+    private Color ground(){return DesktopLook.wash(thing!=null?thing.colour:listing()?pad.placeColour(last().id):Tint.NONE,DesktopUi.PAPER,0.12f,0.72f,pad.tone);}
 
     @Override public void doLayout() {
         int w=getWidth(),h=getHeight();
         // From just under the toolbar, over the first row of Home's icons, so no mark on them peeks out above the card.
-        int wide=Math.max(Math.min(w-40,300),Math.min(w-96,6*DesktopHome.CELL+2*DesktopHome.SIDE+28)),high=Math.max(Math.min(h-24,240),h-30);
-        card.setBounds((w-wide)/2,Math.min(10,Math.max(0,h-high)),wide,high);
+        // Not the whole window (the owner, 2026-10-03: "the group should not be shown full screen so that we have space to move
+        // the notes"): two thirds of its height, in the middle, with Home round it to carry things out onto.
+        int wide=Math.max(Math.min(w-40,300),Math.min(w-96,6*DesktopHome.CELL+2*DesktopHome.SIDE+28)),high=Math.min(Math.max(Math.min(h-24,240),h-30),Math.max(240,Math.round(h*0.66f)));
+        // Stepped aside, it is laid out beyond the window: still there, so the carry that began in it goes on, and not seen.
+        card.setBounds(aside?-4*Math.max(w,wide):(w-wide)/2,Math.max(0,(h-high)/2),wide,high);
     }
     @Override protected void paintComponent(Graphics g) {
         // Home dimmed under the card; darker while a thing carried out of it would come up a level there.
+        if(aside)return;
         g.setColor(new Color(20,24,20,lit?110:64));g.fillRect(0,0,getWidth(),getHeight());
     }
+
+    /**
+     * The card out of the way while a thing carried out of it is taken up a level, as a phone's own folder closes when an
+     * icon is pulled out over its edge (the owner, 2026-10-03: "we have to be able to move out of a group by a drag and
+     * drop"); until then only the sides of the window round the card were up a level. Back when the carry ends.
+     */
+    private boolean aside;
+    boolean aside(){return aside;}
+    void stepAside(boolean now){if(aside==now)return;aside=now;doLayout();repaint();}
 
     boolean isOpen(){return isVisible()&&!trail.isEmpty();}
     private NoteStore.Branch last(){return trail.get(trail.size()-1);}
@@ -107,6 +120,8 @@ final class DesktopFolder extends JComponent {
     boolean listing(){return !trail.isEmpty()&&Grid.place(last().kind);}
     /** Whether the card is the archive's or the bin's, where things wait to be put back. */
     boolean away(){return !trail.isEmpty()&&(last().kind==NoteStore.Branch.Kind.ARCHIVE||last().kind==NoteStore.Branch.Kind.BIN);}
+    /** Whether the card is Temp's or Recent's, which list things that are elsewhere: each opens where it is. */
+    boolean lists(){return !trail.isEmpty()&&(last().kind==NoteStore.Branch.Kind.TEMP||last().kind==NoteStore.Branch.Kind.RECENT||last().kind==NoteStore.Branch.Kind.SHARED);}
     /** Whether the card is the bin's. */
     boolean inBin(){return !trail.isEmpty()&&last().kind==NoteStore.Branch.Kind.BIN;}
     /** The collection the card shows, or Home when it shows none. */
@@ -116,6 +131,8 @@ final class DesktopFolder extends JComponent {
     String parentName(){return parentName;}
     /** The collection shown, as last read, for the Share button and the menus; null when none is. */
     NoteStore.Branch shown(){return isOpen()&&!listing()?thing:null;}
+    /** The place whose card is up - Favourites, Recent, Temp, the archive, the bin - or null. */
+    NoteStore.Branch placeShown(){return isOpen()&&listing()?last():null;}
     /** Where the card is now, for a read of the notebook to take with it. */
     List<NoteStore.Branch> path(){return isOpen()?new ArrayList<>(trail):List.of();}
     /** Whether a name is being typed on it: Home is not drawn again under the field. */
@@ -168,15 +185,25 @@ final class DesktopFolder extends JComponent {
     private void draw() {
         if(trail.isEmpty())return;
         NoteStore.Branch now=last();
-        if(!now.id.equals(shown)){grid.fill(List.of(),null);thing=listing()?null:now;bar(now);}
-        plus.setVisible(!listing());
+        boolean fresh=!now.id.equals(shown);
+        if(fresh){grid.fill(List.of(),null);thing=listing()?null:now;bar(now);}
+        // A place's card has a + too, where things can be made in it (decision 87): not Recent, nor Tools.
+        plus.setVisible(!listing()||Desktop.takesNew(now.id));
         // One + at a time: while the card is up, its own is the one, and Home's under the dim goes.
         home.plus.setVisible(false);
         setVisible(true);revalidate();repaint();
-        // A collection's card is one of the things open, for the overview; the places are not things.
-        if(now.kind==NoteStore.Branch.Kind.COLLECTION)pad.overview.remember(Overview.Kind.COLLECTION,now.id);
-        home.refresh();
+        // A collection's card is one of the things opened, for Recent, when it opens, not each time it is drawn again (it
+        // went back to the top of Recent over the note opened from it); the places are not things.
+        if(fresh&&now.kind==NoteStore.Branch.Kind.COLLECTION){pad.overview.remember(Overview.Kind.COLLECTION,now.id);
+            String opened=now.id;pad.disk.submit(()->{pad.store.touch(NoteStore.Branch.Kind.COLLECTION,opened);return null;},done->pad.openList.refresh(),e->{});}
+        // Opened under a thing being carried: in sight again, and only the card read, since Home waits for the carry to end.
+        if(home.carry.carrying()){stepAside(false);home.refreshCard();}else home.refresh();
     }
+
+    /** The name of the collection the card shows. */
+    String name(){return trail.isEmpty()?"Home":last().name;}
+    /** How deep the card is: 1 for a collection on Home. */
+    int depth(){return trail.size();}
 
     // ---- reading and drawing ------------------------------------------------------------------------------------------
 
@@ -189,6 +216,12 @@ final class DesktopFolder extends JComponent {
         if(path.isEmpty())return;
         NoteStore.Branch end=path.get(path.size()-1);
         if(end.kind==NoteStore.Branch.Kind.FAVOURITES)return;
+        // Tools: the places kept in it. Temp: what is to be gone, soonest first. Recent: what was opened lately (decisions 71, 72).
+        if(end.kind==NoteStore.Branch.Kind.TOOLS){got.put("card",home.inTools(pad.store.awayCount(false),pad.store.awayCount(true),pad.store.temporaryCount()));return;}
+        if(end.kind==NoteStore.Branch.Kind.TEMP){List<NoteStore.Branch> temp=pad.store.asDrawn(pad.store.temporary(System.currentTimeMillis()));pad.store.dress(temp);got.put("card",temp);return;}
+        if(end.kind==NoteStore.Branch.Kind.RECENT){List<NoteStore.Branch> lately=pad.store.asDrawn(pad.store.recent(System.currentTimeMillis()-pad.recentDays()*86_400_000L));pad.store.dress(lately);got.put("card",lately);return;}
+        // Shared with me: the files shown there, kept on Home, and what is still coming to it (decision 94).
+        if(end.kind==NoteStore.Branch.Kind.SHARED){List<NoteStore.Branch> shown=new java.util.ArrayList<>(pad.store.contents(NoteStore.SHARED));shown.addAll(pad.store.coming(NoteStore.SHARED));got.put("card",shown);return;}
         if(end.kind==NoteStore.Branch.Kind.ARCHIVE||end.kind==NoteStore.Branch.Kind.BIN) {
             List<NoteStore.Branch> waiting=pad.store.heldIn(end.kind==NoteStore.Branch.Kind.BIN);
             pad.store.dress(waiting);
@@ -202,8 +235,8 @@ final class DesktopFolder extends JComponent {
         got.put("name",pad.store.collectionName(end.id));
         got.put("tint",pad.store.colourOf(NoteStore.Branch.Kind.COLLECTION,end.id));
         // What it wears, for the face before its name.
-        got.put("icon",pad.store.iconOf(NoteStore.Branch.Kind.COLLECTION,end.id));
-        byte[] image=pad.store.imageOf(NoteStore.Branch.Kind.COLLECTION,end.id);if(image!=null)got.put("image",image);
+        got.put("icon",pad.store.wornIcon(NoteStore.Branch.Kind.COLLECTION,end.id));
+        byte[] image=pad.store.wornImage(NoteStore.Branch.Kind.COLLECTION,end.id);if(image!=null)got.put("image",image);
         got.put("parent",in==null||in.isEmpty()?Things.HOME:in);
         got.put("parentName",in==null||in.isEmpty()?"Home":pad.store.collectionName(in));
     }
@@ -222,8 +255,8 @@ final class DesktopFolder extends JComponent {
         }
         NoteStore.Branch end=last();
         List<NoteStore.Branch> lines;
-        if(amongFavourites()){thing=null;parent=Things.HOME;parentName="Home";lines=home.overflow();}
-        else if(away()) {
+        if(amongFavourites()){thing=null;parent=Things.HOME;parentName="Home";lines=home.allFavourites();}
+        else if(away()||listing()) {
             @SuppressWarnings("unchecked") List<NoteStore.Branch> held=(List<NoteStore.Branch>)got.get("card");
             thing=null;parent=Things.HOME;parentName="Home";lines=held==null?List.of():held;
         }
@@ -244,6 +277,7 @@ final class DesktopFolder extends JComponent {
         boolean same=end.id.equals(shown);shown=end.id;
         if(!same)scroll.getViewport().setViewPosition(new java.awt.Point(0,0));
         grid.fill(lines,lines.isEmpty()?nothingYet(end.kind):null);
+        home.wantPreviews(lines);
         card.repaint();
         // The keyboard to the first icon as it reads, top left, wherever the icons were put.
         if(!same&&naming==null&&!end.id.equals(nameNext))SwingUtilities.invokeLater(()->{DesktopHome.Tile first=grid.first();if(first!=null)first.requestFocusInWindow();else if(plus.isVisible())plus.requestFocusInWindow();});
@@ -254,9 +288,13 @@ final class DesktopFolder extends JComponent {
     private static String nothingYet(NoteStore.Branch.Kind kind) {
         return switch(kind) {
             case FAVOURITES -> "Every favourite is in the dock.";
-            case ARCHIVE -> "Nothing archived. Archive a note or a collection from its menu, or carry it onto the Archive.";
+            case ARCHIVE -> "Nothing archived. Archive a note or a folder from its menu, or carry it onto the Archive.";
             case BIN -> "The bin is empty.";
-            default -> "Nothing in it yet. Click + to add a note or a collection, or drop files here.";
+            case TOOLS -> "Everything is on Home. Right-click the archive, the bin, Temp or Recent to keep it in Tools.";
+            case TEMP -> "Nothing temporary. Carry a note onto Temp, or choose Temporary… in its menu.";
+            case RECENT -> "Nothing opened lately.";
+            case SHARED -> "Nothing shared with you yet. A file somebody shares with you shows here.";
+            default -> "Nothing in it yet. Click + to add a note or a folder, or drop files here.";
         };
     }
 
@@ -272,8 +310,11 @@ final class DesktopFolder extends JComponent {
      * mark; and its ⋯, the collection's own menu. A place's card has its name and nothing to rename or ask - but the
      * bin's ⋯, which empties it.
      */
+    /** The card's ‹ and the collection it is in, where it is inside another: held on while carrying, the card goes up. */
+    JButton back;
+
     private void bar(NoteStore.Branch end) {
-        head.removeAll();
+        head.removeAll();back=null;
         boolean place=Grid.place(end.kind);
         // The two sides as wide as each other, so the name stands in the middle of the card.
         JPanel left=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0)),right=new JPanel(new FlowLayout(FlowLayout.RIGHT,4,0));
@@ -285,21 +326,19 @@ final class DesktopFolder extends JComponent {
             back.setFont(DesktopUi.BODY.deriveFont(13f));back.setForeground(DesktopUi.QUIET);back.setFocusPainted(false);
             back.setToolTipText("Back to "+above+" (Esc)");back.getAccessibleContext().setAccessibleName("Back to "+above);
             back.addActionListener(e->up());left.add(back);
+            this.back=back;
         }
-        if(!place&&thing!=null) {
-            SyncMark mark=pad.marks.get(thing.id);
-            if(mark!=null){NoteStore.Branch about=thing;JLabel ring=DesktopMark.button(mark,20,true,()->pad.markClicked(about,mark));right.add(ring);}
+        if(!place&&thing!=null){SyncMark mark=pad.marks.get(thing.id);
+            if(mark!=null){NoteStore.Branch about=thing;JLabel ring=DesktopMark.button(mark,20,true,()->pad.markClicked(about,mark));right.add(ring);}}
+        // Every card's ⋯, a place's as a folder's at any depth: the very menu a right-click on it opens (the owner, 2026-10-04:
+        // "the Temp folder and all other folders should have the 3 dots menu for contextual settings, just as the right
+        // click"; decision 98). A place's is its menu on Home; a folder's its own.
+        java.util.function.Supplier<JPopupMenu> menu=cardMenu(end);
+        if(menu!=null) {
             JButton more=new JButton(Desktop.dots());
             more.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
-            more.setFocusPainted(false);more.setToolTipText("More");more.getAccessibleContext().setAccessibleName("More for "+DesktopHome.named(thing));
-            NoteStore.Branch about=thing;
-            more.addActionListener(e->pad.thingMenu(about).show(more,0,more.getHeight()));
-            right.add(more);
-        } else if(end.kind==NoteStore.Branch.Kind.BIN) {
-            JButton more=new JButton(Desktop.dots());
-            more.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
-            more.setFocusPainted(false);more.setToolTipText("More");more.getAccessibleContext().setAccessibleName("More for the bin");
-            more.addActionListener(e->{JPopupMenu menu=new JPopupMenu();JMenuItem empty=new JMenuItem("Empty the bin…");empty.addActionListener(a->pad.askEmptyBin());menu.add(empty);menu.show(more,0,more.getHeight());});
+            more.setFocusPainted(false);more.setToolTipText("Menu");more.getAccessibleContext().setAccessibleName("Menu");
+            more.addActionListener(e->menu.get().show(more,0,more.getHeight()));
             right.add(more);
         }
         int side=Math.max(Math.max(left.getPreferredSize().width,right.getPreferredSize().width),120);
@@ -313,13 +352,21 @@ final class DesktopFolder extends JComponent {
             name.setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));name.setToolTipText("Click to rename (F2)");
             name.addMouseListener(new MouseAdapter(){public void mouseClicked(MouseEvent e){if(SwingUtilities.isLeftMouseButton(e))startNaming();}});
         }
-        name.getAccessibleContext().setAccessibleName(place?said:"Collection "+said);
-        if(place||thing==null){head.add(name);head.revalidate();head.repaint();return;}
+        name.getAccessibleContext().setAccessibleName(place?said:"Folder "+said);
+        if(place) {
+            // A place's own face before its name, as a collection's is (the owner, 2026-10-03: "their icon displayed at the top
+            // beside the name just like other assets").
+            JLabel glyph=new JLabel(DesktopHome.faceIcon(()->end,FACE,()->pad.tone));glyph.getAccessibleContext().setAccessibleName("");
+            JPanel named=new JPanel(new GridBagLayout());named.setOpaque(false);
+            GridBagConstraints at=new GridBagConstraints();at.insets=new Insets(0,0,0,8);named.add(glyph,at);at.insets=new Insets(0,0,0,0);named.add(name,at);
+            head.add(named);head.revalidate();head.repaint();return;
+        }
+        if(thing==null){head.add(name);head.revalidate();head.repaint();return;}
         // Before its name, the face it wears on Home, as a note's is before its title: a click chooses another.
         JButton face=new JButton(DesktopHome.faceIcon(()->thing,FACE,()->pad.tone));
         face.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
         face.setMargin(new Insets(2,2,2,2));face.setFocusPainted(false);face.setToolTipText("Change its icon");
-        face.getAccessibleContext().setAccessibleName("The collection's icon: choose another");
+        face.getAccessibleContext().setAccessibleName("The folder's icon: choose another");
         face.addActionListener(e->{if(thing!=null)DesktopIconPicker.open(pad,thing);});
         JPanel named=new JPanel(new GridBagLayout());named.setOpaque(false);
         GridBagConstraints at=new GridBagConstraints();at.insets=new Insets(0,0,0,8);named.add(face,at);at.insets=new Insets(0,0,0,0);named.add(name,at);
@@ -327,8 +374,14 @@ final class DesktopFolder extends JComponent {
         head.revalidate();head.repaint();
     }
 
+    /** The menu the card's ⋯ opens, the one a right-click on what the card is opens; null where there is none. */
+    java.util.function.Supplier<JPopupMenu> cardMenu(NoteStore.Branch end) {
+        if(!Grid.place(end.kind)){NoteStore.Branch about=thing;return about==null?null:()->pad.thingMenu(about);}
+        return pad.home==null?null:()->pad.home.menuFor(end);
+    }
+
     /** A colour chosen for the collection while its card is up: the card takes it at once, as the page does. */
-    void painted(){card.repaint();}
+    void painted(){if(card!=null)card.repaint();}
 
     /** Home darker while a thing carried out of the card would come up a level there. */
     void lit(boolean on){if(lit!=on){lit=on;repaint();}}
@@ -339,7 +392,7 @@ final class DesktopFolder extends JComponent {
     void startNaming() {
         if(naming!=null||thing==null||listing())return;
         JTextField field=new JTextField(thing.name);field.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,18f));field.setHorizontalAlignment(SwingConstants.CENTER);
-        field.getAccessibleContext().setAccessibleName("Name of the collection");field.setToolTipText("Type a name, then Enter");
+        field.getAccessibleContext().setAccessibleName("Name of the folder");field.setToolTipText("Type a name, then Enter");
         naming=field;
         Component was=((BorderLayout)head.getLayout()).getLayoutComponent(BorderLayout.CENTER);if(was!=null)head.remove(was);
         JPanel holder=new JPanel(new GridBagLayout());holder.setOpaque(false);
@@ -350,7 +403,7 @@ final class DesktopFolder extends JComponent {
         field.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke("ESCAPE"),"cancel");
         field.getActionMap().put("cancel",new AbstractAction(){public void actionPerformed(ActionEvent e){finishNaming(false);}});
         field.addFocusListener(new FocusAdapter(){public void focusLost(FocusEvent e){if(!e.isTemporary())finishNaming(true);}});
-        pad.status.setToolTipText(null);pad.status.setText("Type a name for the collection, then Enter");
+        pad.status.setToolTipText(null);pad.status.setText("Type a name for the folder, then Enter");
         SwingUtilities.invokeLater(()->{field.requestFocusInWindow();field.selectAll();});
     }
 

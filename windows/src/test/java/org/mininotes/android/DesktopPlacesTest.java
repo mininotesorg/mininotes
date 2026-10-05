@@ -33,6 +33,9 @@ public class DesktopPlacesTest {
             await(()->pad.page.isEditable()&&pad.store.latest()!=null);settle(pad);
             NoteStore store=pad.store;
             NoteStore.Shelf kitchen=store.addCollection("Kitchen");store.addCollection("Garden");
+            // Temp off Home and the Recent list off, so the grid is the one this test was written on: the archive and the bin
+            // beside the things, as wide as the window (the list down the right takes width once anything was opened lately).
+            SwingUtilities.invokeAndWait(()->{pad.setOpenListWanted(false);pad.setOnHome(NoteStore.TEMP,false);});
             for(String title:new String[]{"Shopping","Ideas","Bills"})note(store,Things.HOME,title);
             for(String title:new String[]{"Soup","Bread","Cake"})note(store,kitchen.id,title);
             SwingUtilities.invokeAndWait(()->{pad.goHome();pad.refresh();});settle(pad);
@@ -115,20 +118,21 @@ public class DesktopPlacesTest {
             SwingUtilities.invokeAndWait(()->{assertTrue(pad.home.folder.isOpen());assertEquals(card.cellBounds(1,2),tile(card,"Soup").getBounds());});
             shoot(pad.frame,"19f-card-gap");
 
-            // Bread out of the card onto the dimmed Home, beside the card, over an empty cell of Home: up a level, into it.
+            // Bread out of the card onto Home round it, over an empty cell of Home: onto Home, in that cell.
             int[] free=onEdt(()->{for(int row=1;row<8;row++)if(home.in(row,0)==null)return new int[]{row,0};return null;});
             assertNotNull(free);
             Point over=onEdt(()->{
                 Rectangle r=home.cellBounds(free[0],free[1]);Point p=new Point(0,r.y+r.height/2);
                 SwingUtilities.convertPointToScreen(p,home);
                 Point desk=new Point(0,0);SwingUtilities.convertPointToScreen(desk,pad.home.folder);
-                return new Point(desk.x+12,p.y);
+                // Past the window's edge, where holding turns the page, and short of the card.
+                return new Point(desk.x+38,p.y);
             });
             SwingUtilities.invokeAndWait(()->{
-                assertTrue("beside the card",!pad.home.folder.card.getBounds().contains(12,over.y-pad.home.folder.getLocationOnScreen().y));
+                assertTrue("beside the card",!pad.home.folder.card.getBounds().contains(38,over.y-pad.home.folder.getLocationOnScreen().y));
                 carryAt(pad,tile(card,"Bread"),over);
                 assertEquals(home.cellBounds(free[0],free[1]),home.landing);
-                assertEquals("Let go to move it up, into Home, here  ·  Esc cancels",pad.status.getText());
+                assertEquals("Let go to move it into Home, here  ·  Esc cancels",pad.status.getText());
             });
             Thread.sleep(200);SwingUtilities.invokeAndWait(pad.frame::validate);shoot(pad.frame,"19g-card-up-to-home");
             SwingUtilities.invokeAndWait(()->pad.home.carry.release(new MouseEvent(tile(card,"Bread"),MouseEvent.MOUSE_RELEASED,System.currentTimeMillis(),0,0,0,over.x,over.y,1,false,MouseEvent.BUTTON1)));
@@ -173,7 +177,7 @@ public class DesktopPlacesTest {
             key(pad,()->tile(home,"Ideas"),KeyEvent.VK_DOWN,InputEvent.CTRL_DOWN_MASK);settle(pad);
             SwingUtilities.invokeAndWait(()->{
                 assertArrayEquals("the Favourites icon stays",favouritesAt,home.drawn().get(NoteStore.FAVOURITES));
-                assertNull("the cell Ideas left stays empty",home.in(ideasWas[0],ideasWas[1]));
+                DesktopHome.Tile there=home.in(ideasWas[0],ideasWas[1]);assertNull("the cell Ideas left stays empty, not "+(there==null?"":there.thing.name+" "+there.thing.kind),there);
                 assertEquals(NoteStore.Branch.Kind.FAVOURITES,pad.home.grid.tiles.get(0).thing.kind);
             });
             assertEquals(Layout.cell(favouritesAt[0],favouritesAt[1]),pad.context.getSharedPreferences("settings",0).getLong(NoteStore.FAVOURITES+"Cell",Layout.NONE));
@@ -181,6 +185,68 @@ public class DesktopPlacesTest {
             NoteStore.Branch sixthAgain=sixthLine;
             SwingUtilities.invokeAndWait(()->pad.favourite(sixthAgain,true));settle(pad);
             SwingUtilities.invokeAndWait(()->assertTrue(dockIds(pad).contains(sixth)));
+        } finally {SwingUtilities.invokeAndWait(()->pad.shutdown(false));await(()->!pad.frame.isDisplayable());}
+    }
+
+    /**
+     * The owner, 2026-10-03: "when we drag a note we have to be able to put it at any level of grouping we have, in both
+     * directions". Held on a collection it opens, held on a collection in the card the card goes a level in, let go in an
+     * empty cell it is there; held on the card's name the card goes up, and past the top Home takes it.
+     */
+    @Test public void aCarriedNoteGoesInAndOutAtAnyDepth() throws Exception {
+        Path folder=temp.newFolder("deep").toPath();Desktop[] app=new Desktop[1];
+        SwingUtilities.invokeAndWait(()->{try{app[0]=new Desktop(folder,true);app[0].show();}catch(Exception e){throw new RuntimeException(e);}});
+        Desktop pad=app[0];
+        try {
+            await(()->pad.page.isEditable()&&pad.store.latest()!=null);settle(pad);
+            NoteStore store=pad.store;
+            NoteStore.Shelf kitchen=store.addCollection("Kitchen"),pantry=store.addCollection("Pantry");
+            store.moveInto(NoteStore.Branch.Kind.COLLECTION,pantry.id,kitchen.id);
+            note(store,kitchen.id,"Soup");
+            NoteStore.Note shopping=note(store,Things.HOME,"Shopping");
+            SwingUtilities.invokeAndWait(()->{pad.goHome();pad.refresh();});settle(pad);
+            DesktopHome.Icons home=pad.home.grid,card=pad.home.folder.grid;
+            DesktopHome.Tile carried=onEdt(()->tile(home,"Shopping"));
+
+            // Held on Kitchen: its card opens, with the note still in hand.
+            SwingUtilities.invokeAndWait(()->{DesktopHome.Tile k=tile(home,"Kitchen");carry(pad,carried,k,k.getWidth()/2,k.getHeight()/2);});
+            Thread.sleep(900);settle(pad);
+            SwingUtilities.invokeAndWait(()->{assertTrue(pad.home.carry.carrying());assertTrue(pad.home.folder.isOpen());assertEquals(kitchen.id,pad.home.folder.id());});
+            // Held on Pantry inside it: a level in.
+            SwingUtilities.invokeAndWait(()->{DesktopHome.Tile p=tile(card,"Pantry");carryTo(pad,p,p.getWidth()/2,p.getHeight()/2);});
+            Thread.sleep(900);settle(pad);
+            SwingUtilities.invokeAndWait(()->assertEquals("kitchen "+kitchen.id+" said "+pad.status.getText()+" aside "+pad.home.folder.aside()+" depth "+pad.home.folder.depth(),pantry.id,pad.home.folder.id()));
+            // Let go in an empty cell there: in Pantry, in that cell.
+            SwingUtilities.invokeAndWait(()->{Rectangle r=card.cellBounds(0,2);carryTo(pad,card,r.x+r.width/2,r.y+40);
+                assertEquals(r,card.landing);assertTrue(pad.status.getText(),pad.status.getText().startsWith("Let go to move it into “Pantry”, here"));
+                letGo(pad,card,r.x+r.width/2,r.y+40);});
+            settle(pad);
+            NoteStore.Branch inPantry=byName(onEdt(()->store.contents(pantry.id))).get("Shopping");
+            assertNotNull("in Pantry",inPantry);assertEquals(Layout.cell(0,2),inPantry.cell);
+            assertNull("not on Home",byName(onEdt(()->store.contents(Things.HOME))).get("Shopping"));
+
+            // And out again: held on ‹ Kitchen, up to Kitchen; out of the card, Home takes it.
+            DesktopHome.Tile back=onEdt(()->tile(card,"Shopping"));
+            SwingUtilities.invokeAndWait(()->{JComponent up=pad.home.folder.back;assertNotNull("a ‹ in a card inside another",up);carry(pad,back,up,up.getWidth()/2,up.getHeight()/2);});
+            Thread.sleep(900);settle(pad);
+            SwingUtilities.invokeAndWait(()->{assertEquals(kitchen.id,pad.home.folder.id());assertNull("no ‹ at the top",pad.home.folder.back);});
+            // The name at the top level is not a way up: held there, the card stays.
+            SwingUtilities.invokeAndWait(()->{JComponent head=pad.home.folder.head;carryTo(pad,head,head.getWidth()/2,head.getHeight()/2);});
+            Thread.sleep(900);settle(pad);
+            SwingUtilities.invokeAndWait(()->{assertFalse(pad.home.folder.aside());assertEquals(kitchen.id,pad.home.folder.id());});
+            // An empty cell of Home that the card does not cover.
+            int[] free=onEdt(()->{for(int row=0;row<8;row++)for(int col=0;col<home.columns();col++)if(home.in(row,col)==null){
+                Rectangle r=home.cellBounds(row,col);Point p=new Point(r.x+r.width/2,r.y+40);SwingUtilities.convertPointToScreen(p,home);
+                Point q=new Point(p);SwingUtilities.convertPointFromScreen(q,pad.home.folder.card);
+                if(!new Rectangle(pad.home.folder.card.getSize()).contains(q)&&home.getVisibleRect().contains(r.x+r.width/2,r.y+40))return new int[]{row,col};}return null;});
+            assertNotNull("an empty cell beside the card",free);
+            SwingUtilities.invokeAndWait(()->{Rectangle r=home.cellBounds(free[0],free[1]);carryTo(pad,home,r.x+r.width/2,r.y+40);
+                assertTrue("out of the card, it stepped aside",pad.home.folder.aside());letGo(pad,home,r.x+r.width/2,r.y+40);});
+            settle(pad);
+            NoteStore.Branch onHome=byName(onEdt(()->store.contents(Things.HOME))).get("Shopping");
+            assertNotNull("back on Home",onHome);assertEquals(shopping.id,onHome.id);
+            assertEquals(Layout.cell(free[0],free[1]),onHome.cell);
+            SwingUtilities.invokeAndWait(()->assertFalse("the card went with it",pad.home.folder.isOpen()));
         } finally {SwingUtilities.invokeAndWait(()->pad.shutdown(false));await(()->!pad.frame.isDisplayable());}
     }
 

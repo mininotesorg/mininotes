@@ -12,6 +12,7 @@ import android.view.DragEvent;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.GridLayout;
 import android.widget.LinearLayout;
@@ -710,9 +711,12 @@ final class HomeScreen {
         @Override protected void onDraw(android.graphics.Canvas canvas) {
             if(homeLaid==null||homeLaid.spots==null)return;
             java.util.Set<List<Integer>> pages=Layout.dotted(homeLaid.spots,pageX,pageY);
-            if(pages.size()<=1)return;
+            if(pages.size()<=1){fitRows(1);return;}
             int minX=0,maxX=0,minY=0,maxY=0;
             for(List<Integer> one:pages){minX=Math.min(minX,one.get(0));maxX=Math.max(maxX,one.get(0));minY=Math.min(minY,one.get(1));maxY=Math.max(maxY,one.get(1));}
+            // As tall as its rows of dots. It was one row tall, so with a page above and one below only the middle row
+            // was inside it and the rest were cut off - the owner saw one dot left while carrying a thing up.
+            if(fitRows(maxY-minY+1))return;
             float step=a.dp(12);float x0=(getWidth()-(maxX-minX)*step)/2f,y0=getHeight()/2f-(maxY-minY)*step/2f;
             paint.setColor(MainActivity.mix(a.INK,a.PAPER,0.6f));
             for(List<Integer> one:pages)canvas.drawCircle(x0+(one.get(0)-minX)*step,y0+(one.get(1)-minY)*step,a.dp(3),paint);
@@ -722,6 +726,15 @@ final class HomeScreen {
             seenX=Math.max(minX,Math.min(maxX,seenX));seenY=Math.max(minY,Math.min(maxY,seenY));
             paint.setColor(a.ACCENT);
             canvas.drawCircle(x0+(seenX-minX)*step,y0+(seenY-minY)*step,a.dp(4),paint);
+        }
+        /** Made tall enough for so many rows of dots, growing up from the foot. Whether it changed, and is to be drawn again. */
+        private boolean fitRows(int rows) {
+            android.view.ViewGroup.LayoutParams now=getLayoutParams();
+            int tall=a.dp(18)+Math.max(0,rows-1)*a.dp(12);
+            if(now==null||now.height==tall)return false;
+            now.height=tall;
+            post(this::requestLayout);
+            return true;
         }
     }
 
@@ -766,8 +779,9 @@ final class HomeScreen {
         plus.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x40FFFFFF),round,null));
         plus.setElevation(a.dp(6));
         plus.setContentDescription("New");
-        plus.setOnClickListener(v->a.heldMenu(v,null,"Note",(Runnable)()->newNote(where.get()),"Collection",(Runnable)()->newCollection(where.get()),
-            null,"From another device…",(Runnable)a::addFromSomeone));
+        // And files from this device, photos and anything else, wherever there is a + (decision 87).
+        plus.setOnClickListener(v->a.heldMenu(v,null,"Note",(Runnable)()->newNote(where.get()),"Folder",(Runnable)()->newCollection(where.get()),
+            "From this device…",(Runnable)()->a.fromThisDevice(where.get()),null,"From another device…",(Runnable)a::addFromSomeone));
         return plus;
     }
 
@@ -790,7 +804,7 @@ final class HomeScreen {
         field.setColor(a.CARD);field.setCornerRadius(a.dp(24));field.setStroke(Math.max(1,a.dp(1)),a.LINE);
         search.setBackground(field);
         search.setForeground(a.getDrawable(a.touchFeedback()));
-        search.setContentDescription("Search notes, collections and files");
+        search.setContentDescription("Search notes, folders and files");
         search.setOnClickListener(v->a.searching());
         return search;
     }
@@ -816,17 +830,23 @@ final class HomeScreen {
         stale=false;
         final int read=++reads;
         final List<MainActivity.Step> path=new ArrayList<>(a.trail);
-        final boolean away=a.awayOnHome;
+        final boolean away=true;
         a.background.submit(()->{
             // The icons' set is read here the first time, off the screen's thread, before a face is drawn with it.
             Icons.all();
             Map<String,Object> got=new HashMap<>();
             got.put("home",a.store.contents(Things.HOME));
-            got.put("beyond",a.store.favouritesBeyondDock());
+            got.put("beyond",a.store.favouritesAll());
             got.put("dock",a.store.dock());
             got.put("colour",a.libraryColour());
             // How many things wait in the archive and the bin, for the count on each (decision 41).
-            if(away){got.put("archived",a.store.awayCount(false));got.put("binned",a.store.awayCount(true));}
+            // What is temporary and whose time has come goes first, so it is never drawn once more (decision 71).
+            a.store.expire(System.currentTimeMillis());
+            got.put("archived",a.store.awayCount(false));got.put("binned",a.store.awayCount(true));got.put("temp",a.store.temporaryCount());
+            // What a code accepted here is bringing, standing on Home until it comes (decision 73).
+            got.put("waiting",a.store.waitingOnHome());
+            // And what is coming to Home on its own, where Settings shows files shared with you there (decision 94).
+            got.put("coming",a.store.coming(Things.HOME));
             if(path.size()>1)folder.read(path,got);
             return got;
         },got->{
@@ -837,8 +857,14 @@ final class HomeScreen {
             @SuppressWarnings("unchecked") List<NoteStore.Branch> beyond=(List<NoteStore.Branch>)got.get("beyond");
             @SuppressWarnings("unchecked") List<NoteStore.Branch> docked=(List<NoteStore.Branch>)got.get("dock");
             List<NoteStore.Branch> places=new ArrayList<>();
-            if(!beyond.isEmpty())places.add(favourites());
-            if(away){places.add(archive((Integer)got.get("archived")));places.add(bin((Integer)got.get("binned")));}
+            // Home's places, each on Home unless switched off in Home's menu (decision 78); Favourites while there is one.
+            if(!beyond.isEmpty()&&a.onHome(NoteStore.FAVOURITES))places.add(favourites());
+            for(NoteStore.Branch one:new NoteStore.Branch[]{recent(),temp((Integer)got.get("temp")),shared(),
+                    archive((Integer)got.get("archived")),bin((Integer)got.get("binned"))})if(a.onHome(one.id))places.add(one);
+            @SuppressWarnings("unchecked") List<NoteStore.Branch> waiting=(List<NoteStore.Branch>)got.get("waiting");
+            if(waiting!=null)places.addAll(waiting);
+            @SuppressWarnings("unchecked") List<NoteStore.Branch> coming=(List<NoteStore.Branch>)got.get("coming");
+            if(coming!=null)places.addAll(coming);
             fill(lines,places);
             placeMade();
             // The page in view gone empty - its last icon moved or put away - is gone: the main page instead.
@@ -848,6 +874,44 @@ final class HomeScreen {
             if(path.size()>1&&folder.isOpen())folder.fill(path,got);
             if(homeMark!=null)a.askOwed(homeMark,home());
         },e->a.alert(MainActivity.READ_FAILED));
+    }
+
+    /**
+     * Something a code accepted here is bringing, tapped: who it is waited for from, and the one thing to do, to stop
+     * waiting. It turns into the thing itself when it comes.
+     */
+    private void waiting(final NoteStore.Branch line) {
+        // A file shared with you, still being fetched (decision 94): nothing to do but know it is coming.
+        if(line.id.startsWith(NoteStore.COMING)) {
+            a.new Box().setTitle(line.name).setMessage(line.detail+". It opens here once all of it has come.").setPositiveButton("OK",(d,w)->{}).show();
+            return;
+        }
+        final String address=line.id.startsWith("waiting:")?line.id.substring(8):line.id;
+        a.new Box().setTitle(line.name)
+            .setMessage(line.detail+". It comes when their phone is next open, and takes this place on Home.")
+            .setPositiveButton("Keep waiting",(d,w)->{})
+            .setNeutralButton("Stop waiting",(d,w)->a.background.submit(()->{a.store.stopWaiting(address);return null;},done->refresh(),e->a.alert(MainActivity.READ_FAILED)))
+            .show();
+    }
+
+    /** Over the Favourites card while carrying one of them: the favourite under the finger is ringed, the place it goes before. */
+    private void reorderOver(float x,float y) {
+        aim(null,null);
+        int[] at=cellAt(folder.grid,folder.laid,x,y);
+        String there=at==null?null:Layout.at(folder.laid.drawn,at[0],at[1]);
+        a.markOnto(there==null||there.equals(a.dragging.id)?null:folder.laid.icons.get(there));
+    }
+
+    /** One favourite put before another in their one order, or last; the dock's places are the first of it. */
+    private void reorder(final NoteStore.Branch carried,final NoteStore.Branch before) {
+        final List<NoteStore.Branch> order=new ArrayList<>(folder.laid.lines);
+        order.removeIf(one->one.id.equals(carried.id));
+        int at=order.size();
+        if(before!=null)for(int i=0;i<order.size();i++)if(order.get(i).id.equals(before.id)){at=i;break;}
+        order.add(at,carried);
+        final int place=at+1;
+        a.background.submit(()->{a.store.orderFavourites(order);return null;},done->{a.toast(place<=Things.DOCK_PHONE?"In the dock, place "+place:"Favourite "+place);refresh();},
+            e->{a.alert("Could not put that there. Nothing was changed.");refresh();});
     }
 
     /** Whether a name is being typed somewhere on Home: redrawn now, the field would be taken away mid-word. */
@@ -860,7 +924,7 @@ final class HomeScreen {
     private void fill(List<NoteStore.Branch> lines,List<NoteStore.Branch> places) {
         final int kept=gridScroll.getScrollY();
         homeLaid=lay(grid,lines,places,a.getResources().getDisplayMetrics().widthPixels,Where.HOME,
-            gridScroll.getHeight(),"Nothing here yet. Tap + to make a note or a collection.");
+            gridScroll.getHeight(),"Nothing here yet. Tap + to make a note or a folder.");
         buildPages();
         // Scrolled back to where it was once the rows are laid out again: an arrival is not a reason to lose your place.
         gridScroll.post(()->gridScroll.scrollTo(0,kept));
@@ -1014,7 +1078,30 @@ final class HomeScreen {
     }
 
     /** Home's places, by id: each keeps its cell in this phone's settings - "favouritesCell", "archiveCell", "binCell". */
-    private static final String[] PLACES={NoteStore.FAVOURITES,NoteStore.ARCHIVE,NoteStore.BIN};
+    private static final String[] PLACES={NoteStore.FAVOURITES,NoteStore.ARCHIVE,NoteStore.BIN,NoteStore.TOOLS,NoteStore.TEMP,NoteStore.RECENT,NoteStore.OPEN,NoteStore.SHARED};
+
+    /**
+     * Whether a place is kept in Tools rather than on Home itself (decision 72): yes until it is carried out onto Home, and
+     * again once it is let go on Tools. Kept on this phone, as every cell is.
+     */
+    boolean inTools(String id) {
+        try{return a.getSharedPreferences("settings",android.content.Context.MODE_PRIVATE).getBoolean(id+"InTools",true);}
+        catch(ClassCastException unlike){return true;}
+    }
+    private void keepInTools(String id,boolean in){a.getSharedPreferences("settings",android.content.Context.MODE_PRIVATE).edit().putBoolean(id+"InTools",in).apply();}
+
+    /** What Tools holds, as its card lists it: those of the four kept in it, with the counts each says. */
+    List<NoteStore.Branch> inTools(int archived,int binned,int temporary) {
+        List<NoteStore.Branch> held=new ArrayList<>();
+        for(NoteStore.Branch one:new NoteStore.Branch[]{archive(archived),bin(binned),temp(temporary),recent()})if(inTools(one.id))held.add(one);
+        return held;
+    }
+
+    /** One of the four kept in Tools, or shown on Home itself, from its menu. */
+    void toolsOrHome(String id,boolean in){keepInTools(id,in);if(!in&&folder.isOpen())folder.close();refresh();}
+
+    /** One of Home's places opened as a card, from a menu as from its icon. */
+    void openPlace(NoteStore.Branch place){folder.openPlace(place);}
 
     /** Where a place was pinned on Home at the last move there, or none. Kept on this phone, as every cell is. */
     private int placeCell(String id) {
@@ -1153,7 +1240,7 @@ final class HomeScreen {
         FrameLayout over=new FrameLayout(a);
         over.addView(picture,new FrameLayout.LayoutParams(face,face));
         int badge=Math.max(a.dp(16),face/4);
-        View mark=branch.kind==NoteStore.Branch.Kind.FILE?null:a.shareBadge(branch,badge);
+        View mark=a.shareBadge(branch,badge);
         if(mark!=null) {
             FrameLayout.LayoutParams corner=new FrameLayout.LayoutParams(badge,badge,Gravity.TOP|Gravity.END);
             corner.setMargins(0,-badge/4,-badge/4,0);
@@ -1163,6 +1250,13 @@ final class HomeScreen {
             FrameLayout.LayoutParams other=new FrameLayout.LayoutParams(badge,badge,Gravity.TOP|Gravity.START);
             other.setMargins(-badge/4,-badge/4,0,0);
             over.addView(a.star(badge),other);
+        }
+        // Temporary: a timer on the corner under the star's, as the star says a favourite (decision 93); where things are
+        // only listed, as among the favourites, it is said by the line under it instead.
+        if(starred&&branch.temporary) {
+            FrameLayout.LayoutParams low=new FrameLayout.LayoutParams(badge,badge,Gravity.BOTTOM|Gravity.START);
+            low.setMargins(-badge/4,0,0,-badge/4);
+            over.addView(a.timer(badge),low);
         }
         if(branch.kind==NoteStore.Branch.Kind.FILE&&branch.fresh) {
             TextView fresh=a.label("new",MainActivity.QUIET,a.PAPER);
@@ -1174,12 +1268,42 @@ final class HomeScreen {
             corner.setMargins(0,-a.dp(6),-a.dp(8),0);
             over.addView(fresh,corner);
         }
+        // Shared on its own and still going up: said on its face, under where its mark is, until its bytes are up and its
+        // sleeve has gone (decision 94). Quiet, as a count is: it is busy, not wrong.
+        if(branch.kind==NoteStore.Branch.Kind.FILE&&branch.uploading) {
+            TextView going=a.label("uploading",MainActivity.QUIET,a.INK);
+            going.setIncludeFontPadding(false);going.setPadding(a.dp(6),a.dp(2),a.dp(6),a.dp(3));
+            GradientDrawable pill=new GradientDrawable();pill.setColor(a.PAPER);pill.setCornerRadius(a.dp(10));
+            pill.setStroke(Math.max(1,a.dp(1)),a.LINE);
+            going.setBackground(pill);
+            going.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            FrameLayout.LayoutParams low=new FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);
+            low.setMargins(0,0,0,-a.dp(8));
+            over.addView(going,low);
+        }
         over.setClipChildren(false);over.setClipToPadding(false);
         return over;
     }
 
-    /** A file's face: what kind of file it is, in its own letters, on a pale square, as its card under a note has it. */
+    /**
+     * A file's face: a picture shows itself (decision 88), read on the worker and put in when it is ready; any other file,
+     * or a picture not read yet, what kind of file it is, in its own letters, on a pale square, as its card under a note has it.
+     */
     private View fileFace(NoteStore.Branch file,int face) {
+        if(!MainActivity.pictureNamed(file.name))return kindFace(file,face);
+        final FrameLayout holder=new FrameLayout(a);
+        android.graphics.Bitmap known=a.previewKnown(file.id);
+        if(known!=null){holder.addView(pictureFace(known,face),new FrameLayout.LayoutParams(face,face));return holder;}
+        holder.addView(kindFace(file,face),new FrameLayout.LayoutParams(face,face));
+        a.preview(file.id,made->{holder.removeAllViews();holder.addView(pictureFace(made,face),new FrameLayout.LayoutParams(face,face));});
+        return holder;
+    }
+    private View pictureFace(android.graphics.Bitmap picture,int face) {
+        View shown=new View(a);shown.setBackground(IconFace.picture(a,picture));
+        shown.setMinimumWidth(face);shown.setMinimumHeight(face);shown.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        return shown;
+    }
+    private View kindFace(NoteStore.Branch file,int face) {
         int dot=file.name.lastIndexOf('.');
         String kind=dot<0||dot==file.name.length()-1?"FILE":file.name.substring(dot+1).toUpperCase(java.util.Locale.ROOT);
         TextView tile=a.label(kind.length()>4?kind.substring(0,4):kind,MainActivity.QUIET,a.ACCENT);
@@ -1223,15 +1347,20 @@ final class HomeScreen {
      * quiet, since a full bin is not news - and nothing when it is empty.
      */
     View placeFace(NoteStore.Branch place,int face) {
-        if(place.kind==NoteStore.Branch.Kind.FAVOURITES)return starFace(face);
+        // In the colour chosen for it, washed and edged as a collection's square is (decision 81).
+        int colour=a.placeColour(place.id);
+        if(place.kind==NoteStore.Branch.Kind.FAVOURITES)return starFace(face,colour);
         FrameLayout over=new FrameLayout(a);
         View square=new View(a);
-        square.setBackground(a.edged(a.CARD,Tint.NONE,false));
+        // What is on its way is not a place, and keeps the one edge a thing has.
+        square.setBackground(placeSquare(colour,place.kind!=NoteStore.Branch.Kind.WAITING));
         over.addView(square,new FrameLayout.LayoutParams(face,face));
         View glyph=new View(a);
-        glyph.setBackground(IconFace.bare(a,place.kind==NoteStore.Branch.Kind.BIN?BIN_ICON:ARCHIVE_ICON,a.INK,0));
+        glyph.setBackground(IconFace.bare(a,placeIcon(place.kind),Looks.ink(colour,a.darkPaper(),a.INK),0));
         over.addView(glyph,new FrameLayout.LayoutParams(face,face));
-        int count=a.countIn(place);
+        // How many wait in the archive, the bin and Temp; nothing counted on the others, whose words are not a count.
+        boolean counted=place.kind==NoteStore.Branch.Kind.ARCHIVE||place.kind==NoteStore.Branch.Kind.BIN||place.kind==NoteStore.Branch.Kind.TEMP;
+        int count=counted?a.countIn(place):0;
         if(count>0) {
             TextView many=a.label(count>99?"99+":String.valueOf(count),MainActivity.QUIET,a.INK);
             many.setIncludeFontPadding(false);many.setGravity(Gravity.CENTER);
@@ -1248,14 +1377,31 @@ final class HomeScreen {
         return over;
     }
 
+    /**
+     * A place's square: the card's grey with none chosen, else washed in its colour and edged in it, as a folder's; and in
+     * its own frame (decision 94, the owner: "let them all have something that differentiates them"), a thin ring inside
+     * the edge, in the edge's colour, so a place is told from a folder of the owner's at a glance.
+     */
+    private android.graphics.drawable.Drawable placeSquare(int colour,boolean place) {
+        android.graphics.drawable.Drawable edge=a.edged(Tint.known(colour)?Tint.over(colour,a.CARD,a.wash(0.22f,0.92f),a.darkPaper()):a.CARD,colour,false);
+        if(!place)return edge;
+        GradientDrawable ring=new GradientDrawable();ring.setColor(0);ring.setCornerRadius(a.dp(10));
+        ring.setStroke(Math.max(1,a.dp(1)),Tint.known(colour)?Tint.of(colour,a.darkPaper()):a.LINE);
+        android.graphics.drawable.LayerDrawable framed=new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{edge,ring});
+        int in=a.dp(Tint.known(colour)?6:4);
+        framed.setLayerInset(1,in,in,in,in);
+        return framed;
+    }
+
     /** The archive's and the bin's icons in the Lucide set (decision 41; the set's "trash" is the bin with lines in it). */
     static final String ARCHIVE_ICON="archive",BIN_ICON="trash";
 
     /** A star on an outlined square: the Favourites collection's face, here and in the dock. */
-    View starFace(int face) {
+    View starFace(int face){return starFace(face,Tint.NONE);}
+    View starFace(int face,int colour) {
         LinearLayout box=a.column();box.setGravity(Gravity.CENTER);
-        box.setBackground(a.edged(a.CARD,Tint.NONE,false));
-        TextView star=a.label("★",MainActivity.QUIET,a.INK);
+        box.setBackground(placeSquare(colour,true));
+        TextView star=a.label("★",MainActivity.QUIET,Looks.ink(colour,a.darkPaper(),a.INK));
         star.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,face*0.42f);
         star.setIncludeFontPadding(false);star.setGravity(Gravity.CENTER);
         box.addView(star,new LinearLayout.LayoutParams(-1,-1));
@@ -1269,6 +1415,27 @@ final class HomeScreen {
     }
 
     /** The archive, as Home shows it, with how many things are in it - which is all its line says. */
+    /** Each place's glyph from the Lucide set: Tools a toolbox, Temp a timer, Recent a clock, something on its way an hourglass. */
+    static String placeIcon(NoteStore.Branch.Kind kind) {
+        switch(kind) {
+            case BIN: return BIN_ICON;
+            case TOOLS: return "toolbox";
+            case TEMP: return "timer";
+            case RECENT: return "clock-3";
+            case OPEN: return "layers";
+            case WAITING: return "hourglass";
+            case SHARED: return "inbox";
+            default: return ARCHIVE_ICON;
+        }
+    }
+    /** Tools, holding the archive, the bin, Temp and Recent until they are carried out (decision 72). */
+    static NoteStore.Branch tools(){return place(NoteStore.Branch.Kind.TOOLS,NoteStore.TOOLS,"Tools",0);}
+    /** Temp, with how many things in it are to be gone (decision 71). */
+    static NoteStore.Branch temp(int count){return place(NoteStore.Branch.Kind.TEMP,NoteStore.TEMP,"Temp",count);}
+    /** Recent: what was opened lately (decision 72). */
+    static NoteStore.Branch recent(){return place(NoteStore.Branch.Kind.RECENT,NoteStore.RECENT,"Recent",0);}
+    /** Shared with me: where files shared with you on their own show (decision 94). */
+    static NoteStore.Branch shared(){return place(NoteStore.Branch.Kind.SHARED,NoteStore.SHARED,NoteStore.SHARED_WITH_ME,0);}
     static NoteStore.Branch archive(int count){return place(NoteStore.Branch.Kind.ARCHIVE,NoteStore.ARCHIVE,"Archive",count);}
     /** The bin, as Home shows it, with how many things are in it. */
     static NoteStore.Branch bin(int count){return place(NoteStore.Branch.Kind.BIN,NoteStore.BIN,"Bin",count);}
@@ -1282,11 +1449,17 @@ final class HomeScreen {
             case FAVOURITES: return "Open Favourites, the favourites that are not in the dock";
             case ARCHIVE: return "Open the archive, "+(branch.detail.isEmpty()?"empty":branch.detail);
             case BIN: return "Open the bin, "+(branch.detail.isEmpty()?"empty":branch.detail);
+            case TOOLS: return "Open Tools: the archive, the bin, Temp and Recent";
+            case TEMP: return "Open Temp, "+(branch.detail.isEmpty()?"empty":branch.detail+" to be gone");
+            case RECENT: return "Open Recent, what was opened lately";
+            case SHARED: return "Open Shared with me, the files people share with you";
+            case OPEN: return "What is open, "+(branch.detail.isEmpty()?"nothing":branch.detail);
+            case WAITING: return branch.name+": "+branch.detail;
             default:
         }
         String open=branch.kind==NoteStore.Branch.Kind.FILE?"Open the file "+branch.name+", "+branch.detail
-            :branch.holds?"Open the collection "+branch.name:"Open the note "+branch.name;
-        return open+(branch.kept?", a favourite":"")+(branch.fresh?", new":"");
+            :branch.holds?"Open the folder "+branch.name:"Open the note "+branch.name;
+        return open+(branch.kept?", a favourite":"")+(branch.temporary?", temporary":"")+(branch.fresh?", new":"")+(branch.uploading?", uploading":"");
     }
 
     /**
@@ -1298,7 +1471,8 @@ final class HomeScreen {
             case PAGE: openNote(branch.id);return;
             case FILE: openFile(branch);return;
             case FAVOURITES: folder.openFavourites();return;
-            case ARCHIVE: case BIN: folder.openPlace(branch);return;
+            case ARCHIVE: case BIN: case TOOLS: case TEMP: case RECENT: case OPEN: case SHARED: folder.openPlace(branch);return;
+            case WAITING: waiting(branch);return;
             case COLLECTION: case BOOK:
                 if(where==Where.CARD)folder.into(branch);
                 // A favourite opens where it really lives, with the way back being the way back from there.
@@ -1349,11 +1523,14 @@ final class HomeScreen {
     // ---- making ------------------------------------------------------------------------------------------------
 
     /** A new note where the + was pressed - on Home, or in the pop-up's collection - opened at once to be written on. */
-    void newNote(final String where) {
+    void newNote(final String asked) {
+        // From a place's +: made on Home, and put in the place when it is first written down (decision 87).
+        final String place=MainActivity.takesNew(asked)?asked:null,where=place!=null?Things.HOME:asked;
         a.background.submit(()->Things.HOME.equals(where)?Boolean.TRUE:a.store.mayWriteIn(NoteStore.Branch.Kind.COLLECTION,where),may->{
-            if(Boolean.FALSE.equals(may)){a.alert("This collection is read only here. Ask whoever shared it to let you write in it.");return;}
+            if(Boolean.FALSE.equals(may)){a.alert("This folder is read only here. Ask whoever shared it to let you write in it.");return;}
             NoteStore.Note note=new NoteStore.Note();note.book=where;
-            if(Things.HOME.equals(where))placeNew(note.id);
+            if(place!=null)a.placeOnSave.put(note.id,place);
+            if(Things.HOME.equals(where)&&!NoteStore.ARCHIVE.equals(place)&&!NoteStore.BIN.equals(place))placeNew(note.id);
             a.cameFrom=new ArrayList<>(a.trail);a.cameFromNote=note.id;
             a.write(note);
         },e->a.alert(MainActivity.READ_FAILED));
@@ -1363,14 +1540,16 @@ final class HomeScreen {
      * A new collection where the + was pressed, made as Untitled, and its pop-up opened with the name ready to be typed
      * over - selected, with the keyboard up - since a gesture cannot say what a thing is called.
      */
-    void newCollection(final String where) {
-        a.background.submit(()->a.store.addCollectionIn(where,""),made->{
-            if(Things.HOME.equals(where))placeNew(made.id);
+    void newCollection(final String asked) {
+        // From a place's +: made on Home and put in the place at once (decision 87).
+        final String place=MainActivity.takesNew(asked)?asked:null,where=place!=null?Things.HOME:asked;
+        a.background.submit(()->{NoteStore.Shelf made=a.store.addCollectionIn(where,"");if(place!=null)a.intoPlaceNow(NoteStore.Branch.Kind.COLLECTION,made.id,place);return made;},made->{
+            if(Things.HOME.equals(where)&&!NoteStore.ARCHIVE.equals(place)&&!NoteStore.BIN.equals(place))placeNew(made.id);
             a.nameNext=made.id;
             if(Things.HOME.equals(where)){a.trail.clear();a.trail.add(new MainActivity.Step(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING,"Home"));}
             a.trail.add(new MainActivity.Step(NoteStore.Branch.Kind.COLLECTION,made.id,made.name));
             if(showing())folder.show();else a.browse();
-        },e->a.alert("Could not make that collection. Nothing was changed."));
+        },e->a.alert("Could not make that folder. Nothing was changed."));
     }
 
     // ---- the files on Home and in collections ------------------------------------------------------------------
@@ -1380,8 +1559,26 @@ final class HomeScreen {
      * under the line, since that is the one thing here that cannot be taken back.
      */
     void fileMenu(View anchor,final NoteStore.Branch file) {
+        // Starred and temporary first, read from the notebook, so each row says what it will do (decision 87); and whether
+        // this phone may change it, which only then offers to (decision 93).
+        a.background.submit(()->new Object[]{a.store.favourite(NoteStore.Branch.Kind.FILE,file.id),a.store.untilOf(NoteStore.Branch.Kind.FILE,file.id),
+                a.store.mayChangeFile(file.id),a.store.standing(file.id)},
+            got->fileMenu(anchor,file,(Boolean)got[0],(Long)got[1],(Boolean)got[2],(NoteStore.Standing)got[3]),e->a.alert(MainActivity.READ_FAILED));
+    }
+    private void fileMenu(View anchor,final NoteStore.Branch file,boolean starred,long until,boolean changes,NoteStore.Standing standing) {
         MainActivity.Sheet sheet=a.new Sheet();
+        // Who sent it, first, and the box that says where every device stands with it (the owner, 2026-10-05).
+        if(!standing.from.isEmpty()) {
+            sheet.row("From "+standing.fromName+" · "+a.shortWhen(standing.at),()->a.aboutSharing(file));
+            sheet.line();
+        }
         sheet.row("Open",()->openFile(file));
+        // Written in like a note, by whoever may (decision 93): the same file, by the same id, for everybody who has it.
+        if(changes) {
+            sheet.row("Rename…",()->a.renameFile(file));
+            sheet.row("Replace with another file…",()->a.replaceFile(file));
+        }
+
         sheet.row("Save a copy",()->withHeld(file,held->{
             a.savingCopy=loose(held);
             a.startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
@@ -1390,8 +1587,15 @@ final class HomeScreen {
         sheet.row("Send to a device",()->a.chooseDevice(Collections.singletonList(Lending.of(file.id)),new ArrayList<>()));
         sheet.row("Put in a note",()->withHeld(file,held->a.putInNote(loose(held))));
         sheet.row("Move to…",()->{a.carrying=file;a.browse();});
+        // Shared like a note, with its own people and roles (decision 92): the same box a note's Share… opens.
+        sheet.row("Share…",()->a.aboutSharing(file));
+        // A file in the places a note can be in (decision 87): Favourites, Temp, the archive and the bin.
+        sheet.row(starred?"Remove from favourites":"Add to favourites",()->a.background.submit(()->{a.store.keepToHand(NoteStore.Branch.Kind.FILE,file.id,!starred);return null;},
+            done->{a.toast(starred?"Not a favourite":"A favourite");a.refresh();},e->a.alert("Could not change that. Nothing was changed.")));
+        sheet.row(until>0?"Temporary · "+NoteStore.goneIn(until,System.currentTimeMillis()).toLowerCase(java.util.Locale.ROOT):"Temporary…",()->a.temporaryBox(file));
         sheet.line();
-        sheet.row("Delete",()->askDelete(file));
+        sheet.row("Archive",()->a.putAway(file,false));
+        sheet.row("Move to bin",()->a.putAway(file,true));
         sheet.show(anchor);
     }
 
@@ -1406,18 +1610,6 @@ final class HomeScreen {
     /** A kept file as the received file the older boxes - Save a copy, Put in a note - were written for. */
     private static NoteStore.Loose loose(NoteStore.Held held) {
         return new NoteStore.Loose(held.id,"","",held.name,held.kind,held.bytes,"",true,false,0,0);
-    }
-
-    private void askDelete(final NoteStore.Branch file) {
-        String came=file.origin.isEmpty()?"":" Whoever sent it still has theirs.";
-        a.new Box().setTitle("Delete "+file.name+"?").setMessage("It is deleted from this phone."+came)
-            .setPositiveButton("Delete",(d,w)->a.background.submit(()->{
-                    NoteStore.Held held=a.store.file(file.id);
-                    a.store.drop(file.id);
-                    // One kept with a note - found by a search - changes the list of files that travels with the note.
-                    return held!=null&&held.held==NoteStore.Branch.Kind.PAGE?held.note:"";
-                },note->{a.toast("Deleted");a.refresh();if(!note.isEmpty())a.filesChanged(NoteStore.Branch.Kind.PAGE,note);},
-                e->a.alert("Could not delete that. Nothing was changed."))).show();
     }
 
     // ---- files dragged in from another app ---------------------------------------------------------------------------
@@ -1591,13 +1783,109 @@ final class HomeScreen {
      */
     private boolean dragged(View on,DragEvent event) {
         switch(event.getAction()) {
-            case DragEvent.ACTION_DRAG_STARTED: carriedFrom=null;carriedFrom=from();return a.dragging!=null;
-            case DragEvent.ACTION_DRAG_LOCATION: over(event.getX(),event.getY());return true;
-            case DragEvent.ACTION_DRAG_EXITED: light(Grid.Zone.NONE);a.markOnto(null);aim(null,null);return true;
-            case DragEvent.ACTION_DROP: over(event.getX(),event.getY());return drop(event.getX());
+            case DragEvent.ACTION_DRAG_STARTED: carriedFrom=null;carriedFrom=from();outOf=carriedFrom==grid?Things.HOME:carriedFrom!=null&&folder.isOpen()?folder.id():null;
+                if(a.dragging!=null)showStrip(a.dragging);
+                return a.dragging!=null;
+            case DragEvent.ACTION_DRAG_LOCATION:
+                // Over the strip of what can be done to it: that, and nothing under it (decision 90).
+                // And no folder opens under it: a pass over one on the way to the strip set its spring going (decision 90).
+                if(overStrip(event.getX(),event.getY())){light(Grid.Zone.NONE);a.markOnto(null);aim(null,null);desk.removeCallbacks(springing);springAt=null;springKey=null;springDo=null;return true;}
+                over(event.getX(),event.getY());return true;
+            case DragEvent.ACTION_DRAG_EXITED: light(Grid.Zone.NONE);a.markOnto(null);aim(null,null);litTarget(-1);return true;
+            case DragEvent.ACTION_DROP:
+                if(overStrip(event.getX(),event.getY()))return dropOnStrip();
+                over(event.getX(),event.getY());return drop(event.getX());
             case DragEvent.ACTION_DRAG_ENDED: ended(event.getResult());return true;
             default: return true;
         }
+    }
+
+    // ---- the strip of what can be done, while a thing is carried ------------------------------------------------------
+
+    /**
+     * What can be done to a thing by letting go of it, across the top while it is carried, as a phone offers Remove and
+     * Uninstall over its home screen (the owner, 2026-10-04: "when we drag and drop elements we should be presented, like
+     * on our phone with an app, Archive or Bin ... a UI/UX that lets the user do pretty much everything with drag and
+     * drop"; decision 90): a favourite, Temp, the archive, the bin, and sharing it: a file's too, since it is shared like a
+     * note (decision 92); Send to a device stays in its menu.
+     */
+    private LinearLayout strip;
+    private final List<View> targets=new ArrayList<>();
+    private int litAt=-1;
+    private static final String[][] STRIP={{"star","Favourite"},{"timer","Temp"},{HomeScreen.ARCHIVE_ICON,"Archive"},{HomeScreen.BIN_ICON,"Bin"},{"share-2","Share"}};
+
+    private void showStrip(NoteStore.Branch carried) {
+        hideStrip();
+        if(carried.kind!=NoteStore.Branch.Kind.PAGE&&carried.kind!=NoteStore.Branch.Kind.COLLECTION&&carried.kind!=NoteStore.Branch.Kind.BOOK
+            &&carried.kind!=NoteStore.Branch.Kind.FILE)return;
+        strip=new LinearLayout(a);strip.setOrientation(LinearLayout.HORIZONTAL);strip.setGravity(Gravity.CENTER);
+        strip.setPadding(a.dp(6),a.dp(2),a.dp(6),a.dp(2));
+        GradientDrawable ground=new GradientDrawable();ground.setColor(a.CARD);ground.setCornerRadius(a.dp(20));ground.setStroke(Math.max(1,a.dp(1)),a.LINE);
+        strip.setBackground(ground);strip.setElevation(a.dp(12));
+        targets.clear();litAt=-1;
+        for(String[] one:STRIP) {
+            String glyph=one[0],said=one[1];
+            LinearLayout target=a.column();target.setGravity(Gravity.CENTER_HORIZONTAL);target.setPadding(a.dp(2),a.dp(4),a.dp(2),a.dp(4));
+            View face=new View(a);face.setBackground(IconFace.bare(a,glyph,a.INK,0));
+            target.addView(face,new LinearLayout.LayoutParams(a.dp(28),a.dp(28)));
+            TextView name=a.label(said,MainActivity.QUIET,a.INK);name.setGravity(Gravity.CENTER);name.setSingleLine(true);
+            target.addView(name,new LinearLayout.LayoutParams(-2,-2));
+            target.setContentDescription(said);
+            strip.addView(target,new LinearLayout.LayoutParams(0,-2,1));targets.add(target);
+        }
+        // In the bar just above Home's rows, centred, leaving the rows free to drop on: carried past it - above it or beside it
+        // on the bar - the page above comes as it always did (the owner: "if we overpass them, we go to the page on top").
+        strip.measure(View.MeasureSpec.makeMeasureSpec(a.dp(320),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
+        int high=strip.getMeasuredHeight();
+        FrameLayout.LayoutParams at=new FrameLayout.LayoutParams(a.dp(320),-2,Gravity.TOP|Gravity.CENTER_HORIZONTAL);
+        at.setMargins(0,Math.max(a.root.getPaddingTop(),rect(desk).top-high-a.dp(2)),0,0);
+        a.stage.addView(strip,at);
+    }
+
+    private void hideStrip() {
+        if(strip!=null&&strip.getParent()!=null)((ViewGroup)strip.getParent()).removeView(strip);
+        strip=null;targets.clear();litAt=-1;
+    }
+
+    /** Whether the finger is over the strip, lighting the target it is over. Measured on the screen, as the strip is not in the column. */
+    private boolean overStrip(float x,float y) {
+        if(strip==null||strip.getParent()==null||strip.getHeight()==0)return false;
+        int[] column=new int[2],bar=new int[2];a.root.getLocationOnScreen(column);strip.getLocationOnScreen(bar);
+        float sx=x+column[0]-bar[0],sy=y+column[1]-bar[1];
+        if(sx<0||sy<0||sx>strip.getWidth()||sy>strip.getHeight()){litTarget(-1);return false;}
+        int which=-1;
+        for(int i=0;i<targets.size();i++){View one=targets.get(i);if(sx>=one.getLeft()&&sx<one.getRight())which=i;}
+        litTarget(which);
+        return true;
+    }
+
+    private void litTarget(int which) {
+        if(which==litAt)return;
+        for(int i=0;i<targets.size();i++) {
+            View one=targets.get(i);
+            if(i==which){GradientDrawable lit=new GradientDrawable();lit.setColor(MainActivity.mix(a.ACCENT,a.CARD,0.8f));lit.setCornerRadius(a.dp(14));lit.setStroke(a.dp(2),a.ACCENT);one.setBackground(lit);}
+            else one.setBackground(null);
+        }
+        litAt=which;
+    }
+
+    /** Let go on one of the strip's targets: done as its menu does it, said, with Undo where the menu has one. */
+    private boolean dropOnStrip() {
+        final NoteStore.Branch carried=a.dragging;int which=litAt;
+        if(carried==null||which<0)return false;
+        stale=true;
+        boolean file=carried.kind==NoteStore.Branch.Kind.FILE;
+        switch(which) {
+            case 0:
+                if(file)a.background.submit(()->{a.store.keepToHand(NoteStore.Branch.Kind.FILE,carried.id,true);return null;},done->{a.toast("A favourite");a.refresh();},e->a.alert("Could not change that. Nothing was changed."));
+                else a.keepToHand(carried,true);
+                break;
+            case 1: a.intoTemp(carried);break;
+            case 2: a.putAway(carried,false);break;
+            case 3: a.putAway(carried,true);break;
+            default: a.aboutSharing(carried);
+        }
+        return true;
     }
 
     /** Where a view is, in the coordinates of the screen's own column, which is what a drag is measured in. */
@@ -1635,14 +1923,64 @@ final class HomeScreen {
 
     private void over(float x,float y) {
         if(a.dragging==null)return;
+        outOfCard(x,y);
         zone=Grid.zone(inside(dock.row,x,y),folder.isOpen(),inside(folder.card,x,y),inside(desk,x,y));
         light(zone);
+        if(android.util.Log.isLoggable("MininotesCarry",android.util.Log.DEBUG))android.util.Log.d("MininotesCarry",(int)x+","+(int)y+" "+zone+" card "+(folder.card==null?"-":rect(folder.card).toShortString()+" "+folder.card.getVisibility())
+            +" shows "+folder.name()+" aside "+folder.aside()+" entered "+cardEntered);
+        springKey=null;springDo=null;
+        boolean homeSeen=!folder.isOpen()||folder.aside();
         // Carried out of Home's rows - up under the app's name, down short of the dock - is a turn of the page too.
-        if((zone==Grid.Zone.HOME||zone==Grid.Zone.NONE)&&from()==grid&&!folder.isOpen())edgeWatch(x,y);else cancelEdge();
-        if(zone==Grid.Zone.HOME)across(grid,gridScroll,homeLaid,x,y);
-        else if(zone==Grid.Zone.CARD&&!folder.amongFavourites())across(folder.grid,folder.scroll,folder.laid,x,y);
-        else if(zone==Grid.Zone.UP&&from()==folder.grid&&!folder.amongFavourites()&&NoteStore.home(folder.parentId()))behind(x,y);
+        if((zone==Grid.Zone.HOME||zone==Grid.Zone.NONE||zone==Grid.Zone.UP)&&from()!=null&&homeSeen)edgeWatch(x,y);else cancelEdge();
+        // Round the card is Home, which is what is seen there (the owner, 2026-10-03: in and out of a group at any level).
+        if(zone==Grid.Zone.HOME||zone==Grid.Zone.UP&&!folder.amongFavourites())across(grid,gridScroll,homeLaid,x,y);
+        else if(zone==Grid.Zone.CARD&&folder.amongFavourites()&&from()==folder.grid)reorderOver(x,y);
+        else if(zone==Grid.Zone.CARD&&!folder.amongFavourites()) {
+            // Held on ‹ and the collection above, in a card inside another: up a level. Out of the card is Home.
+            if(folder.back!=null&&inside(folder.back,x,y)&&!folder.listing()){a.markOnto(null);aim(null,null);
+                springKey="up:"+folder.id();springDo=folder::up;}
+            else across(folder.grid,folder.scroll,folder.laid,x,y);
+        }
         else{a.markOnto(null);aim(null,null);}
+        spring();
+    }
+
+    /**
+     * Held a moment on a collection while carrying, it opens - its card over Home, or one level in, in the card - and held on
+     * the card's name, the card goes up a level: so a thing goes in and out of collections at any depth in one carry, as
+     * on a phone's own home screen. What it came out of, for whether letting go moves it into something else.
+     */
+    private String outOf,springKey,springAt;private Runnable springDo;
+    private final Runnable springing=this::sprung;
+    private void sprung(){if(android.util.Log.isLoggable("MininotesCarry",android.util.Log.DEBUG))android.util.Log.d("MininotesCarry","held: "+springAt);
+        Runnable then=springDo;springAt=null;if(a.dragging!=null&&then!=null)then.run();}
+    private void spring() {
+        if(springKey==null){if(springAt!=null){desk.removeCallbacks(springing);springAt=null;}return;}
+        if(springKey.equals(springAt))return;
+        desk.removeCallbacks(springing);springAt=springKey;desk.postDelayed(springing,650);
+    }
+
+    /** Only the card read and drawn again, as under a carry, when Home itself is not drawn again: see {@link #refresh}. */
+    void refreshCard() {
+        if(!folder.isOpen())return;
+        final List<MainActivity.Step> path=new ArrayList<>(a.trail);
+        a.background.submit(()->{Map<String,Object> got=new HashMap<>();folder.read(path,got);return got;},
+            got->{if(folder.isOpen())folder.fill(path,got);},e->{});
+    }
+
+    /**
+     * A thing carried out of a card: the card steps aside as soon as the finger leaves it, and the whole of Home is where it
+     * can be let go (see {@link Folder#stepAside}). Not on a hold at its edge, as when the card filled the screen: its top
+     * edge is its name, where a hold goes up a level, and a hold there stepped it aside first (seen on the Graphene,
+     * 2026-10-03, when a carry into a card opened what lay behind it instead).
+     */
+    private boolean cardEntered=true;
+    private void outOfCard(float x,float y) {
+        if(!folder.isOpen()||folder.aside()||folder.listing()||from()==null||folder.card==null)return;
+        boolean outside=!rect(folder.card).contains((int)x,(int)y);
+        // A card opened under the finger waits for it to have been over the card before stepping aside.
+        if(!outside)cardEntered=true;
+        if(cardEntered&&outside)folder.stepAside(true);
     }
 
     /**
@@ -1659,7 +1997,7 @@ final class HomeScreen {
     private void light(Grid.Zone now) {
         boolean dockNow=now==Grid.Zone.DOCK&&a.dragging!=null&&Grid.docks(a.dragging.kind);
         if(dockNow!=dockLit){dockLit=dockNow;dock.lit(dockNow);}
-        folder.lit(now==Grid.Zone.UP&&from()==folder.grid&&!folder.amongFavourites());
+        folder.lit(now==Grid.Zone.UP&&from()!=null&&!folder.amongFavourites());
     }
 
     /**
@@ -1669,7 +2007,8 @@ final class HomeScreen {
      */
     private void across(GridLayout in,ScrollView scroll,Laid laid,float x,float y) {
         // Only over the grid it came out of: a favourite carried from the dock goes back to the dock or nowhere.
-        if(in==null||laid==null||from()!=in){a.markOnto(null);aim(null,null);return;}
+        // Into any grid seen, from wherever it came: a favourite carried from the dock goes back to the dock or nowhere.
+        if(in==null||laid==null||from()==null){a.markOnto(null);aim(null,null);return;}
         Rect window=seen(scroll);
         int reach=a.dp(56),step=a.dp(14);
         if(y<window.top+reach)scroll.scrollBy(0,-step);
@@ -1677,8 +2016,21 @@ final class HomeScreen {
         int[] at=cellAt(in,laid,x,y);
         String there=at==null?null:Layout.at(laid.drawn,at[0],at[1]);
         NoteStore.Branch held=there==null?null:laid.things.get(there);
+        // Tools, held on, opens, as a collection does; and one of the four is let go on it to be kept there.
+        if(held!=null&&held.kind==NoteStore.Branch.Kind.TOOLS) {
+            final NoteStore.Branch tools=held;
+            if(Grid.tool(a.dragging.kind)&&in==grid){a.markOnto(laid.icons.get(there));aim(null,null);return;}
+            if(!Grid.place(a.dragging.kind)){a.markOnto(null);aim(null,null);springKey="in:"+NoteStore.TOOLS;springDo=()->{cardEntered=false;folder.openPlace(tools);};return;}
+        }
         Grid.LetGo does=at==null||(there!=null&&held==null)?Grid.LetGo.BACK:Grid.letGo(a.dragging.kind,held==null?null:held.kind,a.dragging.id.equals(there));
-        if(does==Grid.LetGo.MERGE||does==Grid.LetGo.INTO||does==Grid.LetGo.AWAY){a.markOnto(laid.icons.get(there));aim(null,null);return;}
+        if(does==Grid.LetGo.MERGE||does==Grid.LetGo.INTO||does==Grid.LetGo.AWAY) {
+            a.markOnto(laid.icons.get(there));aim(null,null);
+            if(does==Grid.LetGo.INTO&&held.kind==NoteStore.Branch.Kind.COLLECTION) {
+                final NoteStore.Branch opening=held;final boolean onHome=in==grid;
+                springKey="in:"+held.id;springDo=()->{if(folder.isOpen()&&opening.id.equals(folder.id()))return;if(onHome){cardEntered=false;folder.open(opening);}else folder.into(opening);};
+            }
+            return;
+        }
         a.markOnto(null);
         aim(does==Grid.LetGo.PLACE?laid:null,at);
     }
@@ -1694,34 +2046,64 @@ final class HomeScreen {
         if(carried==null)return false;
         // Wherever a drop does nothing, Home is drawn again as it is: icons parted on the way there close up again.
         if(zone==Grid.Zone.DOCK) {
-            if(!Grid.docks(carried.kind)){stale=true;a.toast("Only a note or a collection goes in the dock");return true;}
+            if(!Grid.docks(carried.kind)){stale=true;a.toast("Only a note or a folder goes in the dock");return true;}
             toDock(carried,dock.slotAt(x,a.lifted));
             return true;
         }
-        // Among the favourites a thing is only listed, not kept: it goes to the dock from there, and nowhere else.
+        // Among the favourites, let go on another: put before it in their one order (decision 74); let go in the room after them,
+        // last. Anywhere else it is only listed, not kept: it goes to the dock from there, and nowhere else.
+        if(fromFavourites&&zone==Grid.Zone.CARD&&folder.laid!=null) {
+            NoteStore.Branch before=target!=null&&target.getTag() instanceof NoteStore.Branch?(NoteStore.Branch)target.getTag():null;
+            reorder(carried,before);return true;
+        }
         if(fromFavourites||came==null){stale=true;return true;}
+        // One of the four carried out of Tools onto Home, or onto Tools from Home (decision 72): kept where it is let go.
+        if(Grid.tool(carried.kind)) {
+            NoteStore.Branch onto=target!=null&&target.getTag() instanceof NoteStore.Branch?(NoteStore.Branch)target.getTag():null;
+            if(came==grid&&onto!=null&&onto.kind==NoteStore.Branch.Kind.TOOLS){keepInTools(carried.id,true);a.toast("Kept in Tools");refresh();return true;}
+            if(came==folder.grid&&folder.isOpen()&&(zone==Grid.Zone.HOME||zone==Grid.Zone.UP)) {
+                keepInTools(carried.id,false);
+                final Map<String,Layout.Spot> spots=placeIn!=null&&placeIn==homeLaid?homeMove(placeIn,carried.id,placeAt[0],placeAt[1]):null;
+                if(spots!=null)placesOn(spots);
+                folder.close();a.toast(carried.name+" is on Home now");refresh();return true;
+            }
+        }
+        // What a place only lists - Temp, Recent, Tools - is not moved from there: it stays where it really is.
+        if(came==folder.grid&&folder.listing()){stale=true;return true;}
+        boolean inCard=zone==Grid.Zone.CARD,onHome=zone==Grid.Zone.HOME||zone==Grid.Zone.UP;
+        // Let go on Home round the card, which stepped aside or not: the card goes once the thing is there.
+        final Runnable leftCard=onHome&&folder.isOpen()?folder::close:null;
         if(target!=null&&target.getTag() instanceof NoteStore.Branch) {
             NoteStore.Branch onto=(NoteStore.Branch)target.getTag();
-            String container=came==grid?Things.HOME:folder.id();
+            String container=inCard?folder.id():Things.HOME;
             Grid.Onto does=Grid.onto(carried.kind,onto.kind);
             // On the archive or the bin: put away there, as its menu puts it away (decision 41).
-            if(does==Grid.Onto.AWAY)away(carried,onto.kind==NoteStore.Branch.Kind.BIN);
-            else if(does==Grid.Onto.MERGE)merge(carried,onto,container,came==folder.grid);
-            else into(carried,onto.id,onto.name,onto.kind,null,null);
+            // On Temp: asked for how long (decision 71).
+            if(does==Grid.Onto.AWAY&&onto.kind==NoteStore.Branch.Kind.TEMP){stale=true;a.intoTemp(carried);}
+            else if(does==Grid.Onto.AWAY)away(carried,onto.kind==NoteStore.Branch.Kind.BIN);
+            else if(does==Grid.Onto.MERGE)merge(carried,onto,container,inCard);
+            else into(carried,onto.id,onto.name,onto.kind,leftCard,null);
             return true;
         }
-        if(zone==Grid.Zone.UP&&came==folder.grid) {
-            String up=folder.parentId();
-            // Let go over an empty cell of Home behind the card: in that cell, once it is on Home. Anywhere else, the first
-            // free cell up there, as anything new takes.
-            // Onto the page of Home in view, in the empty cell it was let go in.
-            final Map<String,Layout.Spot> spots=placeIn!=null&&placeIn==homeLaid?homeMove(placeIn,carried.id,placeAt[0],placeAt[1]):null;
-            final List<NoteStore.Branch> lines=new ArrayList<>(placeIn==null?new ArrayList<>():placeIn.lines);lines.add(carried);
-            into(carried,up,folder.parentName(),NoteStore.Branch.Kind.COLLECTION,folder::up,spots==null?null:()->writeHome(lines,spots));
-            return true;
+        if(!inCard&&!onHome){stale=true;return true;}
+        final String dest=inCard?folder.id():Things.HOME;
+        final Laid laid=placeIn!=null&&placeIn==(inCard?folder.laid:homeLaid)?placeIn:null;
+        // Where it came from: only its cell changes.
+        if(dest.equals(outOf)){if(laid!=null)put(laid,carried,placeAt);else stale=true;return true;}
+        // Into another collection than the one it came out of, or onto Home, at any depth: in the empty cell it was let go
+        // in, or else the first free one, as anything new takes.
+        Runnable there=null;
+        if(laid!=null) {
+            final List<NoteStore.Branch> lines=new ArrayList<>(laid.lines);lines.add(carried);
+            if(laid.spots!=null) {
+                final Map<String,Layout.Spot> spots=homeMove(laid,carried.id,placeAt[0],placeAt[1]);
+                if(spots!=null)there=()->writeHome(lines,spots);
+            } else {
+                final Map<String,Integer> cells=Layout.moveTo(laid.drawn,carried.id,placeAt[0],placeAt[1]);
+                if(cells!=null)there=()->a.store.place(lines,cells);
+            }
         }
-        if(placeIn!=null&&((zone==Grid.Zone.HOME&&came==grid&&placeIn==homeLaid)||(zone==Grid.Zone.CARD&&came==folder.grid&&placeIn==folder.laid)))put(placeIn,carried,placeAt);
-        else stale=true;
+        into(carried,dest,inCard?folder.name():"Home",NoteStore.Branch.Kind.COLLECTION,leftCard,there);
         return true;
     }
 
@@ -1753,7 +2135,10 @@ final class HomeScreen {
     private void cancelEdge(){if(edgeTurn!=null&&desk!=null)desk.removeCallbacks(edgeTurn);edgeTurn=null;}
 
     private void ended(boolean result) {
+        hideStrip();
         cancelEdge();turnedHere=false;carriedFrom=null;
+        folder.stepAside(false);
+        desk.removeCallbacks(springing);springAt=null;springKey=null;springDo=null;outOf=null;cardEntered=true;
         light(Grid.Zone.NONE);a.markOnto(null);aim(null,null);zone=Grid.Zone.NONE;
         if(a.lifted!=null)a.lifted.setVisibility(View.VISIBLE);
         a.dragging=null;a.lifted=null;
@@ -1794,7 +2179,6 @@ final class HomeScreen {
      * and a file on the bin asked about first, as its own Delete asks, since there is no bin for files.
      */
     private void away(NoteStore.Branch carried,boolean bin) {
-        if(carried.kind==NoteStore.Branch.Kind.FILE){if(bin)askDelete(carried);else stale=true;return;}
         a.putAway(carried,bin);
     }
 
@@ -1810,9 +2194,8 @@ final class HomeScreen {
      */
     private List<String> pathOf(NoteStore.Branch line) {
         if(line.kind!=NoteStore.Branch.Kind.FILE)return a.store.pathOf(line.id);
-        List<String> path=NoteStore.home(line.parent)?new ArrayList<>():a.store.pathOf(line.parent);
-        path.add(line.id);
-        return path;
+        // Where it is kept, not where it is shown: one shared with this phone is kept on Home wherever it shows (decision 93).
+        return a.store.filePath(line.id);
     }
 
     /** Where a line would be, once it is inside {@code into}: the path down to that, and then the line. */
@@ -1843,19 +2226,54 @@ final class HomeScreen {
             List<String> from=pathOf(moved),to=pathInto(dest,moved.id);
             Sharing.Change change=Sharing.moving(rules,from,to);
             boolean reaches=!Sharing.audience(rules,from).isEmpty()||!Sharing.audience(rules,to).isEmpty();
-            return new Object[]{change,names(),reaches};
+            boolean theirs=moved.kind!=NoteStore.Branch.Kind.FILE&&a.store.theirs(moved.kind,moved.id);
+            boolean alone=moved.kind==NoteStore.Branch.Kind.FILE&&!a.store.looseAudience(moved.id).isEmpty();
+            return new Object[]{change,names(),reaches,theirs,alone};
         },found->{
             Sharing.Change change=(Sharing.Change)found[0];
-            final boolean reaches=(Boolean)found[2];
+            final boolean reaches=(Boolean)found[2],theirs=(Boolean)found[3],alone=(Boolean)found[4];
             final Runnable go=()->doInto(moved,dest,destName,destKind,reaches,after,there);
             if(!change.any()){go.run();return;}
-            String where=NoteStore.home(dest)?"Home":destName;
-            a.new Box().setTitle("This changes who can read it")
-                .setMessage(a.changeSaid("Moving “"+moved.name+"” into "+where+" changes who receives it.",change,a.castNames(found[1]),
-                    "Whoever starts receiving it gets it now. What has already reached somebody stays with them."))
-                .setPositiveButton("Move anyway",(d,w)->go.run())
+            String where=NoteStore.home(dest)?"Home":"“"+destName+"”";
+            if(moved.kind==NoteStore.Branch.Kind.FILE) {
+                a.new Box().setTitle("This changes who can read it")
+                    .setMessage(a.changeSaid("Moving “"+moved.name+"” into "+where+" changes who receives it.",change,a.castNames(found[1]),
+                        Sharing.fileMoveSaid(alone)))
+
+                    .setPositiveButton("Move anyway",(d,w)->go.run())
+                    .setOnCancelListener(d->a.refresh()).show();
+                return;
+            }
+            final Runnable only=()->placeOnly(moved,dest,where,after,there);
+            // What somebody shares stays where their sharing has it, linked as before, and is shown where it was put.
+            if(theirs){only.run();return;}
+            // One of this person's own: asked, never shared or stopped by a move alone (the owner, 2026-10-03: "we should be
+            // asked if we want to share").
+            boolean starts=!change.gained.isEmpty();
+            a.new Box().setTitle(starts?"Share “"+moved.name+"” with them?":"Stop sharing “"+moved.name+"”?")
+                .setMessage(a.changeSaid(starts?"In "+where+" it would go to more people.":"Out of where it is, it would stop going to some people.",
+                    change,a.castNames(found[1]),starts?"Or only put it there on this phone: nobody new gets it.":"Or only put it there on this phone: it stays shared as it is."))
+                .setPositiveButton(starts?"Share it":"Stop sharing",(d,w)->go.run())
+                .setNeutralButton("Only put it here",(d,w)->only.run())
                 .setOnCancelListener(d->a.refresh()).show();
         },e->a.alert(MainActivity.READ_FAILED));
+    }
+
+    /**
+     * Shown in a collection, or on Home, on this device only: where it really is and who has it are as they were (see
+     * NoteStore.showIn). In the cell it was let go in, as a move puts it; one Undo from where it was shown.
+     */
+    private void placeOnly(final NoteStore.Branch moved,final String dest,final String where,final Runnable after,final Runnable there) {
+        a.background.submit(()->{
+            String was=a.store.showIn(moved.kind,moved.id,dest);
+            if(there!=null)try{there.run();}catch(RuntimeException unplaced){/* shown there, in the first free cell */}
+            return was;
+        },was->{
+            a.canUndo(moved.name,()->a.store.showIn(moved.kind,moved.id,(String)was));
+            a.toast("Put in "+where+", shared as before");
+            if(after!=null)after.run();
+            a.refresh();
+        },e->{a.alert(e instanceof IllegalArgumentException&&e.getMessage()!=null?e.getMessage():"Could not put that there. Nothing was changed.");a.refresh();});
     }
 
     private void doInto(final NoteStore.Branch moved,final String dest,final String destName,final NoteStore.Branch.Kind destKind,final boolean reaches,final Runnable after,final Runnable there) {

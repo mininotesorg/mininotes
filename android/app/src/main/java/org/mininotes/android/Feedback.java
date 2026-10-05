@@ -37,7 +37,7 @@ final class Feedback {
      */
     enum Area {
         WRITING("Writing a note"),
-        SHELVES("Notes and collections"),
+        SHELVES("Notes and folders"),
         SHARING("Sharing and syncing"),
         FILES("Attachments"),
         BACKUP("Backup and restore"),
@@ -76,7 +76,7 @@ final class Feedback {
      */
     static String title(Kind kind,Area area,String said) {
         String first=firstLine(said);
-        String start=kind.said+" — "+area.said;
+        String start=kind.said+": "+area.said;
         if(first.isEmpty())return start;
         String whole=start+": "+first;
         return whole.length()<=80?whole:whole.substring(0,79).trim()+"…";

@@ -80,8 +80,12 @@ final class DesktopFileCards extends JPanel {
     }
 
     static boolean picture(NoteStore.Held file) {
-        String name=file.name.toLowerCase(java.util.Locale.ROOT);
-        return (file.kind!=null&&file.kind.startsWith("image/"))||name.endsWith(".png")||name.endsWith(".jpg")||name.endsWith(".jpeg")||name.endsWith(".gif")||name.endsWith(".bmp");
+        return (file.kind!=null&&file.kind.startsWith("image/"))||pictureNamed(file.name);
+    }
+    /** Whether a file's name says it is a picture this PC can show. */
+    static boolean pictureNamed(String name) {
+        String low=name==null?"":name.toLowerCase(java.util.Locale.ROOT);
+        return low.endsWith(".png")||low.endsWith(".jpg")||low.endsWith(".jpeg")||low.endsWith(".gif")||low.endsWith(".bmp");
     }
 
     /** A picture, read through the lock if there is one, made small. */

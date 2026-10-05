@@ -386,6 +386,33 @@ cannot get it says so (after four tries); it is not sent up by itself.
 What does not travel only between devices, said plainly: a file whose owner is a phone reaches a device away
 from home only once the two are on the same network, since nothing can reach a phone's door from outside.
 
+**Near first, with helpers too** (0.2.030, HOME.md decision 96). Seen on 2026-10-04: a screenshot on Temp reached the
+owner's laptop on the same Wi-Fi only after *one went up, 21 piece(s) on 2 relay(s)* and a fetch back from them, while the
+notes beside it went door to door. Now, with helpers, a file about to go up for the first time is looked at against who it
+goes to: when one of them is heard on this network (`Routes.nearNow`, from `Nearby`), the round of file work
+(`Post.goUp` then `Post.atTheDoor`) first keeps its pieces on this device's own shelf, pinned and served by the door, exactly
+as only between the owner's devices (and as a sending to a device on this network already was, `Drop`), and sends that
+device its list, its carton or its sleeve at once. Then the upload to the relays runs as before, for everybody else and as
+the fallback, and when it is done everybody, the near device too, is told where it went up; the pieces kept for the door
+alone are let go.
+
+- **What is kept.** The door's manifest names no source and is written as not gone up (`published.at` 0,
+  `NoteStore.offeredAtDoor`), as a file asked for again is; so the round still sends it up, *Not with everybody yet* stays
+  true, and nothing that counts a file as up counts it.
+- **Who is told.** `NoteStore.manifestFor` gives that manifest only to a device heard here now; to anybody else a file
+  offered at the door alone is said as not up yet, as before. So a sleeve goes to a near device as soon as its pieces are
+  at the door, and to the others only once they are up (`sleeveReady(file, address)`); with nobody named, *uploading*
+  stays on the file's icon until it is up. The gates are as they were: a sleeve is still sealed only for a device that said
+  `LOOSE`, a carton only where it is owed.
+- **The other end** changes nothing: a list or sleeve that names a file fetches it from the sending device's door first
+  (`Post.fromTheirDoor`), then the sources the manifest names (none, here), then any relay it is attached to. A door that does
+  not answer is tried again on the file clock, and the manifest that comes once the file is up resets the clock and is
+  fetched from wherever it can be.
+- **Not done.** A device that comes onto the network after the file went up fetches from the relays' list as before (the
+  door is still asked first). A file that failed to go up is offered at the door for as long as it waits, and to devices
+  near now as they come. The door's pieces of a file let go before its upload finished stay until the next upload or until
+  the file is deleted. Not seen between real devices.
+
 ### Pairing
 
 A pairing code carries an address. With no relay, the only address a device has is its door on the network it
@@ -536,6 +563,32 @@ shows it locking about five minutes after each opening that evening.
   public relays*.
 - **A PC with several networks** hands out the likeliest home address first (192.168, then 10., then the
   rest); a code made on a PC whose home network is in the 172 range may carry a virtual network's address.
+
+## What People and devices shows (0.2.030)
+
+The owner, 2026-10-04: "Is there a setting or a visualisation that would tell me if I'm directly connected to a device,
+could we show that in People and devices? If direct connection is activated, for my device and the others, and if it is
+used at the moment or if a relay is used?" Shown on both apps, quiet lines, no switch (HOME.md, decision 96):
+
+- **This device, under its name.** Its door: *Direct connections: open on port 9601*, with *· 2 devices on this Wi-Fi* while
+  any paired device is heard; *closed* where it could not open; *not connected yet* before sharing starts. How notes
+  travel: *Notes travel with helpers: direct when they can, through a relay when not*, or *only between my devices*. On the
+  PC, the router line the Profile already says (*Reachable directly, even from away from home*, or why not).
+- **Each paired device.** Where it is, the first that holds: *On this Wi-Fi · direct* (heard on this network in the last
+  five minutes), *Direct door known* (a public door it proved), *Through relays* (heard from lately, no door; with no helpers
+  *Waits until you are on the same Wi-Fi*), *Not heard lately*. And the road the last send to it that was taken went by:
+  *Last sent: direct, 2 min ago*, *left at your PC*, or *through a relay*. Since 0.2.031 the two are said as one line across the device's card, *On this Wi-Fi · direct · last sent: direct, 2 min
+ago* (decision 97).
+- **Kept.** `Direct.send` writes the road (`Routes.went`: door, home or relays) by the device's identity key whenever a send
+  is taken; kept in the node's settings (`routes`), written when the road changes or once a minute, so it says the same
+  after a restart. A road taken is not the thing arriving: only the far device's answer is, as everywhere else.
+- **Not known.** Files fetched from a door are not counted in it, only sends. A phone that dozed counts as *Not heard
+  lately* until it is heard again.
+
+Tests: `RoutesTest` (the record kept, written and read back; the words; the near-first decision; a door manifest said only
+to a device near) and `DesktopNearFirstTest` (a file shared on its own and a note's file: the near device given the door at
+once and fetching from its shelf with nothing on the relay's, the device away told nothing until it is up and then fetching
+from the relay, and a manifest naming a relay refused as the door's). Neither starts a node.
 
 ## What does not change
 

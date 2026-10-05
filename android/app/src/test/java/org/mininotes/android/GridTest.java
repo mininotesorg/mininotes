@@ -58,7 +58,7 @@ public class GridTest {
         assertEquals(Grid.Onto.AWAY,Grid.onto(NOTE,BIN));
         assertEquals(Grid.Onto.AWAY,Grid.onto(COLLECTION,BIN));
         // A file has no archive, and on the Bin it is deleted, after the question its menu asks.
-        assertEquals(Grid.Onto.NONE,Grid.onto(FILE,ARCHIVE));
+        assertEquals(Grid.Onto.AWAY,Grid.onto(FILE,ARCHIVE));
         assertEquals(Grid.Onto.AWAY,Grid.onto(FILE,BIN));
         // A place goes into nothing, not even another place.
         assertEquals(Grid.Onto.NONE,Grid.onto(BIN,ARCHIVE));
@@ -163,7 +163,7 @@ public class GridTest {
         assertEquals(Grid.LetGo.AWAY,Grid.letGo(NOTE,BIN,false));
         assertEquals(Grid.LetGo.AWAY,Grid.letGo(COLLECTION,ARCHIVE,false));
         assertEquals(Grid.LetGo.AWAY,Grid.letGo(FILE,BIN,false));
-        assertEquals(Grid.LetGo.BACK,Grid.letGo(FILE,ARCHIVE,false));
+        assertEquals(Grid.LetGo.AWAY,Grid.letGo(FILE,ARCHIVE,false));
         // Over its own cell, nothing moves: not even the first pinning of the others.
         assertEquals(Grid.LetGo.BACK,Grid.letGo(NOTE,NOTE,true));
         assertEquals(Grid.LetGo.BACK,Grid.letGo(COLLECTION,COLLECTION,true));

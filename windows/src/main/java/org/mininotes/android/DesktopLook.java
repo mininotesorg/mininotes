@@ -83,7 +83,7 @@ final class DesktopLook {
     static JPanel inks(Writers.Palette palette,String writer,IntConsumer choose) {
         boolean you=Writers.ME.equals(palette.person(writer));
         String who=you?Writers.ME:palette.person(writer);
-        int own=you?Tint.NONE:Writers.automatic(who);
+        int own=you?Tint.NONE:palette.theirOwn(who);
         int[] chosen={you?palette.mine:palette.chose(who)?palette.colourOf(who):Tint.NONE};
         JPanel row=new JPanel(new FlowLayout(FlowLayout.LEFT,4,0));row.setOpaque(false);
         for(int c=0;c<Tint.count();c++) {

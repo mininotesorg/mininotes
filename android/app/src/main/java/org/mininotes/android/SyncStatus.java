@@ -26,7 +26,7 @@ final class SyncStatus {
             return "Saved on "+device+": "+date(saved)
                 +"\n"+(status.equals(CONFIRMED)?"Everyone it is shared with has this version: "+date(confirmed)
                     :status.equals(ONLY_HERE)?"Not shared.":status+".")
-                +"\n\nTimes are local to "+device+". Devices that are offline may have newer edits. Files kept with the note, up to 16 MB each, go with it, and those kept with a collection go with the collection; larger ones stay on this device.";
+                +"\n\nTimes are local to "+device+". Devices that are offline may have newer edits. Files kept with the note, up to 16 MB each, go with it, and those kept with a folder go with the folder; larger ones stay on this device.";
         }
     }
     private static String date(long millis) {
@@ -137,6 +137,12 @@ final class SyncStatus {
         // updated first: "Ana's phone needs to update Mininotes to receive this" (see Unsent.Why.NEEDS_UPDATE).
         for(var waiting:store.cartonsForUpdate(kind,id).values())
             for(String address:waiting)sum.merge(address,Waits.needsUpdate(),Waits.Where::and);
+        // And a file shared on its own: owed to a device, or waiting for it to be updated to know files (decision 92).
+        if(kind==NoteStore.Branch.Kind.FILE) {
+            java.util.Set<String> old=store.beforeLoose();
+            for(var wait:store.sleevesOwed(id,false))
+                sum.merge(wait.address,old.contains(wait.address)?Waits.needsUpdate():new Waits.Where(1,0,0,false,false),Waits.Where::and);
+        }
         java.util.List<Waits.Device> devices=new java.util.ArrayList<>();
         for(var one:sum.entrySet())devices.add(new Waits.Device(store.nameFor(one.getKey()),one.getValue(),kept(one.getKey())));
         return Waits.said(devices,kind==NoteStore.Branch.Kind.PAGE?1:pages.size());

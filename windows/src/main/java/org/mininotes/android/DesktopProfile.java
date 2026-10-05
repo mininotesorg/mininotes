@@ -39,6 +39,12 @@ final class DesktopProfile {
         JPanel you=DesktopUi.column();
         DesktopUi.add(you,DesktopUi.body("Your name"));DesktopUi.gap(you,4);DesktopUi.add(you,name);DesktopUi.gap(you,6);DesktopUi.add(you,nameHelp);
         DesktopUi.gap(you,14);
+        // And the colour they see you in, beside the name (the owner, 2026-10-03: "make it easy to pick a writing colour").
+        JPanel colour=DesktopUi.column();
+        DesktopUi.add(you,DesktopUi.body("Your colour"));DesktopUi.gap(you,4);DesktopUi.add(you,colour);DesktopUi.gap(you,6);
+        DesktopUi.add(you,DesktopUi.quiet("Everybody sees your round, and your writing, in it."));
+        app.inkRow(null,(mine,dots)->{colour.add(dots);colour.revalidate();colour.repaint();});
+        DesktopUi.gap(you,14);
         DesktopUi.add(you,DesktopUi.body("This device"));DesktopUi.gap(you,4);DesktopUi.add(you,device);DesktopUi.gap(you,6);DesktopUi.add(you,deviceHelp);
 
         // Your code: the picture another device scans, and the same thing as text for when it cannot.
@@ -77,7 +83,7 @@ final class DesktopProfile {
         JLabel lockState=new JLabel(isLocked?"Encrypted with a password":"Not encrypted",DesktopLock.padlock(isLocked,16),SwingConstants.LEFT);lockState.setIconTextGap(8);lockState.setFont(DesktopUi.BODY);
         lock.add(DesktopUi.row(lockState,app.button("Security…",()->DesktopLock.settings(app))));
         JPanel backup=DesktopUi.column();
-        DesktopUi.add(backup,DesktopUi.note("One file holding every collection, note and attachment on this PC."));DesktopUi.gap(backup,12);
+        DesktopUi.add(backup,DesktopUi.note("One file holding every folder, note and attachment on this PC."));DesktopUi.gap(backup,12);
         DesktopUi.add(backup,DesktopUi.actions(app.button("Export…",()->app.save(app::backup)),app.button("Add from a backup…",()->app.save(app::importBackup))));
 
         JPanel body=DesktopUi.column();
@@ -95,7 +101,7 @@ final class DesktopProfile {
                 String called=Node.nameHere(app.context);var addresses=Node.addresses(app.context);String live=addresses.isEmpty()?"":addresses.get(0);
                 app.store.myAddress=live;
                 return new Connection(called,live,Node.permanent(app.context),addresses.size(),live.isEmpty()?"":app.keys.line(called,live,"",false,"",""),Node.onlyMine(app.context));
-            },value->{busy.set(false);if(!dialog.isDisplayable())return;render(value,qr,address,permanent,state);current[0]=value;boolean ready=!value.address.isEmpty();copy.setEnabled(ready);link.setEnabled(ready);raw.setEnabled(ready);},e->{busy.set(false);state.setText("Not connected — try Reconnect");});
+            },value->{busy.set(false);if(!dialog.isDisplayable())return;render(value,qr,address,permanent,state);current[0]=value;boolean ready=!value.address.isEmpty();copy.setEnabled(ready);link.setEnabled(ready);raw.setEnabled(ready);},e->{busy.set(false);state.setText("Not connected. Try Reconnect");});
         };
         app.disk.submit(()->new String[]{Node.nameHere(app.context),Node.deviceHere(app.context)},values->{
             name.setText(values[0]);name.setEnabled(true);device.setText(values[1]);device.setEnabled(true);outcome.setText(" ");
@@ -111,7 +117,7 @@ final class DesktopProfile {
         if(!permanent.getText().equals(permanentText))permanent.setText(permanentText);
         // Only between the owner's devices there is no relay to count: the address is this PC's door at home.
         state.setText(value.onlyMine?(value.address.isEmpty()?"Only between your devices · not on a network":"Only between your devices · no relay")
-            :value.relays>0?"Connected · "+value.relays+(value.relays==1?" relay":" relays"):"Not connected — no relay has answered");
+            :value.relays>0?"Connected · "+value.relays+(value.relays==1?" relay":" relays"):"Not connected: no relay has answered");
         if(!value.pairing.equals(qr.getClientProperty("pairing"))) {
             if(value.pairing.isEmpty()){qr.setIcon(null);qr.setText("<html><div style='width:150px'>"+(value.onlyMine?"Your code appears here once this PC is on your home network.":"Your code appears here once this PC is connected.")+"</div></html>");}
             else try{qr.setText("");qr.setIcon(new ImageIcon(DesktopQr.draw(Pairing.link(value.pairing),216)));}catch(Exception e){qr.setText("Could not draw QR code");return;}

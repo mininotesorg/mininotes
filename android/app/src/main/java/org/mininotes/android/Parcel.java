@@ -124,6 +124,17 @@ final class Parcel {
          * it goes to a device until a note from that device has said this.
          */
         final boolean carries;
+        /**
+         * The colour the sender chose for themselves ({@link Tint}; NONE for none), and when they chose it; 0 where they
+         * never did, and then nothing is said. It rides after the path, behind a mark of its own, where a build from
+         * before stops reading. Set after the parcel is made, as the sender's and not the note's.
+         */
+        int ink=Tint.NONE;long inkAt=0L;
+        /**
+         * When the note is to be gone, on every device that has it (Temp; the owner, 2026-10-03: "gone for everybody"): a
+         * time, 0 for not temporary any more, -1 where the sender says nothing. After the path, behind a mark of its own.
+         */
+        long until=-1L;
         Sent(String collection,String collectionName,String book,String bookName,
              String title,String body,boolean writes,java.util.List<Member> members,
              String scope,String target,boolean answer,long basedOn) {
@@ -212,6 +223,10 @@ final class Parcel {
     private static final int HISTORY_MARK=0x4d4e4831;   // "MNH1"
     /** What says the path begins, after the texts held before. */
     private static final int PATH_MARK=0x4d4e5031;      // "MNP1"
+    /** Before the sender's own colour, after the path: see {@link Sent#ink}. */
+    private static final int INK_MARK=0x4d4e4931;       // "MNI1"
+    /** Before when the note is to be gone, after the path: see {@link Sent#until}. */
+    private static final int UNTIL_MARK=0x4d4e5431;     // "MNT1"
     /** Room for an icon's name in the set, and for a picture: a square thumbnail of at most 32 KB (decision 4). */
     static final int ICON_MOST=64, IMAGE_MOST=32*1024;
 
@@ -286,7 +301,11 @@ final class Parcel {
                 out.writeInt(held);
                 for(int at=0;at<held;at++)out.write(traceBytes(sent.history.get(at)));
             }
-            if(pathed)writePath(out,sent.path,sent.icon,sent.image);
+            if(pathed) {
+                writePath(out,sent.path,sent.icon,sent.image);
+                if(sent.inkAt>0){out.writeInt(INK_MARK);out.writeInt(sent.ink);out.writeLong(sent.inkAt);}
+                if(sent.until>=0){out.writeInt(UNTIL_MARK);out.writeLong(sent.until);}
+            }
         }
         out.flush();
         return bytes.toByteArray();
@@ -316,9 +335,11 @@ final class Parcel {
     }
 
     private static Sent with(Sent sent,java.util.List<Enclosure.Listed> files) {
-        return new Sent(sent.collection,sent.collectionName,sent.book,sent.bookName,sent.title,sent.body,sent.writes,
+        Sent lighter=new Sent(sent.collection,sent.collectionName,sent.book,sent.bookName,sent.title,sent.body,sent.writes,
             sent.members,sent.scope,sent.target,sent.answer,sent.basedOn,sent.carries,files,sent.filesAsOf,
             files==null?null:sent.history,files==null?null:sent.path,sent.icon,sent.image);
+        lighter.ink=sent.ink;lighter.inkAt=sent.inkAt;lighter.until=sent.until;
+        return lighter;
     }
 
     /**
@@ -374,9 +395,11 @@ final class Parcel {
             }
             java.util.List<String> history=files==null?null:heldBefore(in);
             Path path=history==null?null:readPath(in);
-            return new Sent(collection,collectionName,book,bookName,title,body,writes,members,scope,target,
+            Sent read=new Sent(collection,collectionName,book,bookName,title,body,writes,members,scope,target,
                 answer,basedOn,carries,files,asOf,history,path==null?null:path.steps,path==null?"":path.icon,
                 path==null?null:path.image);
+            if(path!=null)tail(in,read);
+            return read;
         } catch(IOException | IllegalArgumentException broken) {
             // Half a parcel is not a parcel. Nothing partly read is handed back.
             return null;
@@ -461,6 +484,27 @@ final class Parcel {
             byte[] image=new byte[length];in.readFully(image);
             return new Path(path,icon,image);
         } catch(IOException | IllegalArgumentException damaged){return null;}
+    }
+
+    /**
+     * What follows the path, each behind its mark, in any order: the sender's colour, and when the note is to be gone. A
+     * mark not known here ends the reading, and what was read stands; what does not read whole is left unsaid.
+     */
+    private static void tail(DataInputStream in,Sent into) {
+        try {
+            while(in.available()>=4) {
+                int mark=in.readInt();
+                if(mark==INK_MARK) {
+                    if(in.available()<12)return;
+                    int colour=in.readInt();long at=in.readLong();
+                    if(at>0&&colour>=0&&colour<Tint.count()){into.ink=colour;into.inkAt=at;}
+                } else if(mark==UNTIL_MARK) {
+                    if(in.available()<8)return;
+                    long until=in.readLong();
+                    if(until>=0)into.until=until;
+                } else return;
+            }
+        } catch(IOException damaged){/* unsaid */}
     }
 
     /** A trace as the bytes it is written in: anything that is not one is written as nothing that matches. */

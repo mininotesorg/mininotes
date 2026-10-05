@@ -25,9 +25,12 @@ public class DesktopHomeTreeTest {
         try {
             await(()->pad.page.isEditable()&&pad.store.latest()!=null);settle(pad);
             for(String name:new String[]{"Kitchen","Garden","Errands","Books"})pad.store.addCollection(name);
+            // The Recent list off: this is about the tree, and at 860 wide the tree and the list together leave Home 338.
+            SwingUtilities.invokeAndWait(()->pad.setOpenListWanted(false));
             SwingUtilities.invokeAndWait(()->{pad.goHome();pad.refresh();});settle(pad);
-            // The things on Home, and the archive and the bin beside them (decision 41).
-            int expected=onEdt(()->pad.store.contents(Things.HOME).size())+2;
+            // The things on Home, and Temp, Shared with me, the archive and the bin beside them (decisions 78, 86 and 94: Recent
+            // is the list on the right).
+            int expected=onEdt(()->pad.store.contents(Things.HOME).size())+4;
             assertTrue("a notebook with things on Home",expected>=6);
             List<String> said=shown(pad);
             assertEquals("every icon in sight on Home: "+said,expected,seen(said));

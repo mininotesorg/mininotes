@@ -6,9 +6,12 @@ android {
         applicationId 'org.mininotes.android'
         minSdk 28
         targetSdk 35
-        versionCode 2012
-        versionName '0.2.012'
+        versionCode 2037
+        versionName '0.2.037'
+        // True only in the demo build below: made-up notes on first start and pretend recovery words (see Demo).
+        buildConfigField 'boolean','DEMO','false'
     }
+    buildFeatures { buildConfig true }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 
     // The Maxima transport's IPC is signature-gated: it answers an app signed with its own key and nobody
@@ -40,6 +43,18 @@ android {
         release {
             minifyEnabled false
             if(rootProject.file('keystore.properties').exists())signingConfig signingConfigs.family
+        }
+        // A demo for recording the website's animation: the same sources, installed beside the real app with its own
+        // notebook, filled with made-up notes on first start and showing pretend recovery words. Never released.
+        //     gradlew -p android assembleDemo  ->  app/build/outputs/apk/demo/app-demo.apk
+        demo {
+            initWith debug
+            applicationIdSuffix '.demo'
+            versionNameSuffix '-demo'
+            debuggable true
+            signingConfig signingConfigs.debug
+            matchingFallbacks=['debug']
+            buildConfigField 'boolean','DEMO','true'
         }
     }
 }

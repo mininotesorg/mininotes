@@ -222,8 +222,8 @@ final class Relays {
         if(publicOn)return own==0?"The relays shipped with Mininotes carry notes when a device cannot be reached directly."
             :"Your relays are used first, then the ones shipped with Mininotes.";
         if(connected>0)return "Only your relays are used.";
-        return pc?"Notes go only directly - to your devices at home, and to those that reach this PC - and wait otherwise."
-            :"Notes go only directly - on your home network, or through your PC - and wait otherwise.";
+        return pc?"Notes go only directly, to your devices at home and to those that reach this PC, and wait otherwise."
+            :"Notes go only directly, on your home network or through your PC, and wait otherwise.";
     }
 
     /** Whether a Maxima greeting comes back from the address: what "it answered" means when one is added. Blocking. */

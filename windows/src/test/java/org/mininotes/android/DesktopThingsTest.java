@@ -157,7 +157,7 @@ public class DesktopThingsTest {
         assertTrue(home.contains(top));assertFalse(home.contains(middle));assertFalse(home.contains(inner));
         assertEquals(List.of(middle),lines(store.inside(NoteStore.Branch.Kind.COLLECTION,top),NoteStore.Branch.Kind.COLLECTION));
         assertEquals(List.of(note.id),lines(store.inside(NoteStore.Branch.Kind.COLLECTION,inner),NoteStore.Branch.Kind.PAGE));
-        assertEquals("1 collection",store.inside(NoteStore.Branch.Kind.COLLECTION,top).holds.get(0).detail);
+        assertEquals("1 folder",store.inside(NoteStore.Branch.Kind.COLLECTION,top).holds.get(0).detail);
         // What is under a collection, however deep.
         assertEquals(1,store.pagesUnder(NoteStore.Branch.Kind.COLLECTION,top).size());
         assertEquals(1,store.pagesUnder(NoteStore.Branch.Kind.COLLECTION,middle).size());
@@ -168,7 +168,7 @@ public class DesktopThingsTest {
         assertEquals(Set.of(A),Sharing.audience(store.shares(),store.pathOf(note.id)).keySet());
         assertEquals(1,store.owed(NoteStore.Branch.Kind.PAGE,note.id).size());
         assertEquals(top,store.sharedAt(store.pathOf(note.id)).target);
-        assertEquals("Home life collection",store.grantedBy(Sharing.Scope.PAGE,note.id,A));
+        assertEquals("Home life folder",store.grantedBy(Sharing.Scope.PAGE,note.id,A));
         // Nothing goes inside itself, or inside anything it holds; and a place to carry it never offers either.
         assertThrows(IllegalArgumentException.class,()->store.moveBook(top,inner));
         assertThrows(IllegalArgumentException.class,()->store.moveBook(top,top));

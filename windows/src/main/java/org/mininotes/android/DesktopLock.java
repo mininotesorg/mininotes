@@ -311,7 +311,7 @@ final class DesktopLock {
         DesktopUi.Text wrong=DesktopUi.quiet(" ");wrong.setForeground(DesktopUi.WARN);
         JPanel body=DesktopUi.column();
         DesktopUi.add(body,DesktopUi.note(hello
-            ?"Your notes on this PC will be encrypted, and Mininotes will open with Windows Hello - your PIN, face or fingerprint - which you set up right after this. First choose a backup password, for when Windows Hello cannot be used. You will also get 12 recovery words, for if you forget it."
+            ?"Your notes on this PC will be encrypted, and Mininotes will open with Windows Hello (your PIN, face or fingerprint), which you set up right after this. First choose a backup password, for when Windows Hello cannot be used. You will also get 12 recovery words, for if you forget it."
             :"Your notes on this PC will be encrypted. Mininotes will ask for this password each time it opens. You will also get 12 recovery words, for if you forget the password.",380,DesktopUi.INK,DesktopUi.BODY));
         DesktopUi.gap(body,12);DesktopUi.add(body,warning());DesktopUi.gap(body,DesktopUi.M);
         DesktopUi.add(body,DesktopUi.quiet(hello?"Backup password":"Password"));DesktopUi.gap(body,4);DesktopUi.add(body,first);DesktopUi.gap(body,DesktopUi.S);
@@ -395,7 +395,7 @@ final class DesktopLock {
         said.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(DesktopUi.LINE),BorderFactory.createEmptyBorder(8,10,8,10)));
         DesktopUi.Text wrong=DesktopUi.quiet(" ");
         JPanel body=DesktopUi.column();
-        DesktopUi.add(body,DesktopUi.note("This backup is locked. Type the password of the notebook it came from, or its 12 recovery words.",380,DesktopUi.INK,DesktopUi.BODY));
+        DesktopUi.add(body,DesktopUi.note("This backup is locked. Type its password, or the 12 recovery words of the notebook it came from.",380,DesktopUi.INK,DesktopUi.BODY));
         DesktopUi.gap(body,12);DesktopUi.add(body,said);DesktopUi.gap(body,6);DesktopUi.add(body,wrong);
         JButton go=DesktopUi.primary("Open the backup",()->{
             wrong.setForeground(DesktopUi.QUIET);wrong.setText("Opening…");wrong.paintImmediately(wrong.getVisibleRect());
@@ -406,6 +406,37 @@ final class DesktopLock {
         box[0]=DesktopUi.sheet(owner,"Locked backup",body,DesktopUi.footer(go),true);
         box[0].getRootPane().setDefaultButton(go);box[0].getRootPane().putClientProperty("focus",said);DesktopUi.show(box[0],440,420);
         return key[0];
+    }
+    /** What {@link #backupPassword} gives back when the backup is to be written without one. */
+    static final char[] NO_PASSWORD=new char[0];
+    /**
+     * A password for one backup, while Mininotes is not locked (the owner, 2026-10-03: "the backup that we make should be
+     * encrypted"; decision 82): typed twice, or *Without a password*, said for what it is. Null if the box was closed.
+     */
+    static char[] backupPassword(Window owner) {
+        JDialog[] box={null};char[][] said={null};
+        JPasswordField first=new JPasswordField(24),again=new JPasswordField(24);
+        DesktopUi.Text wrong=DesktopUi.quiet(" ");wrong.setForeground(DesktopUi.WARN);
+        JPanel body=DesktopUi.column();
+        DesktopUi.add(body,DesktopUi.note("Choose a password for this backup. It opens the backup on any phone or PC, and nothing else can: if it is lost, so is the backup.",380,DesktopUi.INK,DesktopUi.BODY));
+        DesktopUi.gap(body,12);
+        DesktopUi.add(body,DesktopUi.quiet("Backup password"));DesktopUi.gap(body,4);DesktopUi.add(body,first);DesktopUi.gap(body,DesktopUi.S);
+        DesktopUi.add(body,DesktopUi.quiet("The same again"));DesktopUi.gap(body,4);DesktopUi.add(body,again);DesktopUi.gap(body,6);DesktopUi.add(body,wrong);
+        JButton go=DesktopUi.primary("Choose where to save it",()->{
+            String problem=problem(first.getPassword(),again.getPassword());
+            if(problem!=null){wrong.setText(problem);return;}
+            said[0]=first.getPassword();box[0].dispose();
+        });
+        JButton plain=new JButton("Without a password");
+        plain.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_BORDERLESS);
+        plain.addActionListener(e->{
+            if(!DesktopUi.confirm(box[0],"Without a password?","Anyone who gets the file can read every note and file in it.","Export without a password",true))return;
+            said[0]=NO_PASSWORD;box[0].dispose();
+        });
+        JPanel foot=new JPanel(new BorderLayout());foot.setOpaque(false);foot.add(DesktopUi.actions(plain),BorderLayout.WEST);foot.add(DesktopUi.footer(go),BorderLayout.EAST);
+        box[0]=DesktopUi.sheet(owner,"Export backup",body,foot,true);
+        box[0].getRootPane().setDefaultButton(go);box[0].getRootPane().putClientProperty("focus",first);DesktopUi.show(box[0],460,460);
+        return said[0];
     }
     /** One password, asked for. Null if the box was closed. */
     static char[] askPassword(Window owner,String title,String message,String yes) {
@@ -467,7 +498,7 @@ final class DesktopLock {
             state.setIcon(padlock(yes,18));state.setText(yes?"Locked and encrypted":"Not locked");state.setForeground(yes?DesktopUi.ACCENT:DesktopUi.INK);
             means.setText(!yes?"Anyone who can open this PC's files can read your notes. Lock Mininotes to encrypt them"+(helloHere[0]?"; it then opens with Windows Hello.":" with a password.")
                 :viaHello?"Mininotes opens with Windows Hello. Your backup password and your 12 recovery words open it too. Your notes, their attachments and the backups you export are encrypted."
-                :"Mininotes asks for your backup password when it opens"+(helloHere[0]?" - switch on Windows Hello below and you will rarely need it":"")+". Your notes, their attachments and the backups you export are encrypted.");
+                :"Mininotes asks for your backup password when it opens"+(helloHere[0]?". Switch on Windows Hello below and you will rarely need it":"")+". Your notes, their attachments and the backups you export are encrypted.");
             app.securityShown();};
         shownRef[0]=shown;shown.run();
         // Once the lock is on, Windows Hello is set up straight away where this PC has it: that is how it is meant to open.

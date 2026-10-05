@@ -7,14 +7,13 @@ import java.util.List;
 import javax.swing.*;
 
 /**
- * The overview: the notes and collections that are open, as cards side by side, the newest first, as a phone shows its
- * open apps (docs/HOME.md, step 3). It takes the place of the tab bar. The button beside the search, or Ctrl+Tab, puts it
- * over the window: a click on a card goes there, its × or a middle click closes it, and Close all - the one button -
- * closes them all. With Ctrl held, Tab moves along the cards and letting go of Ctrl opens the one chosen, as Alt+Tab
- * does with windows. Esc, or a click beside the cards, puts it away.
+ * The overview: what was opened lately - Recent - as cards side by side, the newest first, as a phone shows its open apps
+ * (docs/HOME.md, step 3 and decision 86). The button beside the search, or Ctrl+Tab, puts it over the window: a click on
+ * a card goes there. Nothing is closed: what was opened falls out of Recent by itself (the owner, 2026-10-04: "we would
+ * get rid of open and keep only recent"). With Ctrl held, Tab moves along the cards and letting go of Ctrl opens the one
+ * chosen, as Alt+Tab does with windows. Esc, or a click beside the cards, puts it away.
  *
- * <p>What is open is the pure {@link Overview}, shared with the phone and kept in this PC's settings as the phone keeps
- * it in its own; this draws it.
+ * <p>The pure {@link Overview} is still kept, as the order things were opened in, for going back; the cards are Recent's.
  */
 final class DesktopOverview extends JComponent {
     /** Where the list is kept among the settings, under the phone's own name for it. */
@@ -82,8 +81,9 @@ final class DesktopOverview extends JComponent {
         public boolean getScrollableTracksViewportWidth(){return getParent() instanceof JViewport v&&v.getWidth()>=getPreferredSize().width;}
         public boolean getScrollableTracksViewportHeight(){return true;}
     }
-    private final DesktopUi.Text none=DesktopUi.note("Nothing is open. The notes and collections you open are kept here, the newest first.",420,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f));
-    private final JButton closeAll;
+    private final DesktopUi.Text none=DesktopUi.note("Nothing opened lately. The notes and folders you open are here, the newest first.",420,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f));
+    /** How many cards at most: what was lately in hand, not a second list of everything. */
+    private static final int MOST=20;
     private Component before;
 
     DesktopOverview(Desktop pad) {
@@ -102,15 +102,13 @@ final class DesktopOverview extends JComponent {
         JPanel words=new JPanel(new FlowLayout(FlowLayout.CENTER,0,0));words.setOpaque(false);words.add(none);
         words.setMaximumSize(new Dimension(Integer.MAX_VALUE,none.getPreferredSize().height));
         middle.add(Box.createVerticalGlue());middle.add(along);middle.add(words);middle.add(Box.createVerticalGlue());
-        closeAll=DesktopUi.primary("Close all",this::closeAll);
-        JPanel foot=new JPanel(new FlowLayout(FlowLayout.CENTER,0,0));foot.setOpaque(false);foot.setBorder(BorderFactory.createEmptyBorder(0,0,28,0));foot.add(closeAll);
-        add(middle);add(foot,BorderLayout.SOUTH);
+        add(middle);
         // A click anywhere that is not a card puts it away, as a click beside every box here does.
         MouseAdapter away=new MouseAdapter(){public void mousePressed(MouseEvent e){if(SwingUtilities.isLeftMouseButton(e))close();}};
-        for(JComponent part:new JComponent[]{this,middle,row,foot})part.addMouseListener(away);along.getViewport().addMouseListener(away);
+        for(JComponent part:new JComponent[]{this,middle,row})part.addMouseListener(away);along.getViewport().addMouseListener(away);
         addMouseWheelListener(e->{JScrollBar bar=along.getHorizontalScrollBar();bar.setValue(bar.getValue()+(int)Math.round(e.getPreciseWheelRotation()*60));});
         bind("ESCAPE",this::close);bind("LEFT",()->move(true));bind("RIGHT",()->move(false));
-        bind("ENTER",this::goChosen);bind("SPACE",this::goChosen);bind("DELETE",()->{if(chosen>=0&&chosen<cards.size())closeOne(cards.get(chosen).one);});
+        bind("ENTER",this::goChosen);bind("SPACE",this::goChosen);
     }
     private void bind(String key,Runnable does) {
         getInputMap(WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(KeyStroke.getKeyStroke(key),key);
@@ -142,6 +140,7 @@ final class DesktopOverview extends JComponent {
     void close(Overview.Kind kind,String id){if(open.close(kind,id))keep();}
     private void keep() {
         String said=open.said();
+        pad.openList.refresh();
         pad.disk.submit(()->{pad.context.getSharedPreferences("settings",0).edit().putString(KEPT,said).apply();return null;},done->{},e->{});
     }
 
@@ -158,11 +157,10 @@ final class DesktopOverview extends JComponent {
         if(isVisible()){if(cycle)step(false);return;}
         cycling=cycle;
         before=KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
-        List<Overview.Open> now=open.all();
-        chosen=cycle?firstChosen(now.size(),!now.isEmpty()&&pad.showingOpen(now.get(0))):-1;
+        chosen=-1;wantBack=false;
         place();setVisible(true);requestFocusInWindow();
         cards.clear();row.removeAll();said();
-        load(now);
+        load();
     }
 
     /** Where it lies: over the tree and Home or the page, under the toolbar and over the status bar. */
@@ -185,13 +183,13 @@ final class DesktopOverview extends JComponent {
      * up, one card along. Letting go of Ctrl then opens the chosen one.
      */
     void cycle(boolean back) {
-        if(!isVisible()){up(true);if(back&&open.size()>1)chosen=open.size()-1;for(Card one:cards)one.repaint();return;}
+        if(!isVisible()){up(true);wantBack=back;return;}
         cycling=true;step(back);
     }
 
     /** One card along, or back. */
     void step(boolean back) {
-        int size=cards.isEmpty()?open.size():cards.size();
+        int size=cards.size();
         chosen=along(chosen<0?(back?0:-1):chosen,size,back);
         for(Card one:cards)one.repaint();
         if(chosen>=0&&chosen<cards.size())cards.get(chosen).scrollRectToVisible(new Rectangle(cards.get(chosen).getSize()));
@@ -200,41 +198,34 @@ final class DesktopOverview extends JComponent {
 
     /** Ctrl let go, or Enter: the chosen card is gone to. */
     void goChosen() {
-        List<Overview.Open> now=cards.isEmpty()?open.all():cards.stream().map(c->c.one).toList();
+        List<Overview.Open> now=cards.stream().map(c->c.one).toList();
         if(chosen<0||chosen>=now.size()){cycling=false;return;}
         Overview.Open one=now.get(chosen);
         before=null;close();pad.goTo(one);
     }
 
-    /** Every card closed, and the overview with them; what was open on the screen goes too, and Home is what is left. */
-    private void closeAll() {
-        open.closeAll();keep();
-        before=null;close();
-        pad.closedEverything();
-    }
-
-    /** One card closed: out of the list; the note or the card it stands for, if it is the one on the screen, goes too. */
-    private void closeOne(Overview.Open one) {
-        close(one.kind,one.id);
-        for(int at=0;at<cards.size();at++)if(cards.get(at).one.equals(one)){row.remove(cards.get(at));cards.remove(at);break;}
-        if(chosen>=cards.size())chosen=cards.size()-1;
-        pad.closed(one);
-        row.revalidate();row.repaint();said();
-    }
+    /** Put up by Ctrl+Shift+Tab: the last card chosen once they are read. */
+    private boolean wantBack;
 
     /** With no card left: the words that say why, and no button with nothing to do. */
     private void said() {
-        boolean empty=cards.isEmpty()&&open.isEmpty();
-        along.setVisible(!empty);none.getParent().setVisible(empty);closeAll.setVisible(!empty);
+        boolean empty=cards.isEmpty();
+        along.setVisible(!empty);none.getParent().setVisible(empty);
         revalidate();repaint();
     }
 
     /**
-     * The cards, read on the disk: each note as it now reads, and each collection with its name, its colour and what it
-     * holds. Whatever has been put away or deleted since it was opened is let go of, and has no card.
+     * The cards, read on the disk: Recent, newest first, each note as it now reads, and each collection with its name, its
+     * colour and what it holds. Put up by Ctrl+Tab, the card after the one on the screen is chosen once they are read.
      */
-    private void load(List<Overview.Open> all) {
+    private void load() {
+        long since=System.currentTimeMillis()-pad.recentDays()*86_400_000L;
         pad.disk.submit(()->{
+            List<Overview.Open> all=new ArrayList<>();
+            for(NoteStore.Branch one:pad.store.recent(since)) {
+                if(all.size()>=MOST)break;
+                all.add(new Overview.Open(one.kind==NoteStore.Branch.Kind.PAGE?Overview.Kind.NOTE:Overview.Kind.COLLECTION,one.id));
+            }
             List<Object[]> shown=new ArrayList<>();List<String> gone=new ArrayList<>();
             for(Overview.Open one:all) {
                 NoteStore.Branch.Kind kind=one.kind==Overview.Kind.NOTE?NoteStore.Branch.Kind.PAGE:NoteStore.Branch.Kind.COLLECTION;
@@ -263,6 +254,7 @@ final class DesktopOverview extends JComponent {
             @SuppressWarnings("unchecked") List<Object[]> shown=(List<Object[]>)got[0];
             cards.clear();row.removeAll();
             for(Object[] one:shown){Card card=new Card((Overview.Open)one[0],one[1],one.length>2?(NoteStore.Branch)one[2]:(NoteStore.Branch)one[1]);cards.add(card);row.add(card);}
+            if(cycling){chosen=wantBack&&cards.size()>1?cards.size()-1:firstChosen(cards.size(),!cards.isEmpty()&&pad.showingOpen(cards.get(0).one));wantBack=false;for(Card one:cards)one.repaint();}
             if(chosen>=cards.size())chosen=cards.isEmpty()?-1:cards.size()-1;
             said();row.revalidate();row.repaint();
             if(chosen>=0)SwingUtilities.invokeLater(()->{if(chosen>=0&&chosen<cards.size())cards.get(chosen).scrollRectToVisible(new Rectangle(cards.get(chosen).getSize()));});
@@ -270,8 +262,8 @@ final class DesktopOverview extends JComponent {
     }
 
     /**
-     * One open thing, as a card: a note as its paper, with its title and first lines; a collection as its mini-grid, with
-     * its name. Clicked, it is gone to; its ×, or a middle click, closes it; right-clicked, Close and then its own menu.
+     * One thing opened lately, as a card: a note as its paper, with its title and first lines; a collection as its mini-grid,
+     * with its name. Clicked, it is gone to; right-clicked, its own menu, as its icon has it.
      */
     private final class Card extends JPanel {
         final Overview.Open one;final Object what;boolean over;
@@ -280,16 +272,10 @@ final class DesktopOverview extends JComponent {
         Card(Overview.Open one,Object what,NoteStore.Branch look) {
             super(null);this.one=one;this.what=what;this.look=look;
             setOpaque(false);setPreferredSize(new Dimension(WIDE,HIGH));setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            JButton x=new JButton("×");x.setFocusPainted(false);x.setMargin(new Insets(0,6,0,6));x.setFont(DesktopUi.BODY.deriveFont(16f));
-            x.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
-            x.setToolTipText("Close");x.getAccessibleContext().setAccessibleName("Close "+name());x.setFocusable(false);
-            x.addActionListener(e->closeOne(one));
-            Dimension d=x.getPreferredSize();x.setBounds(WIDE-d.width-8,8,d.width,d.height);add(x);
-            getAccessibleContext().setAccessibleName((one.kind==Overview.Kind.NOTE?"The note ":"The collection ")+name());
+            getAccessibleContext().setAccessibleName((one.kind==Overview.Kind.NOTE?"The note ":"The folder ")+name());
             putClientProperty(DesktopHome.MENU,(java.util.function.Supplier<JPopupMenu>)this::menu);
             addMouseListener(new MouseAdapter(){
                 public void mouseClicked(MouseEvent e) {
-                    if(SwingUtilities.isMiddleMouseButton(e)){closeOne(one);return;}
                     if(SwingUtilities.isLeftMouseButton(e)){before=null;close();pad.goTo(one);}
                 }
                 public void mousePressed(MouseEvent e){if(e.isPopupTrigger())menu().show(Card.this,e.getX(),e.getY());}
@@ -306,15 +292,12 @@ final class DesktopOverview extends JComponent {
             }
             return DesktopHome.named((NoteStore.Branch)what);
         }
-        /** Close first, since that is what a card is for, then the thing's own menu, as its icon has it. */
+        /** The thing's own menu, as its icon has it. */
         private JPopupMenu menu() {
             NoteStore.Branch thing=what instanceof NoteStore.Note note
                 ?new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,note.id,note.book,name(),"",0,0,false,note.colour)
                 :(NoteStore.Branch)what;
-            JPopupMenu menu=pad.thingMenu(thing);
-            JMenuItem closing=new JMenuItem("Close");closing.addActionListener(a->closeOne(one));
-            menu.insert(closing,0);menu.insert(new JPopupMenu.Separator(),1);
-            return menu;
+            return pad.thingMenu(thing);
         }
         @Override protected void paintComponent(Graphics g0) {
             Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
@@ -352,7 +335,7 @@ final class DesktopOverview extends JComponent {
                 int y=fy+face+22+m.getAscent();
                 for(String line:DesktopHome.lines(name(),m,side,2)){g.drawString(line,(getWidth()-m.stringWidth(line))/2f,y);y+=m.getHeight();}
                 g.setFont(DesktopUi.BODY.deriveFont(13f));g.setColor(DesktopUi.QUIET);m=g.getFontMetrics();
-                String kind="Collection";g.drawString(kind,(getWidth()-m.stringWidth(kind))/2f,y+4);
+                String kind="Folder";g.drawString(kind,(getWidth()-m.stringWidth(kind))/2f,y+4);
             }
             g.dispose();
         }

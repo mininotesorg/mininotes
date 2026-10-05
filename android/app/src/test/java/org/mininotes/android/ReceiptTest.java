@@ -130,6 +130,22 @@ public class ReceiptTest {
         assertEquals(Receipt.PERSONS_MINE,Receipt.open(Receipt.wrap(Receipt.PERSONS_MINE)));
     }
 
+    /**
+     * A file on its own (decision 92): "this build knows them", and leaving one or being taken off one, each a number of its
+     * own, after trees, and never taken for any other word.
+     */
+    @Test public void aFileOnItsOwnHasItsOwnWords() {
+        assertEquals(23,Receipt.LOOSE);assertEquals(24,Receipt.LEFT_FILE);assertEquals(25,Receipt.REMOVED_FILE);
+        assertEquals(Receipt.LOOSE,Receipt.open(Receipt.wrap(Receipt.LOOSE)));
+        assertEquals(Receipt.LEFT_FILE,Receipt.left(Sharing.Scope.FILE));
+        assertEquals(Receipt.REMOVED_FILE,Receipt.removed(Sharing.Scope.FILE));
+        assertEquals(Sharing.Scope.FILE,Receipt.leftScope(Receipt.open(Receipt.wrap(Receipt.LEFT_FILE))));
+        assertEquals(Sharing.Scope.FILE,Receipt.removedScope(Receipt.open(Receipt.wrap(Receipt.REMOVED_FILE))));
+        assertNull(Receipt.leftScope(Receipt.REMOVED_FILE));assertNull(Receipt.removedScope(Receipt.LEFT_FILE));
+        assertNull(Receipt.leftScope(Receipt.LOOSE));assertNull(Receipt.removedScope(Receipt.LOOSE));
+        assertNull(Parcel.open(Receipt.wrap(Receipt.LOOSE)));assertNull(Sleeve.open(Receipt.wrap(Receipt.LOOSE)));
+    }
+
     @Test public void nothingAndNonsenseAreNotAnswers() {
         assertEquals(0,Receipt.open(null));
         assertEquals(0,Receipt.open(new byte[0]));

@@ -1,5 +1,5 @@
 plugins { id 'java'; id 'application' }
-version = '0.2.012'
+version = '0.2.037'
 repositories { mavenCentral() }
 java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 application { mainClass = 'org.mininotes.android.Desktop' }
@@ -22,7 +22,7 @@ dependencies {
 // adapted; generated files are never edited or committed.
 def portable = ['Arriving','Attachment','Background','Envelope','Feedback','Find','Hello',
     'Merge','Outbox','Pairing','Parcel','Point','Receipt','Reorder','RevisionClock',
-    'SchemaMigrations','SyncStatus','SyncMark','Sha3','Sharing','Tint','Update','Vault','Sealed','Courier','Enclosure','Direct','Nearby','Home','Relays','Given','Drop','DropList','Unsent','Persons','Recording','Linking','NoteLine','Waits','Links','Reading','Writers','Things','Carton','Overview','Grid','Layout','Icons','Thumb','Looks']
+    'SchemaMigrations','SyncStatus','SyncMark','Sha3','Sharing','Tint','Update','Vault','Sealed','Courier','Enclosure','Direct','Nearby','Home','Relays','Given','Drop','DropList','Unsent','Persons','Groups','Parlons','Recording','Linking','NoteLine','Waits','Links','Reading','Writers','Things','Carton','Sleeve','Overview','Grid','Layout','Icons','Thumb','Looks','Marks','Routes']
 def adapted = ['NoteStore','Post','Node']
 def androidSource = file('../android/app/src/main/java/org/mininotes/android')
 def generated = layout.buildDirectory.dir('generated/sources/shared')
@@ -70,7 +70,8 @@ sourceSets {
 }
 tasks.named('compileJava') { dependsOn 'sharedSources' }
 tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
-test { systemProperty 'sun.awt.fontconfig', file('fontconfig/fontconfig.properties').absolutePath; maxHeapSize = '256m'; testLogging { events 'failed'; exceptionFormat 'full' } }
+// The tests that open a window on a notebook of their own count what is in it: no welcome notes there (Desktop.welcomes).
+test { systemProperty 'sun.awt.fontconfig', file('fontconfig/fontconfig.properties').absolutePath; systemProperty 'mininotes.welcome', 'false'; maxHeapSize = '256m'; testLogging { events 'failed'; exceptionFormat 'full' } }
 tasks.register('transportProbe', JavaExec) {
     dependsOn testClasses
     classpath = sourceSets.test.runtimeClasspath

@@ -12,7 +12,7 @@ import java.util.List;
  * types, so the version rules are unit tested without a device.
  */
 final class SchemaMigrations {
-    static final int VERSION=33;
+    static final int VERSION=43;
 
     /** Every pad starts with one collection holding one book, so writing never begins with a decision. */
     static final String FIRST_COLLECTION="collection-first", FIRST_BOOK="book-first";
@@ -565,6 +565,128 @@ final class SchemaMigrations {
         "ALTER TABLE files ADD COLUMN page INTEGER NOT NULL DEFAULT 0",
     };
 
+    /**
+     * A note's writing lines, shown or not, on this device (the owner, 2026-10-03: "display the writing lines or not in the
+     * background of the notes, just as we are able to change the colours"), kept beside its colour and never sent; and the
+     * name and kind of what an accepted code is bringing, so it stands on Home as waiting from the moment it is accepted.
+     */
+    private static final String[] WAITING_LINES={
+        "ALTER TABLE notes ADD COLUMN lines INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE accepting ADD COLUMN what TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE accepting ADD COLUMN kind TEXT NOT NULL DEFAULT ''",
+    };
+
+    /**
+     * Two things of this device's own, never sent (the owner, 2026-10-03). Where a note or a collection is shown here when
+     * that is not where it is: a thing somebody shares stays where the sharing has it, linked as before, and is shown
+     * wherever this person put it ("in the background they must stay linked, but visually the user needs to be able to put
+     * all its assets, shared or not, wherever he wants"). And a look of its own - an icon or a picture - that only this
+     * device shows, beside the one everybody sees ("set the icon of a note individually or for everybody when shared").
+     */
+    private static final String[] SHOWN_MINE={
+        "ALTER TABLE notes ADD COLUMN shown TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE things ADD COLUMN shown TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE notes ADD COLUMN myicon TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE notes ADD COLUMN myimage TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE things ADD COLUMN myicon TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE things ADD COLUMN myimage TEXT NOT NULL DEFAULT ''",
+    };
+
+    /**
+     * The colour each person chose for themselves, as their notes said it, and when they chose it (the owner, 2026-10-03:
+     * "each participant should be able to pick an individual writing colour and everyone should see all others' writing
+     * colour"). A colour given to somebody on this device stays in {@code inks} and wins over this. This device's own
+     * choice is kept here too, under {@link Writers#ME}, with when it was made, so the owner's devices take the newer.
+     */
+    private static final String[] SAID_INKS={
+        "CREATE TABLE IF NOT EXISTS said_inks(writer TEXT PRIMARY KEY,colour INTEGER NOT NULL,at INTEGER NOT NULL)",
+    };
+
+    /**
+     * Temp and Recent (the owner, 2026-10-03): when a note or a collection is to be gone, for everybody who has it (0 for
+     * never), which travels with a note; and when it was last opened here, which does not.
+     */
+    private static final String[] TEMP_RECENT={
+        "ALTER TABLE notes ADD COLUMN until INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE things ADD COLUMN until INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE notes ADD COLUMN touched INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE things ADD COLUMN touched INTEGER NOT NULL DEFAULT 0",
+    };
+
+    /**
+     * A file in a place, as a note can be (the owner, 2026-10-04: "please build everything"; decision 87): put away (1 the
+     * archive, 2 the bin), to be gone at a time (0 never), and starred (when, 0 never). This device's own, as where a thing
+     * is put is: a list that travels says nothing of them.
+     */
+    private static final String[] FILE_PLACES={
+        "ALTER TABLE files ADD COLUMN away INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE files ADD COLUMN until INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE files ADD COLUMN starred INTEGER NOT NULL DEFAULT 0",
+    };
+
+    /**
+     * A file shared on its own, like a note (the owner, 2026-10-04: "a picture or any file kept loose in a collection or on
+     * Home should be shareable like a note"; decision 92): whether it came from somebody, its own revision, which its
+     * sleeve travels under, and whether its owner deleted it for everybody, kept hidden until everybody has heard (see
+     * {@link Sleeve}); and where this device shows one that arrived ("Shared with me", or as the owner set it), as a note's
+     * shown is. And a file waited for on its own, kept on Home when it comes rather than with a note or a collection.
+     */
+    private static final String[] FILE_SHARING={
+        "ALTER TABLE files ADD COLUMN theirs INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE files ADD COLUMN revision INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE files ADD COLUMN gone INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE files ADD COLUMN shown TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE incoming ADD COLUMN alone INTEGER NOT NULL DEFAULT 0",
+    };
+
+    /**
+     * A file shared on its own, written in (the owner, 2026-10-04: "please now take care of the ones not done yet"; decision
+     * 93): when its name was last chosen and when its bytes were last replaced, by whoever did it, so the later of two always
+     * stands everywhere whichever arrives first; the revision at which this device last changed it itself, which a writer
+     * owes everybody on it until they answer; and, for one waited for, whose it is as its sleeve names it, and whether it is
+     * a new version of a file here, which replaces it only once it is fetched.
+     */
+    private static final String[] FILE_VERSIONS={
+        "ALTER TABLE files ADD COLUMN named INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE files ADD COLUMN replaced INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE files ADD COLUMN changed INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE incoming ADD COLUMN owner TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE incoming ADD COLUMN replaces INTEGER NOT NULL DEFAULT 0",
+    };
+
+    /**
+     * A file let go on Temp on another of this owner's devices (decision 95): when it is to be gone, kept with its fetch
+     * until it is here, then given to the file.
+     */
+    private static final String[] TEMP_FILES={
+        "ALTER TABLE incoming ADD COLUMN until INTEGER NOT NULL DEFAULT 0",
+    };
+
+    /**
+     * People in groups (the owner, 2026-10-05; decision 100; see {@link Groups}): each group with when it was named or
+     * deleted; who is in it, by the key their device signs with, and when they were put in or taken out; and every thing
+     * given to a group, with its level and when, GONE where it was taken away and never deleted, as `shares` keeps its
+     * rows. And the group a person's rule came from, empty for one given to them on their own: a rule a group made is
+     * taken away when the group is, and a rule given directly never is.
+     */
+    private static final String[] GROUPS={
+        "CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY,name TEXT NOT NULL,decided INTEGER NOT NULL,gone INTEGER NOT NULL DEFAULT 0)",
+        "CREATE TABLE IF NOT EXISTS members(grp TEXT NOT NULL,signing TEXT NOT NULL,decided INTEGER NOT NULL,gone INTEGER NOT NULL DEFAULT 0,"
+        +"PRIMARY KEY(grp,signing))",
+        "CREATE TABLE IF NOT EXISTS group_shares(grp TEXT NOT NULL,scope TEXT NOT NULL,target TEXT NOT NULL,level TEXT NOT NULL,"
+        +"decided INTEGER NOT NULL,PRIMARY KEY(grp,scope,target))",
+        "ALTER TABLE shares ADD COLUMN grp TEXT NOT NULL DEFAULT ''",
+    };
+
+    /**
+     * A person's Parlons! address (the owner, 2026-10-05; decision 101; see {@link Parlons}), on their card here, and when
+     * it was decided, so the later of two decisions stands on every device of the owner's: nobody has one yet.
+     */
+    private static final String[] PARLONS={
+        "ALTER TABLE addresses ADD COLUMN parlons TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE addresses ADD COLUMN parlonsDecided INTEGER NOT NULL DEFAULT 0",
+    };
+
     /** STEPS[i] upgrades a database at version i+1 to version i+2. */
     private static final String[][] STEPS={
         {VIEW_INDEX},
@@ -631,6 +753,26 @@ final class SchemaMigrations {
         CELLS,
         // 32 -> 33: Home is pages in every direction, and an icon stands on one.
         PAGES,
+        // 33 -> 34: writing lines on or off, note by note; and what is on its way, waiting on Home.
+        WAITING_LINES,
+        // 34 -> 35: a thing shown where this person put it, and a look only this device shows.
+        SHOWN_MINE,
+        // 35 -> 36: the colour each person chose, as it came with their notes.
+        SAID_INKS,
+        // 36 -> 37: what is to be gone, and when; and what was opened lately.
+        TEMP_RECENT,
+        // 37 -> 38: a file archived, binned, temporary or starred.
+        FILE_PLACES,
+        // 38 -> 39: a file shared on its own, like a note.
+        FILE_SHARING,
+        // 39 -> 40: a file shared on its own, renamed or replaced by whoever may write in it.
+        FILE_VERSIONS,
+        // 40 -> 41: when a file let go on Temp on another of my devices is to be gone, carried with its fetch.
+        TEMP_FILES,
+        // 41 -> 42: people in groups, and the group a person's rule came from.
+        GROUPS,
+        // 42 -> 43: a person's Parlons! address, and when it was decided.
+        PARLONS,
     };
 
     /** The one collection and the one book a pad cannot be without, for a restore that carries neither. */
@@ -672,6 +814,16 @@ final class SchemaMigrations {
         Collections.addAll(statements,HOME_FILES);
         Collections.addAll(statements,CELLS);
         Collections.addAll(statements,PAGES);
+        Collections.addAll(statements,WAITING_LINES);
+        Collections.addAll(statements,SHOWN_MINE);
+        Collections.addAll(statements,SAID_INKS);
+        Collections.addAll(statements,TEMP_RECENT);
+        Collections.addAll(statements,FILE_PLACES);
+        Collections.addAll(statements,FILE_SHARING);
+        Collections.addAll(statements,FILE_VERSIONS);
+        Collections.addAll(statements,TEMP_FILES);
+        Collections.addAll(statements,GROUPS);
+        Collections.addAll(statements,PARLONS);
         return statements;
     }
 

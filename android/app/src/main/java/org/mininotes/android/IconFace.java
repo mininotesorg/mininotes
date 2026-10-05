@@ -92,6 +92,11 @@ final class IconFace extends Drawable {
         }
     }
 
+    /** A picture filling the round square, a hairline round it: a picture file's own face (decision 88). */
+    static IconFace picture(MainActivity a,Bitmap picture) {
+        return new IconFace(Looks.Shows.PICTURE,a.PAPER,a.LINE,Math.max(1,a.dp(1)),a.dp(14),a.dp(40),null,0,0,picture,0,0,0,0,0,0,0);
+    }
+
     /** One glyph on a round square of the given fill and edge. */
     static IconFace glyph(MainActivity a,int fill,int edge,float edgeMost,String glyph,int ink) {
         return new IconFace(Looks.Shows.GLYPH,fill,edge,edgeMost,a.dp(14),a.dp(40),glyph,ink,0,null,0,0,0,0,0,0,0);

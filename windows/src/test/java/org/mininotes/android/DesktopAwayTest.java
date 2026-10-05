@@ -41,6 +41,9 @@ public class DesktopAwayTest {
                 List<NoteStore.Branch.Kind> kinds=new ArrayList<>();for(DesktopHome.Tile one:home.tiles)kinds.add(one.thing.kind);
                 assertEquals(NoteStore.Branch.Kind.BIN,kinds.get(kinds.size()-1));
                 assertEquals(NoteStore.Branch.Kind.ARCHIVE,kinds.get(kinds.size()-2));
+                // Shared with me before them, and Temp before it (decisions 78 and 94).
+                assertEquals(NoteStore.Branch.Kind.SHARED,kinds.get(kinds.size()-3));
+                assertEquals("Temp and Recent before them (decision 78)",NoteStore.Branch.Kind.TEMP,kinds.get(kinds.size()-4));
                 assertEquals("",tile(home,"Bin").thing.detail);
                 assertEquals("Open the bin, empty",tile(home,"Bin").getAccessibleContext().getAccessibleName());
             });
@@ -111,11 +114,11 @@ public class DesktopAwayTest {
             SwingUtilities.invokeAndWait(()->assertEquals(home.cellBounds(2,3),tile(home,"Bin").getBounds()));
             shoot(pad.frame,"96c-bin-moved");
 
-            // Switched off in Settings: off Home, and back in ⋯.
-            SwingUtilities.invokeAndWait(()->pad.setAwayOnHome(false));settle(pad);
-            SwingUtilities.invokeAndWait(()->{for(DesktopHome.Tile one:home.tiles)assertFalse(Grid.place(one.thing.kind)&&one.thing.kind!=NoteStore.Branch.Kind.FAVOURITES);});
-            assertFalse(onEdt(pad::awayOnHome));
-            SwingUtilities.invokeAndWait(()->pad.setAwayOnHome(true));settle(pad);
+            // Each switched off in Home's menu: off Home, and back in ⋯ (decision 78).
+            SwingUtilities.invokeAndWait(()->{pad.setOnHome(NoteStore.ARCHIVE,false);pad.setOnHome(NoteStore.BIN,false);});settle(pad);
+            SwingUtilities.invokeAndWait(()->{for(DesktopHome.Tile one:home.tiles)assertFalse(one.thing.kind==NoteStore.Branch.Kind.ARCHIVE||one.thing.kind==NoteStore.Branch.Kind.BIN);});
+            assertFalse(onEdt(()->pad.onHome(NoteStore.BIN)));
+            SwingUtilities.invokeAndWait(()->{pad.setOnHome(NoteStore.ARCHIVE,true);pad.setOnHome(NoteStore.BIN,true);});settle(pad);
             SwingUtilities.invokeAndWait(()->assertEquals("where it was put",home.cellBounds(2,3),tile(home,"Bin").getBounds()));
         } finally {SwingUtilities.invokeAndWait(()->pad.shutdown(false));await(()->!pad.frame.isDisplayable());}
     }

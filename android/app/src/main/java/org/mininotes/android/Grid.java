@@ -39,7 +39,7 @@ final class Grid {
         INTO,
         /**
          * Put away, as its menu puts it away (decision 41): a note or a collection let go on the Archive is archived, on the
-         * Bin it goes in the bin; a file let go on the Bin is deleted, after the one question its menu asks.
+         * Bin it goes in the bin, on Temp it is made temporary: a file as a note (decision 87).
          */
         AWAY,
         /** Nothing of its own: what is let go there is not put into it (on the phone's grid it goes back; see {@link #letGo}). */
@@ -53,9 +53,8 @@ final class Grid {
      */
     static Onto onto(NoteStore.Branch.Kind dragged,NoteStore.Branch.Kind target) {
         if(!moves(dragged)||target==null)return Onto.NONE;
-        // A file has no archive: it is kept, or it is deleted.
-        if(target==NoteStore.Branch.Kind.BIN)return Onto.AWAY;
-        if(target==NoteStore.Branch.Kind.ARCHIVE)return docks(dragged)?Onto.AWAY:Onto.NONE;
+        // The archive, the bin and Temp take a file as they take a note (decision 87).
+        if(target==NoteStore.Branch.Kind.BIN||target==NoteStore.Branch.Kind.ARCHIVE||target==NoteStore.Branch.Kind.TEMP)return Onto.AWAY;
         if(dragged==NoteStore.Branch.Kind.PAGE&&target==NoteStore.Branch.Kind.PAGE)return Onto.MERGE;
         if(target==NoteStore.Branch.Kind.COLLECTION)return Onto.INTO;
         if(dragged==NoteStore.Branch.Kind.FILE&&target==NoteStore.Branch.Kind.PAGE)return Onto.INTO;
@@ -69,10 +68,17 @@ final class Grid {
 
     /**
      * Whether an icon is one of Home's places rather than a thing: the Favourites collection, the archive or the bin
-     * (decision 41). It has no row in the notebook, holds nothing that is carried about, and keeps a cell of its own on Home.
+     * (decision 41), Temp, Recent and Shared with me (decision 94). It has no row in the notebook, holds nothing that is carried about, and keeps a cell of its own on Home.
      */
     static boolean place(NoteStore.Branch.Kind kind) {
-        return kind==NoteStore.Branch.Kind.FAVOURITES||kind==NoteStore.Branch.Kind.ARCHIVE||kind==NoteStore.Branch.Kind.BIN;
+        return kind==NoteStore.Branch.Kind.FAVOURITES||kind==NoteStore.Branch.Kind.ARCHIVE||kind==NoteStore.Branch.Kind.BIN
+            ||kind==NoteStore.Branch.Kind.TOOLS||kind==NoteStore.Branch.Kind.TEMP||kind==NoteStore.Branch.Kind.RECENT
+            ||kind==NoteStore.Branch.Kind.WAITING||kind==NoteStore.Branch.Kind.OPEN||kind==NoteStore.Branch.Kind.SHARED;
+    }
+
+    /** The places Tools can hold (decision 72): the archive, the bin, Temp and Recent. */
+    static boolean tool(NoteStore.Branch.Kind kind) {
+        return kind==NoteStore.Branch.Kind.ARCHIVE||kind==NoteStore.Branch.Kind.BIN||kind==NoteStore.Branch.Kind.TEMP||kind==NoteStore.Branch.Kind.RECENT;
     }
 
     /**

@@ -250,7 +250,7 @@ final class Direct {
         for(String one:firstTries(lan,new ArrayList<>(them.addresses),them.publicKey)) {
             try {
                 MaximaSender.Result said=node.sendRaw(one,application,data,LEASH,MaximaSender.READ_TIMEOUT_MS);
-                if(said!=null&&said.isOk()){WENT.incrementAndGet();if(one.equals(lan))opened(them.publicKey,lan);return said;}
+                if(said!=null&&said.isOk()){WENT.incrementAndGet();if(one.equals(lan))opened(them.publicKey,lan);Routes.went(them.publicKey,Routes.Way.DOOR,System.currentTimeMillis());return said;}
             } catch(Exception notThere){/* the next way, and at worst the relays */}
             // Not on this network any more, or not letting anything in - a PC's firewall drops what it has not
             // been told to allow, and says nothing. Let go of, and not believed again for a while even though it
@@ -258,11 +258,14 @@ final class Direct {
             if(one.equals(lan)){node.forgetLanPeer(them.publicKey);shut(them.publicKey,lan,System.currentTimeMillis());SHUT_HERE.incrementAndGet();}
         }
         if(home!=null) {
-            try{if(home.left(data)){LEFT.incrementAndGet();return MaximaSender.Result.of(com.eurobuddha.maxima.core.net.Frame.RESPONSE_OK);}}
+            try{if(home.left(data)){LEFT.incrementAndGet();Routes.went(them.publicKey,Routes.Way.HOME,System.currentTimeMillis());return MaximaSender.Result.of(com.eurobuddha.maxima.core.net.Frame.RESPONSE_OK);}}
             catch(Exception notThere){/* the relays */}
         }
         if(!helpers)throw new IllegalStateException(WAITS);
-        return node.sendToContact(them,application,data);
+        MaximaSender.Result said=node.sendToContact(them,application,data);
+        // Kept for People and devices (decision 96): which road the last thing taken went by.
+        if(said!=null&&said.isOk())Routes.went(them.publicKey,Routes.Way.RELAY,System.currentTimeMillis());
+        return said;
     }
 
     /**

@@ -179,7 +179,7 @@ final class Things {
 
     /** What a collection holds, in a few words: "3 collections · 2 notes", "5 notes", or "Empty". */
     static String holds(int collections,int notes) {
-        String inner=collections==1?"1 collection":collections+" collections";
+        String inner=collections==1?"1 folder":collections+" folders";
         String pages=notes==1?"1 note":notes+" notes";
         if(collections>0&&notes>0)return inner+" · "+pages;
         if(collections>0)return inner;

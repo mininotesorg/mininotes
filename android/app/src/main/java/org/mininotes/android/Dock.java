@@ -64,7 +64,7 @@ final class Dock {
         pill.setBackground(shape);
         handle.addView(pill,new FrameLayout.LayoutParams(a.dp(36),a.dp(4),Gravity.CENTER));
         handle.setBackgroundResource(a.borderlessFeedback());
-        handle.setContentDescription("Show what is open. Swipe up from the dock to do the same.");
+        handle.setContentDescription("Show Recent. Swipe up from the dock to do the same.");
         handle.setOnClickListener(v->home.overview.open());
         strip.addView(handle,new LinearLayout.LayoutParams(-1,a.dp(22)));
         row=new LinearLayout(a);row.setGravity(Gravity.CENTER);
@@ -86,7 +86,7 @@ final class Dock {
         if(docked.isEmpty()) {
             TextView empty=a.label("Favourites",MainActivity.QUIET,a.MUTED);
             empty.setGravity(Gravity.CENTER);
-            empty.setContentDescription("The dock. Favourites go here: carry a note or a collection here, or make it a favourite from its menu.");
+            empty.setContentDescription("The dock. Favourites go here: carry a note or a folder here, or make it a favourite from its menu.");
             row.addView(empty,new LinearLayout.LayoutParams(-1,a.dp(56)));
             return;
         }

@@ -16,7 +16,7 @@ Windows x64, JDK 17, and internet access for the first dependency download:
 ```
 
 The script runs the shared and Windows tests and makes
-`dist/latest/Mininotes-Windows-0.2.012.zip` plus its SHA-256 checksum. Extract the whole
+`dist/latest/Mininotes-Windows-0.2.037.zip` plus its SHA-256 checksum. Extract the whole
 ZIP and run `Mininotes/Mininotes.exe`. Keep the runtime and app folders beside
 the executable. No Java installation is required to run this bundle.
 

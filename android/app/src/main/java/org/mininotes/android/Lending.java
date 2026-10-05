@@ -21,7 +21,8 @@ import java.io.FileNotFoundException;
  * up by something else opens nothing.
  */
 public final class Lending extends ContentProvider {
-    static final String AUTHORITY="org.mininotes.android.files";
+    /** One per app id, so the demo build (".demo") installs beside the real app without the two claiming one address. */
+    static final String AUTHORITY=BuildConfig.APPLICATION_ID+".files";
 
     /** The address for one kept file. */
     static Uri of(String id){return Uri.parse("content://"+AUTHORITY+"/"+id);}

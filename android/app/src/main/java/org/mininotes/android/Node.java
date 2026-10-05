@@ -550,6 +550,44 @@ final class Node {
         return Direct.reachability(door>0,now.state().name(),now.detail());
     }
 
+    // ---- what People and devices says: see Routes and docs/DIRECT.md -----------------------------------------
+
+    /**
+     * This device, in a few quiet lines (decision 96): its door and how many devices are heard on this Wi-Fi, how notes
+     * travel, and on the PC whether its router proved a public door. Never starts the node.
+     */
+    static List<String> hereLines(Context where) {
+        MaximaNode up;Nearby local;
+        synchronized(Node.class){up=node;local=nearby;}
+        List<String> out=new java.util.ArrayList<>();
+        out.add(Routes.doorLine(up!=null,door,local==null?0:local.near()));
+        out.add(Routes.travelLine(!(up!=null?onlyMine:onlyMine(where))));
+        String pc=up==null?"":reachability();
+        if(!pc.isEmpty())out.add(pc);
+        return out;
+    }
+
+    /**
+     * One device: where it is - heard on this network, a public door it proved, or only through relays - and the road the
+     * last thing taken went by to it. Two lines, the second empty where nothing has gone to it yet. Never starts the node.
+     *
+     * @param heard whether anything was heard from it lately
+     */
+    static String[] seen(NoteStore.Contact them,boolean heard) {
+        MaximaNode up;
+        synchronized(Node.class){up=node;}
+        String key=them==null||them.contact==null?"":them.contact.trim();
+        boolean near=false,door=false;
+        if(up!=null&&!key.isEmpty()) {
+            try {
+                near=up.lanAddressFor(key)!=null;
+                Contact reach=up.contact(key);
+                if(reach!=null)for(String one:new java.util.ArrayList<>(reach.addresses))if(Direct.isDirect(one,reach.publicKey)&&!Direct.onThisNetwork(one))door=true;
+            } catch(RuntimeException notNow){/* said as not heard */}
+        }
+        return new String[]{Routes.state(up!=null,near,door,heard||near,!onlyMine),Routes.lastSent(Routes.last(key),System.currentTimeMillis())};
+    }
+
     // ---- the PC as its owner's host: see Home and docs/DIRECT.md, phase 2 -------------------------------------
 
     /** The PC's home for its owner's phones, on its door; null on a phone, and where the door could not open. */
@@ -671,6 +709,12 @@ final class Node {
             +(chosen.publicOn()?"on":"off")+(onlyMine?", only between the owner's devices":"")+"), holding "+made.myAddresses().size()+" address(es)");
         choice=chosen;
         node=made;
+        // Which road things last went by to each device, kept for People and devices as it was last run; and who is on this
+        // network now, which a file's list or sleeve asks before saying a door that only this house can reach (decision 96).
+        SharedPreferences routes=where.getSharedPreferences("node",Context.MODE_PRIVATE);
+        Routes.keptWas(routes.getString("routes",""));
+        Routes.keep=said->routes.edit().putString("routes",said).apply();
+        Routes.nearNow=them->them!=null&&them.contact!=null&&!them.contact.trim().isEmpty()&&made.lanAddressFor(them.contact.trim())!=null;
         Nearby local=new Nearby(made,made::directPort,"0.0.0.0",Direct.PORT);
         local.onMet(key->metHere(made,key));
         boolean hears=door>0&&local.open();

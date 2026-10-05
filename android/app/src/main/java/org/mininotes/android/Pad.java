@@ -12,6 +12,13 @@ import android.text.Editable;
 import android.text.Spanned;
 import android.text.TextWatcher;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.StyleSpan;
+import android.text.style.UnderlineSpan;
+import android.view.ActionMode;
+import android.view.KeyEvent;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.widget.EditText;
@@ -99,6 +106,7 @@ final class Pad extends EditText {
     /** A keystroke, a paste, a cut, anything typed: the new letters are yours, and the rest keep their writers. */
     private void typed(CharSequence now,int start,int before,int count) {
         if(putting)return;
+        restyleSoon();
         // A keyboard writes a word again whole as each letter of it is typed, and takes up a word already there when the
         // cursor lands in it: only what is really new in it is yours, and the letters it kept keep their writer.
         String was=replaced;replaced=null;
@@ -123,6 +131,87 @@ final class Pad extends EditText {
         String given=text==null?"":text.toString();
         runs=who!=null&&who.length()==on.length()&&given.equals(on)?who.copy():Writers.follow(on,Writers.UNKNOWN,given,who);
         ink();
+        restyle();
+    }
+
+    // ---- bold, italic and underline, as marks in the words (see Marks; docs/HOME.md, decision 76) ----------------------
+
+    /** The spans this page puts on its marks and their words: its own kinds, so only they are taken off again. */
+    private static final class Bold extends StyleSpan{Bold(){super(android.graphics.Typeface.BOLD);}}
+    private static final class Italic extends StyleSpan{Italic(){super(android.graphics.Typeface.ITALIC);}}
+    private static final class Under extends UnderlineSpan{}
+    private static final class Faint extends ForegroundColorSpan{Faint(int colour){super(colour);}}
+    private static final class Small extends RelativeSizeSpan{Small(){super(0.8f);}}
+
+    private final Runnable restyling=this::restyle;
+    /** Drawn again a moment after the typing, not at every letter. */
+    private void restyleSoon(){removeCallbacks(restyling);postDelayed(restyling,120);}
+
+    /** Every styled stretch drawn: its words bold, italic or underlined, its marks small and faint. */
+    void restyle() {
+        Editable text=getText();
+        for(Class<?> kind:new Class<?>[]{Bold.class,Italic.class,Under.class,Faint.class,Small.class})
+            for(Object was:text.getSpans(0,text.length(),kind))text.removeSpan(was);
+        int faint=(getCurrentTextColor()&0x00FFFFFF)|0x66000000;
+        for(Marks.Run run:Marks.of(text)) {
+            Object style=run.style()==Marks.Style.BOLD?new Bold():run.style()==Marks.Style.ITALIC?new Italic():new Under();
+            text.setSpan(style,run.start(),run.end(),Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            for(int[] mark:new int[][]{{run.open(),run.start()},{run.end(),run.close()}}) {
+                text.setSpan(new Faint(faint),mark[0],mark[1],Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                text.setSpan(new Small(),mark[0],mark[1],Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
+    }
+
+    /**
+     * A style switched on what is chosen (see {@link Marks#toggle}), as typing would: the marks put in, or taken out, where
+     * they belong, so who wrote the words is kept and only the marks are this phone's. Nothing on a page only read.
+     */
+    void style(Marks.Style style) {
+        if(getKeyListener()==null)return;
+        Editable text=getText();
+        int from=Math.max(0,Math.min(getSelectionStart(),getSelectionEnd())),to=Math.max(getSelectionStart(),getSelectionEnd());
+        Marks.Changed now=Marks.toggle(text.toString(),from,to,style);
+        String mark=style.mark;int width=mark.length();
+        if(now.text().length()<text.length()) {
+            text.delete(to,to+width);text.delete(from-width,from);
+        } else {
+            int start=now.start()-width,end=now.end()-width;
+            text.insert(end,mark);text.insert(start,mark);
+        }
+        setSelection(Math.min(now.start(),text.length()),Math.min(now.end(),text.length()));
+        restyle();
+    }
+
+    /** Ctrl+B, Ctrl+I and Ctrl+U from a keyboard on the phone, as on the PC. */
+    @Override public boolean onKeyShortcut(int keyCode,KeyEvent event) {
+        if(event.isCtrlPressed()&&getKeyListener()!=null) {
+            if(keyCode==KeyEvent.KEYCODE_B){style(Marks.Style.BOLD);return true;}
+            if(keyCode==KeyEvent.KEYCODE_I){style(Marks.Style.ITALIC);return true;}
+            if(keyCode==KeyEvent.KEYCODE_U){style(Marks.Style.UNDERLINE);return true;}
+        }
+        return super.onKeyShortcut(keyCode,event);
+    }
+
+    {
+        // And among Copy and Paste when words are chosen: Bold, Italic, Underline, for a phone with no keyboard.
+        setCustomSelectionActionModeCallback(new ActionMode.Callback() {
+            @Override public boolean onCreateActionMode(ActionMode mode,Menu menu) {
+                if(getKeyListener()==null)return true;
+                menu.add(Menu.NONE,0x4d42,200,"Bold");menu.add(Menu.NONE,0x4d49,201,"Italic");menu.add(Menu.NONE,0x4d55,202,"Underline");
+                return true;
+            }
+            @Override public boolean onPrepareActionMode(ActionMode mode,Menu menu){return false;}
+            @Override public boolean onActionItemClicked(ActionMode mode,MenuItem item) {
+                switch(item.getItemId()) {
+                    case 0x4d42: style(Marks.Style.BOLD);return true;
+                    case 0x4d49: style(Marks.Style.ITALIC);return true;
+                    case 0x4d55: style(Marks.Style.UNDERLINE);return true;
+                    default: return false;
+                }
+            }
+            @Override public void onDestroyActionMode(ActionMode mode){}
+        });
     }
 
     /**
@@ -244,9 +333,13 @@ final class Pad extends EditText {
     /** The rules follow the paper: a darker page needs a rule the writing can still be read against. */
     void rules(int colour){rule.setColor(colour);}
 
+    /** Whether the page is ruled: a note can be plain paper on this device (its menu, Writing lines). */
+    private boolean lined=true;
+    void lined(boolean on){if(lined!=on){lined=on;invalidate();}}
+
     @Override protected void onDraw(Canvas canvas) {
         int height=getLineHeight();
-        if(height>0) {
+        if(height>0&&lined) {
             // Ruled to the bottom of the page like a paper pad, not only under the lines already written.
             int bottom=getScrollY()+getHeight();
             for(int y=getLineBounds(0,line)+drop;y<bottom;y+=height)canvas.drawLine(0,y,getWidth(),y,rule);

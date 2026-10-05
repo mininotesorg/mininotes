@@ -68,6 +68,88 @@ public class DesktopLinkTest {
         assertFalse("something never here: nothing",b.store.acceptedBack(A_AT,UUID.randomUUID().toString()));
     }
 
+    @Test public void theOwnersOtherDevicesAreOnTheListSoTheOthersTakeTheirHello() throws Exception {
+        // The owner, 2026-10-03: the grocery list went between Parisa and the PC that shared it, never between Parisa and
+        // his phones, which have it through Connect my other device and so were on no list she had.
+        Device pc=new Device("Test PC",C_AT),phone=new Device("Test phone",A_AT),friend=new Device("Somebody else",D_AT);
+        pc.store.pairedWith(phone.at,"Test phone",true,phone.keys.agreement().getPublic().getEncoded(),phone.keys.signing().getPublic().getEncoded());
+        pc.store.addShare(new Sharing.Rule(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,A_AT,true));
+        pc.pair(friend,"Somebody else");
+        String id=UUID.randomUUID().toString();
+        NoteStore.Note note=new NoteStore.Note();note.id=id;note.book=pc.store.someBook();note.title="Plans";note.body="milk";note.revision=1;pc.store.save(note);
+        pc.store.addShare(new Sharing.Rule(Sharing.Scope.PAGE,id,D_AT,Sharing.Level.WRITE,5_000L,friend.key()));
+
+        List<Parcel.Member> list=pc.store.travelling(Sharing.Scope.PAGE,id);
+        byte[] phoneSeal=keyFor(list,phone.key());
+        assertNotNull("the owner's phone is on the list, with its key to seal for",phoneSeal);
+        assertArrayEquals(Point.shorten(phone.keys.agreement().getPublic()),phoneSeal);
+        String phoneKey=phone.key();
+        assertEquals("once",1,list.stream().filter(m->m.key.equals(phoneKey)).count());
+        assertNull("nobody else's device",keyFor(list,new Device("Made up",E_AT).key()));
+
+        friend.pair(pc,"Test PC");
+        List<Parcel.Member> others=new ArrayList<>();for(Parcel.Member one:list)if(!one.key.equals(pc.key()))others.add(one);
+        friend.hear(pc.note(friend,id,1,"milk",others,true));
+        assertEquals("milk",friend.store.get(id).body);
+        // The friend links the phone through the list, and takes its hello.
+        assertTrue(friend.store.address(A_AT).listed());
+        friend.hear(phone.hello(friend,false));
+        assertFalse(friend.store.linkingNow().contains(A_AT));
+    }
+
+    /**
+     * The colour each person chose comes with their notes (the owner, 2026-10-03): drawn in it on the other side, under a
+     * colour given there, and between the owner's own devices the later choice wins.
+     */
+    @Test public void aPersonsOwnColourComesWithTheirNotes() throws Exception {
+        Device a=new Device("Test phone",A_AT),b=new Device("Test tablet",B_AT);
+        b.pair(a,"Test phone");
+        String id=UUID.randomUUID().toString();
+        Parcel.Member bOn=b.member(Sharing.Level.WRITE.said(),5_000L,true);
+        List<Parcel.Member> list=new ArrayList<>(List.of(bOn));list.add(a.member(Sharing.Level.ADMIN.said(),1L,true));
+        Parcel.Sent going=new Parcel.Sent("","","","","Plans","milk",true,list,"PAGE",id,false,-1L,true,List.of(),1L,List.of(),List.of(),"",null);
+        going.ink=3;going.inkAt=10_000L;
+        byte[] sealed=Envelope.seal(page(id),1,System.currentTimeMillis(),Parcel.wrap(going),a.keys.signing(),b.keys.agreement().getPublic());
+        b.hear(sealed);
+        String writer=b.store.writerOf(A_AT);
+        assertEquals("drawn in the colour they chose",3,b.store.palette().colourOf(writer));
+        // A colour given to them on this device wins, and taking it back shows theirs again.
+        b.store.chooseInk(b.store.palette().person(writer),5);
+        assertEquals(5,b.store.palette().colourOf(writer));
+        b.store.chooseInk(b.store.palette().person(writer),Tint.NONE);
+        assertEquals(3,b.store.palette().colourOf(writer));
+        // An older word from them changes nothing.
+        assertFalse(b.store.inkSaid(b.store.address(A_AT),1,9_000L));
+        assertEquals(3,b.store.palette().colourOf(writer));
+
+        // One of the owner's own devices: its choice is the owner's own here, where it is the later one.
+        NoteStore.Contact own=new NoteStore.Contact("MxOwnFixture@127.0.0.1:9309","Own",true);
+        b.store.chooseInk(Writers.ME,2);
+        long chosen=b.store.myInk()[1];
+        assertFalse("older than this device's own choice",b.store.inkSaid(own,6,chosen-1));
+        assertEquals(2,b.store.palette().mine);
+        assertTrue(b.store.inkSaid(own,6,chosen+1));
+        assertEquals(6,b.store.palette().mine);
+        assertEquals(6,b.store.myInk()[0]);
+    }
+
+    /** A note made temporary carries its time to whoever has it, and goes there when it comes (decision 71). */
+    @Test public void aTemporaryNotesTimeGoesWithIt() throws Exception {
+        Device a=new Device("Test phone",A_AT),b=new Device("Test tablet",B_AT);
+        b.pair(a,"Test phone");
+        String id=UUID.randomUUID().toString();
+        List<Parcel.Member> list=new ArrayList<>(List.of(b.member(Sharing.Level.WRITE.said(),5_000L,true)));list.add(a.member(Sharing.Level.ADMIN.said(),1L,true));
+        long until=System.currentTimeMillis()+3_600_000L;
+        for(long revision=1;revision<=2;revision++) {
+            Parcel.Sent going=new Parcel.Sent("","","","","Plans","milk",true,list,"PAGE",id,false,-1L,true,List.of(),1L,List.of(),List.of(),"",null);
+            going.until=revision==1?0L:until;
+            b.hear(Envelope.seal(page(id),revision,System.currentTimeMillis(),Parcel.wrap(going),a.keys.signing(),b.keys.agreement().getPublic()));
+        }
+        assertEquals(until,b.store.untilOf(NoteStore.Branch.Kind.PAGE,id));
+        assertEquals(1,b.store.expire(until+1));
+        assertNull("gone there too",b.store.get(id));
+    }
+
     @Test public void devicesOnOneListLinkThroughItAndNobodyElseDoes() throws Exception {
         Device a=new Device("Test phone",A_AT),b=new Device("Test tablet",B_AT),c=new Device("Test PC",C_AT),d=new Device("Somebody else",D_AT);
         b.pair(a,"Test phone");c.pair(a,"Test phone");

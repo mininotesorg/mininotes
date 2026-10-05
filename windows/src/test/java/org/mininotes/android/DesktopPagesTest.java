@@ -121,7 +121,13 @@ public class DesktopPagesTest {
 
             // Carried up out of the rows, into the bar under the app's name: the page above at once, no wait (decision 54).
             SwingUtilities.invokeAndWait(()->grid.showPage(0,0));settle(pad);
-            Point above=onEdt(()->{Point p=new Point(home.scroll.getWidth()/2,-12);SwingUtilities.convertPointToScreen(p,home.scroll);return p;});
+            // Beside the strip of what can be done to it, which is in the middle of the bar (decision 90): over the strip, no turn.
+            Point middle=onEdt(()->{Point p=new Point(home.scroll.getWidth()/2,-12);SwingUtilities.convertPointToScreen(p,home.scroll);return p;});
+            SwingUtilities.invokeAndWait(()->{carryAt(pad,tile(grid,"Bills"),middle);
+                assertEquals("over the strip, the page stays",0,grid.pageY);
+                assertTrue(pad.status.getText(),pad.status.getText().startsWith("Let go"));
+                pad.home.carry.cancel();});
+            Point above=onEdt(()->{Point p=new Point(12,-12);SwingUtilities.convertPointToScreen(p,home.scroll);return p;});
             SwingUtilities.invokeAndWait(()->{carryAt(pad,tile(grid,"Bills"),above);
                 assertEquals("the page above, at once",-1,grid.pageY);assertEquals(0,grid.pageX);
                 assertTrue(pad.status.getText(),pad.status.getText().startsWith("Page one up now"));});
@@ -154,8 +160,12 @@ public class DesktopPagesTest {
                 List<String> onHome=new ArrayList<>(),inACard=new ArrayList<>();
                 for(Component one:home.plusMenu(Things.HOME).getComponents())if(one instanceof JMenuItem item)onHome.add(item.getText());
                 for(Component one:home.plusMenu("some-collection").getComponents())if(one instanceof JMenuItem item)inACard.add(item.getText());
-                assertEquals(List.of("Note","Collection","From another device…"),onHome);
-                assertEquals(List.of("Note","Collection","From another device…"),inACard);
+                assertEquals(List.of("Note","Folder","From this device…","From another device…"),onHome);
+                assertEquals(List.of("Note","Folder","From this device…","From another device…"),inACard);
+                // And Temp's, the archive's, Favourites' and the bin's (decision 87).
+                List<String> inTemp=new ArrayList<>();
+                for(Component one:home.plusMenu(NoteStore.TEMP).getComponents())if(one instanceof JMenuItem item)inTemp.add(item.getText());
+                assertEquals(inACard,inTemp);
             });
 
             // Favourites and search shown or not, from Home's own menu; on the main page only either way.
@@ -167,9 +177,11 @@ public class DesktopPagesTest {
 
             // Home's right-click: everything about Home.
             List<String> rows2=onEdt(()->{List<String> said=new ArrayList<>();JPopupMenu menu=menuOf(pad);for(Component c:menu.getComponents())if(c instanceof JMenuItem item)said.add(item.getText());return said;});
-            for(String want:new String[]{"New note","New collection","From another device…","Sync now","Show favourites","Show search","All pages"})
+            for(String want:new String[]{"New note","New folder","From another device…","Sync now","Dock","Search","Favourites","Temp","Recent","All pages"})
                 assertTrue(want+" in "+rows2,rows2.contains(want));
             assertTrue("Home's colour in "+rows2,rows2.stream().anyMatch(t->t.startsWith("Colour")));
+            // What Home shows comes last, under its own heading (decision 80).
+            assertTrue("the switches after the rest in "+rows2,rows2.indexOf("Dock")>rows2.indexOf("All pages")&&rows2.indexOf("Dock")>rows2.indexOf("Sync now"));
 
             // A smaller window: the page holds fewer, and Ideas, put in row 2 on its page, moves on its page without its place
             // being written; a bigger one puts it back.

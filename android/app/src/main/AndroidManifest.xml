@@ -70,7 +70,7 @@
             </intent-filter>
         </activity>
         <!-- One kept file, lent to whatever app can open it: never exported, read only, one look at a time. -->
-        <provider android:name=".Lending" android:authorities="org.mininotes.android.files"
+        <provider android:name=".Lending" android:authorities="${applicationId}.files"
             android:exported="false" android:grantUriPermissions="true" />
         <!-- The node kept up while the pad is closed. Text from one device to another is what the type is
              for, and it is the one kind that is not cut off after six hours. -->

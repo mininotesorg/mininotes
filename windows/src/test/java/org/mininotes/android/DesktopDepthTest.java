@@ -44,7 +44,7 @@ public class DesktopDepthTest {
     @Test public void aCollectionIsNeverMovedIntoItsOwnInside() {
         // The notebook refuses it, in words to show.
         IllegalArgumentException refused=assertThrows(IllegalArgumentException.class,()->store.moveBook(kitchen,soups));
-        assertEquals("A collection cannot go inside itself, or inside anything it holds.",refused.getMessage());
+        assertEquals("A folder cannot go inside itself, or inside anything it holds.",refused.getMessage());
         assertEquals(List.of(),store.above(kitchen));
         // Move to… never offers it: not Kitchen itself, nothing inside it, and not the top it is already on.
         List<String> offered=new ArrayList<>();

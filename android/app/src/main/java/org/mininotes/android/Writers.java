@@ -468,10 +468,22 @@ final class Writers {
         final Map<String,Integer> chosen;
         /** The writers that are devices of yours: they are you. */
         final Set<String> own;
-        Palette(int mine,Map<String,Integer> chosen,Set<String> own) {
+        /** The colour each writer chose for themselves, as their notes said it: under what this device gave them. */
+        final Map<String,Integer> said;
+        Palette(int mine,Map<String,Integer> chosen,Set<String> own){this(mine,chosen,own,null);}
+        Palette(int mine,Map<String,Integer> chosen,Set<String> own,Map<String,Integer> said) {
             this.mine=Tint.known(mine)?mine:Tint.NONE;
             this.chosen=chosen==null?new HashMap<>():new HashMap<>(chosen);
             this.own=own==null?new LinkedHashSet<>():new LinkedHashSet<>(own);
+            this.said=said==null?new HashMap<>():new HashMap<>(said);
+        }
+
+        /** A writer's own colour: the one they chose, as their notes said it, or else the one every device gives them. */
+        int theirOwn(String writer) {
+            String who=person(writer);
+            if(who==null||who.equals(ME))return mine;
+            Integer theirs=said.get(who);
+            return theirs!=null&&Tint.known(theirs)?theirs:automatic(who);
         }
         static Palette plain(){return new Palette(Tint.NONE,null,null);}
 
@@ -487,7 +499,7 @@ final class Writers {
             if(who==null)return Tint.NONE;
             if(who.equals(ME))return mine;
             Integer given=chosen.get(who);
-            return given!=null&&Tint.known(given)?given:automatic(who);
+            return given!=null&&Tint.known(given)?given:theirOwn(who);
         }
 
         /** Whether a writer has a colour you gave them, rather than their own. */

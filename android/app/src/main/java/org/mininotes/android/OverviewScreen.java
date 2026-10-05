@@ -5,7 +5,6 @@ package org.mininotes.android;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -16,12 +15,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The overview: the notes and collections that are open, as cards side by side, the newest first, flicked through as a
- * phone's open apps are (docs/HOME.md, step 2 and decision 22). A note's card is its paper, with its title and its first
- * lines; a collection's, the mini-grid of what is in it, with its name. Tap a card to go to it; swipe it up - or hold it -
- * to close it; <b>Close all</b>, the one button, closes them all. Back, or a tap anywhere but a card, puts it away.
+ * The overview: what was opened lately - Recent - as cards side by side, the newest first, flicked through as a phone's
+ * open apps are (docs/HOME.md, step 2 and decisions 22 and 86). A note's card is its paper, with its title and its first
+ * lines; a collection's, the mini-grid of what is in it, with its name. Tap a card to go to it. Nothing is closed: what
+ * was opened falls out of Recent by itself (the owner, 2026-10-04: "we would get rid of open and keep only recent"). Back,
+ * or a tap anywhere but a card, puts it away.
  *
- * <p>What is open is the pure {@link Overview}, kept in the app's settings so it lasts through a restart; this draws it.
+ * <p>The pure {@link Overview} is still kept, as the order things were opened in, for going back; the cards are Recent's.
  */
 final class OverviewScreen {
     /** Where the list is kept among the settings. */
@@ -33,7 +33,7 @@ final class OverviewScreen {
     /** The screen over everything while it is up, and in it the row of cards, what it says with none, and Close all. */
     private FrameLayout layer;
     private LinearLayout cards;
-    private View none,closeAll,along;
+    private View none,along;
 
     OverviewScreen(MainActivity a,HomeScreen home){this.a=a;this.home=home;}
 
@@ -55,6 +55,9 @@ final class OverviewScreen {
 
     /** Put away or deleted: no card opens what is not there. */
     void forget(String id){if(list().forget(id))keep();}
+
+    /** What is open, the newest first: what the Open icon's card lists (decision 78). */
+    List<Overview.Open> all(){return list().all();}
 
     boolean isShowing(){return layer!=null&&layer.getParent()!=null;}
 
@@ -80,14 +83,11 @@ final class OverviewScreen {
         row.addView(cards,new FrameLayout.LayoutParams(-2,-1));
         along=row;
         column.addView(row,new LinearLayout.LayoutParams(-1,0,1));
-        TextView empty=a.label("Nothing is open. The notes and collections you open are kept here, the newest first.",MainActivity.QUIET,a.MUTED);
+        TextView empty=a.label("Nothing opened lately. The notes and folders you open are here, the newest first.",MainActivity.QUIET,a.MUTED);
         empty.setGravity(Gravity.CENTER);empty.setPadding(a.dp(32),0,a.dp(32),0);
         empty.setVisibility(View.GONE);
         none=empty;
         column.addView(empty,new LinearLayout.LayoutParams(-1,0,1));
-        closeAll=a.primary("Close all",this::closeAll);
-        LinearLayout.LayoutParams foot=new LinearLayout.LayoutParams(-1,-2);foot.setMargins(a.dp(24),a.dp(10),a.dp(24),a.dp(6));
-        column.addView(closeAll,foot);
         layer.addView(column,new FrameLayout.LayoutParams(-1,-1));
         a.stage.addView(layer,new FrameLayout.LayoutParams(-1,-1));
         load();
@@ -96,23 +96,24 @@ final class OverviewScreen {
     /** Put away: Home, as it was under it. */
     void close() {
         if(layer!=null&&layer.getParent()!=null)((ViewGroup)layer.getParent()).removeView(layer);
-        layer=null;cards=null;none=null;closeAll=null;along=null;
+        layer=null;cards=null;none=null;along=null;
     }
 
-    /** Every card closed, and the overview with them; a pop-up that was open is one of them, so it closes too. */
-    private void closeAll() {
-        list().closeAll();keep();
-        close();
-        if(home.folder.isOpen())home.folder.close();
-    }
+    /** How many cards at most: a glance at what was lately in hand, not a second list of everything. */
+    private static final int CARDS=20;
 
     /**
-     * The cards, read on the worker: each note as it now reads, and each collection with its name, colour and how much
-     * it holds. Whatever has been put away or deleted since it was opened is let go of, and has no card.
+     * The cards, read on the worker: Recent as its card lists it, each note as it now reads, and each collection with its
+     * name, colour and how much it holds.
      */
     private void load() {
-        final List<Overview.Open> all=list().all();
+        final long since=System.currentTimeMillis()-a.recentDays()*86_400_000L;
         a.background.submit(()->{
+            List<Overview.Open> all=new ArrayList<>();
+            for(NoteStore.Branch one:a.store.recent(since)) {
+                if(all.size()>=CARDS)break;
+                all.add(new Overview.Open(one.kind==NoteStore.Branch.Kind.PAGE?Overview.Kind.NOTE:Overview.Kind.COLLECTION,one.id));
+            }
             List<Object[]> shown=new ArrayList<>();List<String> gone=new ArrayList<>();
             // Each card wears its thing's look: the lines are made here, so they are dressed here (NoteStore.dress).
             List<NoteStore.Branch> faces=new ArrayList<>();
@@ -152,7 +153,6 @@ final class OverviewScreen {
         boolean empty=cards.getChildCount()==0;
         along.setVisibility(empty?View.GONE:View.VISIBLE);
         none.setVisibility(empty?View.VISIBLE:View.GONE);
-        closeAll.setVisibility(empty?View.GONE:View.VISIBLE);
     }
 
     /**
@@ -208,59 +208,11 @@ final class OverviewScreen {
         }
         card.setBackground(paper);
         card.setForeground(a.getDrawable(a.touchFeedback()));
-        card.setContentDescription((one.kind==Overview.Kind.NOTE?"The note ":"The collection ")+name+". Tap to go to it; hold to close it.");
+        card.setContentDescription((one.kind==Overview.Kind.NOTE?"The note ":"The folder ")+name+". Tap to go to it.");
         card.setOnClickListener(v->{close();home.goTo(one);});
-        card.setOnLongClickListener(v->{away(v,one);return true;});
-        thrown(card,one);
         LinearLayout.LayoutParams place=new LinearLayout.LayoutParams(wide,high);
         place.setMargins(a.dp(10),0,a.dp(10),0);
         card.setLayoutParams(place);
         return card;
-    }
-
-    /**
-     * A card follows a finger that goes up from it, and let go far enough up it is thrown away; not far enough, it falls
-     * back. Sideways is the row's, which scrolls. A tap and a hold are left to the card's own click and long click.
-     */
-    // The listener consumes only the throw: the card's own click and long click still run, and a screen reader reaches
-    // both - holding a card is the same as throwing it away.
-    @android.annotation.SuppressLint("ClickableViewAccessibility")
-    private void thrown(final View card,final Overview.Open one) {
-        final float[] from=new float[2];final boolean[] lifting={false};
-        card.setOnTouchListener((v,event)->{
-            switch(event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN: from[0]=event.getRawX();from[1]=event.getRawY();lifting[0]=false;return false;
-                case MotionEvent.ACTION_MOVE: {
-                    float dx=event.getRawX()-from[0],dy=event.getRawY()-from[1];
-                    if(!lifting[0]&&home.moved(dx,dy)&&dy<0&&Math.abs(dy)>Math.abs(dx)) {
-                        lifting[0]=true;v.cancelLongPress();v.setPressed(false);
-                        if(v.getParent()!=null)v.getParent().requestDisallowInterceptTouchEvent(true);
-                    }
-                    if(!lifting[0])return false;
-                    v.setTranslationY(Math.min(0,dy));
-                    v.setAlpha(1f-Math.min(0.7f,-Math.min(0,dy)/(Math.max(1,v.getHeight())*1.2f)));
-                    return true;
-                }
-                case MotionEvent.ACTION_UP:
-                    if(!lifting[0])return false;
-                    lifting[0]=false;
-                    if(Grid.thrownUp(event.getRawY()-from[1],v.getHeight()))away(v,one);
-                    else v.animate().translationY(0).alpha(1f).setDuration(160).start();
-                    return true;
-                case MotionEvent.ACTION_CANCEL:
-                    if(lifting[0]){lifting[0]=false;v.animate().translationY(0).alpha(1f).setDuration(160).start();}
-                    return false;
-                default: return false;
-            }
-        });
-    }
-
-    /** One card closed: it goes up and away, and is out of the list; the pop-up it is, if it is the one open, closes too. */
-    private void away(final View card,final Overview.Open one) {
-        list().close(one.kind,one.id);keep();
-        if(one.kind==Overview.Kind.COLLECTION&&home.folder.isOpen()&&one.id.equals(home.folder.id()))home.folder.close();
-        card.animate().translationY(-card.getHeight()).alpha(0f).setDuration(180).withEndAction(()->{
-            if(cards!=null&&card.getParent()==cards){cards.removeView(card);said();}
-        }).start();
     }
 }

@@ -59,10 +59,10 @@ public class SharingPathTest {
 
     @Test public void everyKindOfCollectionIsSaidAsACollection() {
         for(Sharing.Scope scope:new Sharing.Scope[]{Sharing.Scope.COLLECTION,Sharing.Scope.BOOK,Sharing.Scope.THING}) {
-            assertEquals("Recipes collection",Sharing.shortly(scope,"Recipes"));
+            assertEquals("Recipes folder",Sharing.shortly(scope,"Recipes"));
             assertEquals("the collection Recipes",Sharing.travelling(scope,"Recipes"));
-            assertEquals("the collection Recipes, and everything in it",Sharing.describe(scope,"Recipes"));
+            assertEquals("the folder Recipes, and everything in it",Sharing.describe(scope,"Recipes"));
         }
-        assertEquals("every collection and note",Sharing.describe(Sharing.Scope.LIBRARY,""));
+        assertEquals("every folder and note",Sharing.describe(Sharing.Scope.LIBRARY,""));
     }
 }

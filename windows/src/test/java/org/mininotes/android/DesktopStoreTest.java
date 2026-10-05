@@ -74,6 +74,18 @@ public class DesktopStoreTest {
         int quiet=DesktopLook.wash(1,paper,0.12f,0.72f,0).getBlue(),loud=DesktopLook.wash(1,paper,0.12f,0.72f,9).getBlue();
         assertTrue(loud<quiet);
     }
+    @Test public void aBackupWithItsOwnPasswordOpensWithItAndNothingElse() throws Exception {
+        // Not locked, a backup sealed with a password chosen for it (decision 82): unreadable, and opened by that password.
+        note("Synthetic note for a sealed backup");
+        Vault.Made made=Vault.make("backup-test-password".toCharArray());
+        Path sealed=temp.getRoot().toPath().resolve("own.mnbackup");DesktopBackup.write(store,sealed,made.key,made.kept);
+        assertTrue(DesktopBackup.locked(sealed));
+        assertFalse(new String(Files.readAllBytes(sealed),java.nio.charset.StandardCharsets.ISO_8859_1).contains("Synthetic note"));
+        try(NoteStore other=new NoteStore(new Context(temp.newFolder("other")))) {
+            assertThrows(Vault.Refused.class,()->Vault.open(made.kept,"a-wrong-password".toCharArray()));
+            assertEquals(1,DesktopBackup.add(other,sealed,lock->Vault.open(lock,"backup-test-password".toCharArray())));
+        }
+    }
     @Test public void damagedBackupIsAtomicAndZipPathsAreRefused() throws Exception {
         NoteStore.Note n=note("keep me");Path zip=temp.getRoot().toPath().resolve("bad.zip");
         try(var out=new java.util.zip.ZipOutputStream(Files.newOutputStream(zip))){out.putNextEntry(new java.util.zip.ZipEntry("../outside"));out.write(1);}

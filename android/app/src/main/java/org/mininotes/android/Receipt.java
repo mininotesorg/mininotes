@@ -68,6 +68,7 @@ final class Receipt {
             case PAGE: return LEFT_PAGE;
             case BOOK: return LEFT_BOOK;
             case COLLECTION: return LEFT_COLLECTION;
+            case FILE: return LEFT_FILE;
             default: return 0;
         }
     }
@@ -78,6 +79,7 @@ final class Receipt {
             case LEFT_PAGE: return Sharing.Scope.PAGE;
             case LEFT_BOOK: return Sharing.Scope.BOOK;
             case LEFT_COLLECTION: return Sharing.Scope.COLLECTION;
+            case LEFT_FILE: return Sharing.Scope.FILE;
             default: return null;
         }
     }
@@ -102,6 +104,7 @@ final class Receipt {
             case PAGE: return REMOVED_PAGE;
             case BOOK: return REMOVED_BOOK;
             case COLLECTION: return REMOVED_COLLECTION;
+            case FILE: return REMOVED_FILE;
             default: return 0;
         }
     }
@@ -112,6 +115,7 @@ final class Receipt {
             case REMOVED_PAGE: return Sharing.Scope.PAGE;
             case REMOVED_BOOK: return Sharing.Scope.BOOK;
             case REMOVED_COLLECTION: return Sharing.Scope.COLLECTION;
+            case REMOVED_FILE: return Sharing.Scope.FILE;
             default: return null;
         }
     }
@@ -185,6 +189,37 @@ final class Receipt {
      * build from before as a later build's answer, which is to say not at all. The envelope names nothing.
      */
     static final int TREE=22;
+
+    /**
+     * "This build knows files on their own": a file kept loose on Home or in a collection, shared like a note, in a
+     * {@link Sleeve} (docs/HOME.md, decision 92). A sleeve is never sealed for a device that has not said this: a build
+     * from before takes anything it does not know for a note written the oldest way, and would write a file's name over
+     * somebody's words. Said and heard as {@link #TREE} is, and read by a build from before as a later build's answer, which
+     * is to say not at all. The envelope names nothing.
+     */
+    static final int LOOSE=23;
+
+    /**
+     * "I have left this file" and "you are off this file": {@link #LEFT_PAGE} and {@link #REMOVED_PAGE} for a file shared on
+     * its own, which the envelope names by its own sixteen bytes. Said only to a device that has said {@link #LOOSE}.
+     */
+    static final int LEFT_FILE=24, REMOVED_FILE=25;
+
+    /**
+     * "This build reads groups" (see {@link Groups}, decision 100). A groups card is never sealed for a device that has not
+     * said this: a build from before takes anything it does not know for a note written the oldest way, and would write
+     * who is in your groups over somebody's words. Said to the owner's own devices only, the only ones a card goes to, and
+     * heard as {@link #LOOSE} is; read by a build from before as a later build's answer, which is to say not at all. The
+     * envelope names nothing.
+     */
+    static final int GROUPS=26;
+
+    /**
+     * "This build reads Parlons! addresses" (see {@link Parlons}, decision 101). A Parlons! card is never sealed for a
+     * device that has not said this: a build from before would take it for a note written the oldest way. Said to the
+     * owner's own devices only, the only ones a card goes to, and heard as {@link #GROUPS} is. The envelope names nothing.
+     */
+    static final int PARLONS=27;
 
     private Receipt(){}
 

@@ -28,12 +28,12 @@ public class NoteLineTest {
 
     @Test public void whatCouldNotGoPointsAtWhy() {
         Unsent.Problem ana=new Unsent.Problem(Unsent.Why.NOT_REACHED,"Ana","Shopping","","");
-        assertEquals("Could not reach Ana - see why",NoteLine.couldNot(List.of(ana),0));
+        assertEquals("Could not reach Ana. See why",NoteLine.couldNot(List.of(ana),0));
         assertEquals(NoteLine.Tone.FAILED,NoteLine.couldNotTone(List.of(ana)));
-        assertEquals("Some of it went - see why",NoteLine.couldNot(List.of(ana),1));
-        assertEquals("Could not go - see why",NoteLine.couldNot(List.of(),0));
+        assertEquals("Some of it went. See why",NoteLine.couldNot(List.of(ana),1));
+        assertEquals("Could not go. See why",NoteLine.couldNot(List.of(),0));
         Unsent.Problem bo=new Unsent.Problem(Unsent.Why.NOT_REACHED,"Bo","Shopping","","");
-        assertEquals("Could not go - see why",NoteLine.couldNot(List.of(ana,bo),0));
+        assertEquals("Could not go. See why",NoteLine.couldNot(List.of(ana,bo),0));
         // Being linked with is on its way, not wrong: amber, and said as the round says it.
         Unsent.Problem linking=new Unsent.Problem(Unsent.Why.LINKING,"Graphene","Shopping","","");
         assertEquals("Linking with Graphene… it goes once they answer.",NoteLine.couldNot(List.of(linking),0));

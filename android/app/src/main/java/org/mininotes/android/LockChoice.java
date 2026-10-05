@@ -24,7 +24,7 @@ final class LockChoice {
     // ---- the warning, which must stay true whichever way was chosen ----------------------------------------
 
     static final String WARNING_PASSWORD="If you lose both the backup password and the 12 recovery words, nobody can open this notebook. Not you, and not the people who make Mininotes. There is no email reset and no copy anywhere else.";
-    static final String WARNING_PHONE="If this phone's unlock stops opening Mininotes - the screen lock removed, or the phone reset or lost - and you have lost the 12 recovery words, nobody can open this notebook. Not you, and not the people who make Mininotes. There is no email reset and no copy anywhere else.";
+    static final String WARNING_PHONE="If this phone's unlock stops opening Mininotes (the screen lock removed, or the phone reset or lost) and you have lost the 12 recovery words, nobody can open this notebook. Not you, and not the people who make Mininotes. There is no email reset and no copy anywhere else.";
 
     /** With no password, the words are the only way in that does not live in this phone, and it says so. */
     static String warning(boolean hasPassword){return hasPassword?WARNING_PASSWORD:WARNING_PHONE;}
@@ -113,7 +113,7 @@ final class LockChoice {
         if(hasBio&&hasPassword)return "Mininotes opens with your fingerprint or screen lock. Your backup password and your 12 recovery words open it too."+sealed;
         if(hasBio)return "Mininotes opens with your fingerprint or screen lock, and your 12 recovery words open it too. There is no password."+sealed
             +" Your backups open with the 12 recovery words.";
-        if(hasPassword)return "Mininotes asks for your password when it opens"+(phoneCan?" - switch on fingerprint or screen lock below and you will rarely need it":"")+"."+sealed;
+        if(hasPassword)return "Mininotes asks for your password when it opens"+(phoneCan?". Switch on fingerprint or screen lock below and you will rarely need it":"")+"."+sealed;
         return "Mininotes opens only with your 12 recovery words now. Switch on fingerprint or screen lock below, or add a password."+sealed;
     }
 

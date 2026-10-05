@@ -79,8 +79,15 @@ final class Post {
             this(said,accepted,note,answered,people,files,asking,false);
         }
         private Landed(String said,Hello.Said accepted,String note,boolean answered,boolean people,boolean files,String asking,boolean devices) {
+            this(said,accepted,note,answered,people,files,asking,devices,false);
+        }
+        private Landed(String said,Hello.Said accepted,String note,boolean answered,boolean people,boolean files,String asking,boolean devices,boolean groups) {
+            this(said,accepted,note,answered,people,files,asking,devices,groups,false);
+        }
+        private Landed(String said,Hello.Said accepted,String note,boolean answered,boolean people,boolean files,String asking,boolean devices,boolean groups,
+                       boolean contacts) {
             this.said=said;this.accepted=accepted;this.note=note==null?"":note;this.answered=answered;
-            this.people=people;this.files=files;this.asking=asking;this.devices=devices;
+            this.people=people;this.files=files;this.asking=asking;this.devices=devices;this.groups=groups;this.contacts=contacts;
         }
         /**
          * What your own devices are called, or your name, changed on a card (see {@link Persons}). A People and devices
@@ -88,6 +95,18 @@ final class Post {
          */
         final boolean devices;
         static Landed devices(){return new Landed(null,null,"",true,true,false,null,true);}
+        /**
+         * Your groups changed on a card from another device of yours (see {@link Groups}): a People and devices box drawn
+         * before it shows the groups as they were, and a share box who had what, until each is drawn again.
+         */
+        final boolean groups;
+        static Landed groups(){return new Landed(null,null,"",true,true,false,null,false,true);}
+        /**
+         * Somebody's Parlons! address changed on a card from another device of yours (see {@link Parlons}): a People and
+         * devices box drawn before it shows the old one until it is drawn again.
+         */
+        final boolean contacts;
+        static Landed contacts(){return new Landed(null,null,"",true,true,false,null,false,false,true);}
         /** A note that arrived saying what it said already: nothing to tell, and the marks and the box to ask again. */
         static Landed people(String note){return new Landed(null,null,note,true,true);}
         /** Somebody left. That is worth saying, and whoever is looking at the list is looking at an old one. */
@@ -190,14 +209,24 @@ final class Post {
      */
     static Done send(Context where,NoteStore store,Keys keys,NoteStore.Branch.Kind kind,String id,String only,
                      boolean whole) throws Exception {
+        // A file shared on its own goes in its sleeve, and holds nothing else (decision 92).
+        if(kind==NoteStore.Branch.Kind.FILE)return sleeves(where,store,keys,id,only,whole);
         Done notes=notes(where,store,keys,kind,id,only,whole);
         if(kind==NoteStore.Branch.Kind.PAGE)return notes;
         // And the collections in it that go on their own: those with no note in them to carry them, and those with a look
         // or files of their own to say (see Carton).
         Done alone=cartons(where,store,keys,kind,id,only,false);
-        if(alone.sent==0&&alone.failed==0)return notes;
-        List<Unsent.Problem> both=new ArrayList<>(notes.problems);both.addAll(alone.problems);
-        return new Done(notes.sent+alone.sent,notes.failed+alone.failed,notes.why.isEmpty()?alone.why:notes.why,both);
+        // And, for everything, the files shared on their own (see Sleeve).
+        if(kind==NoteStore.Branch.Kind.LIBRARY)alone=both(alone,sleeves(where,store,keys,null,only,false));
+        return both(notes,alone);
+    }
+
+    /** Two sendings said as one. */
+    private static Done both(Done one,Done other) {
+        if(other.sent==0&&other.failed==0)return one;
+        if(one.sent==0&&one.failed==0)return other;
+        List<Unsent.Problem> all=new ArrayList<>(one.problems);all.addAll(other.problems);
+        return new Done(one.sent+other.sent,one.failed+other.failed,one.why.isEmpty()?other.why:one.why,all);
     }
 
     /**
@@ -318,14 +347,18 @@ final class Post {
                 // And the files the note keeps, each saying where its pieces are once it has gone up: see
                 // Enclosure. Made to fit the envelope, which a longer note leaves less room in. And its icon and its
                 // picture, after its path, to a build that knows about trees: a build from before could not show them.
-                byte[] text=Parcel.wrap(new Parcel.Sent(collection,store.nameOf(collection,true),
+                Parcel.Sent going=new Parcel.Sent(collection,store.nameOf(collection,true),
                     book,store.nameOf(book,false),note.title,note.body,
                     store.mayWrite(them.address,path),
                     store.travelling(level==null?null:held.scope,what),level==null?"":level.name(),what,true,
-                    store.agreedAt(note.id,them.address),true,store.enclosed(note.id),System.currentTimeMillis(),
+                    store.agreedAt(note.id,them.address),true,store.enclosed(note.id,them.address),System.currentTimeMillis(),
                     store.history(note.id),store.steps(above),
-                    trees?store.iconOf(NoteStore.Branch.Kind.PAGE,note.id):"",trees?store.imageOf(NoteStore.Branch.Kind.PAGE,note.id):null),
-                    Envelope.MAX_TEXT);
+                    trees?store.iconOf(NoteStore.Branch.Kind.PAGE,note.id):"",trees?store.imageOf(NoteStore.Branch.Kind.PAGE,note.id):null);
+                // And the colour this owner chose for themselves, so everybody draws them in it (see Parcel.Sent#ink).
+                long[] ink=store.myInk();going.ink=(int)ink[0];going.inkAt=ink[1];
+                // And when it is to be gone, where it is temporary or was: said always to a build that knows trees.
+                if(trees)going.until=store.untilOf(NoteStore.Branch.Kind.PAGE,note.id);
+                byte[] text=Parcel.wrap(going,Envelope.MAX_TEXT);
                 byte[] sealed=Envelope.seal(sixteen(wait.page),
                     note.revision,System.currentTimeMillis(),text,mine,theirs);
                 // Handed to the peer, not to an address they used to be at. Straight to their door first -
@@ -390,6 +423,8 @@ final class Post {
      */
     static Done changed(Context where,NoteStore store,Keys keys,NoteStore.Branch.Kind kind,String id)
             throws Exception {
+        // A file shared on its own carries its own list, in its sleeve: to everybody who has it.
+        if(kind==NoteStore.Branch.Kind.FILE)return sleeves(where,store,keys,id,null,true);
         Done done=send(where,store,keys,kind,id);
         boolean shelf=kind==NoteStore.Branch.Kind.COLLECTION||kind==NoteStore.Branch.Kind.BOOK;
         if(kind!=NoteStore.Branch.Kind.PAGE&&!shelf)return done;
@@ -528,6 +563,95 @@ final class Post {
         return new Done(sent,failed,why,problems);
     }
 
+    /**
+     * The files owed to somebody on their own, sent: each shared by a rule on it (see {@link NoteStore#sleevesOwed} and
+     * {@link Sleeve}; decision 92). Sealed under the file's own sixteen bytes and its own revision, and answered as a note
+     * is. Only to a device that has said it knows files on their own ({@link Receipt#LOOSE}): a build from before would
+     * take these bytes for a note written the oldest way and write them over somebody's words. For one that has not, it
+     * waits, and is said to wait for that device to be updated ({@link Unsent.Why#NEEDS_UPDATE}), as a carton does; it goes
+     * when that device says it knows more. Blocking.
+     *
+     * @param file  one file, or null for every file
+     * @param only  one address to send to, or null for everybody owed
+     * @param whole to everybody it reaches, whether or not they are thought to have it: Sync, or who has it changed
+     */
+    static Done sleeves(Context where,NoteStore store,Keys keys,String file,String only,boolean whole) throws Exception {
+        List<Outbox.Wait> owed=store.sleevesOwed(file,whole);
+        if(owed.isEmpty())return new Done(0,0,"");
+        java.util.Map<String,NoteStore.Contact> known=new java.util.HashMap<>();
+        for(NoteStore.Contact contact:store.addresses())known.put(contact.address,contact);
+        java.util.Set<String> linking=store.linkingNow();
+        java.util.Map<String,Outbox.Handed> lately=new java.util.HashMap<>();
+        for(Outbox.Handed one:store.handed())lately.put(Outbox.mark(one.address,one.page),one);
+        long clock=System.currentTimeMillis();
+        List<Unsent.Problem> problems=new ArrayList<>();
+        List<Outbox.Wait> going=new ArrayList<>();
+        int sent=0,failed=0;String why="";
+        for(Outbox.Wait wait:owed) {
+            if(only!=null&&!only.equals(wait.address))continue;
+            NoteStore.Contact them=known.get(wait.address);
+            String thing=store.fileName(wait.page);
+            if(them==null||them.agreement.length==0||linking.contains(them.address)) {
+                failed++;
+                Unsent.Problem p=them==null
+                    ?new Unsent.Problem(Unsent.Why.ONLY_LISTED,store.nameFor(wait.address),thing,store.listedIn(wait.address),"",wait.address)
+                    :linking.contains(them.address)?new Unsent.Problem(Unsent.Why.LINKING,store.nameFor(wait.address),thing,store.listedIn(wait.address),"",wait.address)
+                    :new Unsent.Problem(Unsent.Why.NOT_PAIRED,store.nameFor(wait.address),thing,"","");
+                problems.add(p);
+                if(why.isEmpty())why=Unsent.said(p,here());
+                continue;
+            }
+            // Never sealed for a device that has not said it knows files on their own: the gate (see Receipt.LOOSE).
+            if(!knowsLoose(where,them)) {
+                failed++;
+                Unsent.Problem p=new Unsent.Problem(Unsent.Why.NEEDS_UPDATE,store.nameFor(wait.address),thing,"","");
+                problems.add(p);
+                if(why.isEmpty())why=Unsent.said(p,here());
+                continue;
+            }
+            // Nor before its bytes are up (decision 94): a sleeve that cannot say where its pieces are was refused as a file
+            // that cannot be fetched, and only a round after the upload brought it. It stays owed, and the round of file work
+            // that sends it up sends it then (see goUp). Not a failure: it is uploading, and its icon and its box say so. To a
+            // device on this network it goes as soon as the pieces are at this device's door (decision 96).
+            if(!store.sleeveReady(wait.page,wait.address))continue;
+            Outbox.Handed before=lately.get(Outbox.mark(wait.address,wait.page));
+            if(only==null&&!whole&&before!=null&&before.revision==wait.revision&&clock>=before.at
+                &&clock-before.at<Math.max(JUST_NOW,Outbox.againAfter(before.tries)))continue;
+            going.add(wait);
+        }
+        MaximaNode node=going.isEmpty()?null:Node.node(where);
+        if(!going.isEmpty()&&node==null) {
+            problems.add(new Unsent.Problem(Unsent.Why.NOT_CONNECTED,"",file==null?"":store.fileName(file),"",""));
+            return new Done(0,failed+going.size(),why.isEmpty()?Unsent.said(problems.get(problems.size()-1),here()):why,problems);
+        }
+        for(Outbox.Wait wait:going) {
+            NoteStore.Contact them=known.get(wait.address);
+            String thing=store.fileName(wait.page);
+            try {
+                byte[] text=Sleeve.wrap(store.sleeve(wait.page,them.address),Envelope.MAX_TEXT);
+                byte[] sealed=Envelope.seal(sixteen(wait.page),wait.revision,System.currentTimeMillis(),text,
+                    keys.signing(),Keys.publicKey(them.agreement));
+                MaximaSender.Result said=handTo(where,store,keys,node,them,sealed);
+                // What it was and how it went, and nothing else: no name, no address.
+                android.util.Log.i("Mininotes/Post","sent a file on its own, revision "+wait.revision+": "
+                    +(said==null?"no answer":said.statusName));
+                if(said!=null&&said.isOk()){store.handedOver(them.address,wait.page,wait.revision);sent++;}
+                else {
+                    failed++;
+                    Unsent.Problem p=new Unsent.Problem(Unsent.Why.NOT_REACHED,them.name,thing,"","");
+                    problems.add(p);
+                    if(why.isEmpty())why=Unsent.said(p,here());
+                }
+            } catch(Exception e) {
+                failed++;
+                Unsent.Problem p=new Unsent.Problem(Unsent.of(e.getMessage()),them.name,thing,"",e.getMessage());
+                problems.add(p);
+                if(why.isEmpty())why=Unsent.said(p,here());
+            }
+        }
+        return new Done(sent,failed,why,problems);
+    }
+
     /** One at a time, off the thread the node brought the note on: an answer is a network call too. */
     private static final java.util.concurrent.ExecutorService ANSWERS=
         java.util.concurrent.Executors.newSingleThreadExecutor(work->{
@@ -644,6 +768,7 @@ final class Post {
      * @return how many were told
      */
     static int leave(Context where,NoteStore store,Keys keys,NoteStore.Branch.Kind kind,String id) {
+        if(kind==NoteStore.Branch.Kind.FILE)return leaveFile(where,store,keys,id);
         boolean note=kind==NoteStore.Branch.Kind.PAGE;
         if(!note&&kind!=NoteStore.Branch.Kind.COLLECTION&&kind!=NoteStore.Branch.Kind.BOOK)return 0;
         // Said at the level a 0.1 device calls it, by how deep it sits: a collection on Home, one inside that a book, a
@@ -671,6 +796,23 @@ final class Post {
         return told;
     }
 
+    /**
+     * A file shared on its own, left (decision 92): everybody who has it told, by its own sixteen bytes, and then let go,
+     * the copy here kept as this device's own. Only devices that know files on their own are told: nothing else has it.
+     */
+    private static int leaveFile(Context where,NoteStore store,Keys keys,String id) {
+        java.util.Set<String> who=store.everybodyIn(NoteStore.Branch.Kind.FILE,id);
+        final long now=System.currentTimeMillis();
+        int told=0;
+        for(NoteStore.Contact them:store.addresses()) {
+            if(!who.contains(them.address)||them.agreement.length==0||!knowsLoose(where,them))continue;
+            try{if(saidOff(where,store,keys,them,sixteen(id),now,Receipt.LEFT_FILE))told++;}
+            catch(Exception notNow){android.util.Log.w("Mininotes/Post","could not say this device has left a file: "+notNow.getClass().getSimpleName());}
+        }
+        store.letGo(NoteStore.Branch.Kind.FILE,id,who,now);
+        return told;
+    }
+
     /** Whatever this phone has left lately, said again to whoever was told. Blocking. See {@link NoteStore#leavings}. */
     static void leftAgain(Context where,NoteStore store,Keys keys) {
         for(NoteStore.Leaving one:store.leavings()) {
@@ -678,6 +820,8 @@ final class Post {
                 NoteStore.Contact them=null;
                 for(NoteStore.Contact known:store.addresses())if(known.address.equals(one.address))them=known;
                 if(them==null||them.agreement.length==0||!doesSpeak(where,them))continue;
+                // A file shared on its own is said only to a device that knows them (see Receipt.LOOSE).
+                if(one.scope==Sharing.Scope.FILE&&!knowsLoose(where,them))continue;
                 // Deeper than three levels, which nothing can say yet: see leave.
                 if(Receipt.left(one.scope)==0){android.util.Log.i("Mininotes/Post","left a collection deeper than three levels: not said again");continue;}
                 saidOff(where,store,keys,them,sixteen(one.note),one.at,Receipt.left(one.scope));
@@ -704,6 +848,12 @@ final class Post {
         NoteStore.Contact them=null;
         for(NoteStore.Contact known:store.addresses())if(known.address.equals(address))them=known;
         if(them==null||them.agreement.length==0||!doesSpeak(where,them))return false;
+        // A file shared on its own names itself, and is said only to a device that knows them (decision 92).
+        if(scope==Sharing.Scope.FILE) {
+            if(!knowsLoose(where,them))return false;
+            try{return saidOff(where,store,keys,them,sixteen(target),when,Receipt.REMOVED_FILE);}
+            catch(Exception notNow){android.util.Log.w("Mininotes/Post","could not say they are off a file: "+notNow.getClass().getSimpleName());return false;}
+        }
         // Any note out of it names it: the phone that hears finds the shelf from its own shelves.
         byte[] about=null;
         for(Outbox.Page page:store.pagesUnder(NoteStore.kindFor(scope),target)) {
@@ -725,6 +875,7 @@ final class Post {
                 NoteStore.Contact them=null;
                 for(NoteStore.Contact known:store.addresses())if(known.address.equals(one.address))them=known;
                 if(them==null||them.agreement.length==0||!doesSpeak(where,them))continue;
+                if(one.scope==Sharing.Scope.FILE&&!knowsLoose(where,them))continue;
                 // Deeper than three levels, which nothing can say yet: see removed.
                 if(Receipt.removed(one.scope)==0)continue;
                 saidOff(where,store,keys,them,sixteen(one.note),one.at,Receipt.removed(one.scope));
@@ -784,6 +935,9 @@ final class Post {
         Home.Host here=Node.host();
         return here!=null&&here.collecting(fingerprint(them),System.currentTimeMillis());
     }
+
+    /** Whether anything was heard from a device lately, for People and devices (decision 96). */
+    static boolean heardLately(NoteStore.Contact them){return there(them);}
 
     /** A device whose notes have said its build carries - and so may be left things, and brought them. */
     private static void carries(Context where,NoteStore.Contact them) {
@@ -1091,6 +1245,16 @@ final class Post {
             sendCards(where,store,keys);
             // That this build knows about trees, said as persons is. See Things.
             tellTrees(where,store,keys);
+            // And that it knows files on their own, said the same way. See Sleeve.
+            tellLoose(where,store,keys);
+            // That it reads groups, to the owner's own devices; what groups give, given, where anything they depend on
+            // changed since (a device paired, a thing arrived); and the card, where it changed. See Groups.
+            tellGroups(where,store,keys);
+            sent(where,store,keys,store.applyGroups(),"given by a group, or taken away");
+            sendGroups(where,store,keys);
+            // That it reads Parlons! addresses, to the owner's own devices, which are sent one only when the owner says so.
+            // See Parlons.
+            tellParlons(where,store,keys);
             // Whoever a list linked this device with and has not answered, asked again when their turn comes. See Linking.
             linkAgain(where,store,keys);
             List<Outbox.Handed> due=Outbox.due(store.handed(),store.sent(),store.revisions(),
@@ -1106,6 +1270,9 @@ final class Post {
             // turn to go again has come. Counted in the log only where any went.
             Done alone=cartons(where,store,keys,NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING,null,false);
             if(alone.sent>0)android.util.Log.i("Mininotes/Post","collections on their own: "+alone.sent+" went, "+alone.failed+" did not");
+            // And the files shared on their own, the same way: owed, or not answered once their turn has come (decision 92).
+            Done files=sleeves(where,store,keys,null,null,false);
+            if(files.sent>0)android.util.Log.i("Mininotes/Post","files on their own: "+files.sent+" went, "+files.failed+" did not");
             // And whatever is carried for others, brought again when its turn comes.
             if(!store.carried(null).isEmpty())bring(where,store,keys,null);
             // And files: going up, being fetched, and said again to whoever has not said they have them.
@@ -1168,7 +1335,19 @@ final class Post {
     }
 
     /**
+     * A file renamed or replaced here by somebody who may (decision 93): its sleeve, to whoever has it on its own, now, as
+     * every sleeve goes (see {@link #sleeves}); and a round of file work, which sends a new version up, after which its
+     * sleeve goes again saying where. Blocking.
+     */
+    static Done fileChanged(Context where,NoteStore store,Keys keys,String file) throws Exception {
+        Done done=sleeves(where,store,keys,file,null,true);
+        travelSoon(where,store,keys);
+        return done;
+    }
+
+    /**
      * One round: pieces of what is no longer kept let go, what is to go up sent up, what is waiting fetched,
+
      * and the list said again to whoever has not said they have its files. Nothing here throws out: a round
      * that fails is tried again at the next.
      */
@@ -1216,8 +1395,18 @@ final class Post {
     private static void goUp(Context where,NoteStore store,Keys keys,com.eurobuddha.maxima.core.media.MediaService media,
                              NoteStore.Going one) {
         com.eurobuddha.maxima.core.media.MediaManifest made=null;
+        String door=store.atDoorOnly(one.file.id)?one.manifest:"";
         try {
             byte[] plain=store.bytesOf(one.file);
+            // Near first (decision 96): a device on this network is not made to wait for two relays to take every piece and
+            // then fetch them back from across the internet. The pieces are kept at this device's door first, as only between
+            // the owner's devices they always are, and its list or sleeve goes to that device now; the upload below follows
+            // for everybody else, and for that device too should the door not answer it.
+            List<String> near=nearFor(where,store,one.file);
+            if(Routes.doorFirst(Node.helpers(),!one.manifest.isEmpty(),Enclosure.travels(plain.length),near.size())) {
+                try{door=atTheDoor(where,store,keys,one.file,plain,near);}
+                catch(Exception notAtTheDoor){android.util.Log.w("Mininotes/Post","files: could not offer one at this device's door: "+notAtTheDoor.getClass().getSimpleName());}
+            }
             made=media.publish(plain,one.file.kind);
             // Up only if a relay has it. A phone behind a router can hand its pieces to nobody directly, so a
             // list saying they are only here would send everybody to a place they cannot reach. A PC's own
@@ -1230,18 +1419,68 @@ final class Post {
             if(helpers&&!Direct.relayed(made.sources,own(where)))throw new IllegalStateException("No relay took it.");
             store.published(one.file.id,made.encode());
             if(!one.manifest.isEmpty())Node.forget(where,one.manifest);
+            // What was offered at the door alone goes: everybody is told where it went up just below, and a device on this
+            // network still fetching the door's pieces is told the new place in the same breath, and tries again there.
+            if(!door.isEmpty()&&!door.equals(one.manifest))Node.forget(where,door);
             android.util.Log.i("Mininotes/Post",helpers?"files: one went up, "+made.chunkIds.size()+" piece(s) on "+made.sources.size()+" relay(s)"
                 :"files: one is offered from this device's door, "+made.chunkIds.size()+" piece(s)");
             moved(one.file.note);
-            // The list that says where it is: a note's in its parcel, a collection's in its carton.
+            // The list that says where it is: a note's in its parcel, a collection's in its carton; and a file shared on its
+            // own, in its sleeve, which going up has made owed again (decision 92).
             if(one.file.held==NoteStore.Branch.Kind.PAGE)send(where,store,keys,NoteStore.Branch.Kind.PAGE,one.file.note,null,true);
-            else cartonToAll(where,store,keys,one.file.note);
+            else if(!NoteStore.home(one.file.note))cartonToAll(where,store,keys,one.file.note);
+            if(one.file.held!=NoteStore.Branch.Kind.PAGE&&!store.looseAudience(one.file.id).isEmpty())sleeves(where,store,keys,one.file.id,null,false);
         } catch(Throwable notNow) {
             // What went up halfway is let go: it goes up whole, under a new key, next time.
             if(made!=null&&(!Node.helpers()||!Direct.relayed(made.sources,own(where))))Node.forget(where,made.encode());
             store.publishFailed(one.file.id);
             android.util.Log.w("Mininotes/Post","files: one could not go up: "+notNow.getClass().getSimpleName());
         }
+    }
+
+    /**
+     * Who a file goes to that is on this network now (decision 96), by address: everybody its note, its collection or its own
+     * sharing reaches - Temp's to the owner's devices among them - that is heard here.
+     */
+    private static List<String> nearFor(Context where,NoteStore store,NoteStore.Held file) {
+        java.util.Set<String> goes=new java.util.LinkedHashSet<>();
+        if(file.held==NoteStore.Branch.Kind.PAGE)goes.addAll(store.everybodyIn(NoteStore.Branch.Kind.PAGE,file.note));
+        else {
+            if(!NoteStore.home(file.note))goes.addAll(store.goesWith(file.note));
+            for(Outbox.Wait wait:store.sleevesOwed(file.id,true))goes.add(wait.address);
+        }
+        List<String> near=new ArrayList<>();
+        if(goes.isEmpty())return near;
+        for(NoteStore.Contact them:store.addresses())if(goes.contains(them.address)&&them.paired()&&Routes.near(them))near.add(them.address);
+        return near;
+    }
+
+    /**
+     * A file kept at this device's door, pinned, with nothing sent up - as {@link #offer} keeps a sending for a device on
+     * this network - and its list or sleeve sent now to the devices on this network it goes to, which fetch it from the door
+     * (see {@link #fromTheirDoor}). Each send goes through the same gates as any: a sleeve only to a device that has said
+     * {@link Receipt#LOOSE}, a carton only where it is owed.
+     *
+     * @return the manifest kept, which names no source
+     */
+    private static String atTheDoor(Context where,NoteStore store,Keys keys,NoteStore.Held file,byte[] plain,List<String> near) throws Exception {
+        com.eurobuddha.maxima.core.store.BlobStore shelf=Node.blobs(where);
+        if(shelf==null)throw new IllegalStateException("The node is not running.");
+        com.eurobuddha.maxima.core.media.MediaManifest kept=new com.eurobuddha.maxima.core.media.MediaService(null,shelf).publish(plain,file.kind);
+        String manifest=kept.encode();
+        try{store.offeredAtDoor(file.id,manifest);}catch(RuntimeException notKept){Node.forget(where,manifest);throw notKept;}
+        android.util.Log.i("Mininotes/Post","files: one is offered from this device's door first, "+kept.chunkIds.size()+" piece(s), to "
+            +near.size()+" device(s) on this network; then up to the relays for the others");
+        for(String address:near) {
+            try {
+                if(file.held==NoteStore.Branch.Kind.PAGE)send(where,store,keys,NoteStore.Branch.Kind.PAGE,file.note,address,true);
+                else {
+                    if(!NoteStore.home(file.note)&&store.goesWith(file.note).contains(address))cartonTo(where,store,keys,file.note,address);
+                    sleeves(where,store,keys,file.id,address,false);
+                }
+            } catch(Exception notThisOne){/* it goes to them with everybody once it is up */}
+        }
+        return manifest;
     }
 
     /** One file fetched and kept, and everybody who has its note told this device has it. */
@@ -1818,6 +2057,105 @@ final class Post {
     /** When each device was last told this run that this build knows about trees, by fingerprint, and whether it went. */
     private static final java.util.Map<String,long[]> TOLD_TREES=new java.util.concurrent.ConcurrentHashMap<>();
 
+    // ---- files shared on their own: see Sleeve (decision 92) ---------------------------------------------------
+
+    /** Devices whose build has said it knows files on their own, by the fingerprint of their key: kept, across restarts. */
+    private static boolean loose(Context where,String fingerprint) {
+        if(where==null||fingerprint==null||fingerprint.isEmpty())return false;
+        android.content.SharedPreferences kept=where.getSharedPreferences("post",Context.MODE_PRIVATE);
+        java.util.Set<String> all=new java.util.HashSet<>(kept.getStringSet("loose",new java.util.HashSet<String>()));
+        if(!all.add(fingerprint))return false;
+        kept.edit().putStringSet("loose",all).apply();
+        return true;
+    }
+
+    /**
+     * Whether a device's build has said it knows files on their own (see {@link Receipt#LOOSE}). A sleeve is never sealed for
+     * one that has not: a build from before would write it over a note.
+     */
+    static boolean knowsLoose(Context where,NoteStore.Contact them) {
+        if(where==null||them==null)return false;
+        String who=fingerprint(them);
+        return !who.isEmpty()&&where.getSharedPreferences("post",Context.MODE_PRIVATE)
+            .getStringSet("loose",new java.util.HashSet<String>()).contains(who);
+    }
+
+    /** When each device was last told this run that this build knows files on their own, by fingerprint, and whether it went. */
+    private static final java.util.Map<String,long[]> TOLD_LOOSE=new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * "This build knows files on their own", said to every paired device that has shown it knows what an answer is, once a
+     * run and again in a while where it was not taken, as {@link Receipt#TREE} is. A device that has never answered
+     * anything is not told: it may be a build from before answers, which would write these bytes over a note.
+     */
+    private static void tellLoose(Context where,NoteStore store,Keys keys) {
+        long now=System.currentTimeMillis();
+        for(NoteStore.Contact them:store.addresses()) {
+            String who=fingerprint(them);
+            if(who.isEmpty()||!them.paired()||!sendsTo(store,them)||!(doesSpeak(where,them)||knowsLoose(where,them)))continue;
+            long[] told=TOLD_LOOSE.get(who);
+            if(told!=null&&(told[1]==1||now>=told[0]&&now-told[0]<TELL_AGAIN))continue;
+            tellLoose(where,store,keys,them);
+        }
+    }
+
+    private static void tellLoose(Context where,NoteStore store,Keys keys,NoteStore.Contact them) {
+        String who=fingerprint(them);
+        // Never the reason a node is started: this is said when the node is up for everything else.
+        if(who.isEmpty()||!Node.running())return;
+        long[] told={System.currentTimeMillis(),0};
+        TOLD_LOOSE.put(who,told);
+        try {
+            MaximaNode node=Node.node(where);
+            if(node==null)return;
+            byte[] sealed=Envelope.seal(new byte[16],0,System.currentTimeMillis(),Receipt.wrap(Receipt.LOOSE),
+                keys.signing(),Keys.publicKey(them.agreement));
+            if(hand(where,store,keys,node,them,sealed))told[1]=1;
+            android.util.Log.i("Mininotes/Post","said this build knows files on their own"+(told[1]==1?"":": not taken"));
+        } catch(Exception notNow){/* tried again in a while */}
+    }
+
+    /**
+     * A file that arrived on its own, from a device paired here (see {@link Sleeve}). Taken in from whoever it is from or an
+     * admin of it, and answered either way ("took" where this device now has what they sent, "have" where it did not
+     * write it down), or they would send it every quarter of an hour for ever. Not where this device has stopped taking it
+     * in; where it has left it, they are told again, as for a note.
+     */
+    private static Landed sleeveArrived(Context where,NoteStore store,Keys keys,NoteStore.Contact from,Envelope.Opened opened,
+                                        Sleeve.Sent sleeve) {
+        // The envelope names the file it is about: the two have to agree, or every answer would name another.
+        if(!sleeve.id.equalsIgnoreCase(idFrom(opened.page)))return new Landed(null,null);
+        NoteStore.Refusal refused=store.refusal(from.address,sleeve.id,null);
+        if(refused!=null&&refused.gone&&givenAgainIn(store,sleeve.members,refused.at)) {
+            android.util.Log.i("Mininotes/Post","given again a file this device had left, so it is taken in");
+            store.followFileAgain(sleeve.id);
+            refused=null;
+        }
+        if(refused!=null) {
+            android.util.Log.i("Mininotes/Post","a file on its own, not taken in: this device "+(refused.gone?"has left it, and they are told again":"has stopped taking it in"));
+            if(refused.gone&&knowsLoose(where,from))tellOff(where,store,keys,from,opened.page,refused.at,Receipt.LEFT_FILE);
+            return new Landed(null,null);
+        }
+        int did=store.sleeveArrived(from.address,opened.revision,sleeve);
+        if(did!=NoteStore.SLEEVE_NOT)store.answered(from.address);
+        android.util.Log.i("Mininotes/Post","a file arrived on its own: "+(did==NoteStore.SLEEVE_FETCH?"waited for"
+            :did==NoteStore.SLEEVE_GONE?"gone for everybody, so let go here":did==NoteStore.SLEEVE_TOOK?"here already, its list taken":"not taken in"));
+        // A file to fetch, or a new version of one here from somebody who may write in it (decision 93).
+        if(did==NoteStore.SLEEVE_FETCH||did==NoteStore.SLEEVE_TOOK&&sleeve.replaced>0)travelSoon(where,store,keys);
+
+        if(sleeve.answer){speaks(where,from);answer(where,store,keys,from,opened.page,opened.revision,did!=NoteStore.SLEEVE_NOT);}
+        if(did==NoteStore.SLEEVE_GONE)return Landed.left(from.name+" deleted a file they shared with you.","");
+        return Landed.people("");
+    }
+
+    /** Whether a list gives this device the thing again, later than it left: see {@link #givenAgain}. */
+    private static boolean givenAgainIn(NoteStore store,List<Parcel.Member> members,long leftAt) {
+        if(store.mySigningKey.isEmpty())return false;
+        for(Parcel.Member one:members)
+            if(store.mySigningKey.equals(one.key)&&one.level>Sharing.Level.GONE.said()&&one.changed>leftAt)return true;
+        return false;
+    }
+
     /**
      * "This build knows about trees", said to every paired device that has shown it knows what an answer is, once a run
      * and again in a while where it was not taken - as {@link Receipt#PERSONS} is. A device that has never answered
@@ -2003,6 +2341,266 @@ final class Post {
             return new Landed(null,null);
         }
     }
+
+    // ---- people in groups, the same on every device of the owner's: see Groups (decision 100) ------------------------
+
+    /** When each device was last told this run that this build reads groups, by fingerprint, and whether it went. */
+    private static final java.util.Map<String,long[]> TOLD_GROUPS=new java.util.concurrent.ConcurrentHashMap<>();
+    /** The last groups card each device was sent this run, by fingerprint, as a hash: sent again only when it changes. */
+    private static final java.util.Map<String,String> GROUP_CARDS=new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** A device whose build has said it reads groups, kept across restarts. Whether it is the first time. */
+    private static boolean groupsHeard(Context where,String fingerprint) {
+        if(where==null||fingerprint==null||fingerprint.isEmpty())return false;
+        android.content.SharedPreferences kept=where.getSharedPreferences("post",Context.MODE_PRIVATE);
+        java.util.Set<String> all=new java.util.HashSet<>(kept.getStringSet("groups",new java.util.HashSet<String>()));
+        if(!all.add(fingerprint))return false;
+        kept.edit().putStringSet("groups",all).apply();
+        return true;
+    }
+
+    /** Whether a device's build has said it reads groups ({@link Receipt#GROUPS}). A card is never sealed for one that has not. */
+    static boolean readsGroups(Context where,NoteStore.Contact them) {
+        if(where==null||them==null)return false;
+        String who=fingerprint(them);
+        return !who.isEmpty()&&where.getSharedPreferences("post",Context.MODE_PRIVATE)
+            .getStringSet("groups",new java.util.HashSet<String>()).contains(who);
+    }
+
+    /**
+     * Who a groups card goes to: every device paired here and marked yours, whose build has said it reads groups and that
+     * counts this one as its owner's too (see {@link Groups#goesTo}). A build from before is never among them.
+     */
+    static List<NoteStore.Contact> groupsGoTo(Context where,NoteStore store) {
+        List<NoteStore.Contact> own=new ArrayList<>();
+        for(NoteStore.Contact them:store.addresses())
+            if(them.paired()&&sendsTo(store,them)&&Groups.goesTo(them.mine,readsGroups(where,them),mineThere(where,fingerprint(them))))own.add(them);
+        return own;
+    }
+
+    /**
+     * "This build reads groups", said to each of the owner's own devices that has shown it knows what an answer is, once a
+     * run and again in a while where it was not taken, as {@link Receipt#LOOSE} is. Nobody else is told: nobody else is
+     * ever sent a card.
+     */
+    private static void tellGroups(Context where,NoteStore store,Keys keys) {
+        long now=System.currentTimeMillis();
+        for(NoteStore.Contact them:store.addresses()) {
+            String who=fingerprint(them);
+            if(who.isEmpty()||!them.mine||!them.paired()||!sendsTo(store,them)||!(doesSpeak(where,them)||readsGroups(where,them)))continue;
+            long[] told=TOLD_GROUPS.get(who);
+            if(told!=null&&(told[1]==1||now>=told[0]&&now-told[0]<TELL_AGAIN))continue;
+            tellGroups(where,store,keys,them);
+        }
+    }
+
+    private static void tellGroups(Context where,NoteStore store,Keys keys,NoteStore.Contact them) {
+        String who=fingerprint(them);
+        // Never the reason a node is started: this is said when the node is up for everything else.
+        if(who.isEmpty()||!Node.running())return;
+        long[] told={System.currentTimeMillis(),0};
+        TOLD_GROUPS.put(who,told);
+        try {
+            MaximaNode node=Node.node(where);
+            if(node==null)return;
+            byte[] sealed=Envelope.seal(new byte[16],0,System.currentTimeMillis(),Receipt.wrap(Receipt.GROUPS),
+                keys.signing(),Keys.publicKey(them.agreement));
+            if(hand(where,store,keys,node,them,sealed))told[1]=1;
+            groups("said this build reads groups"+(told[1]==1?"":": not taken"));
+        } catch(Exception notNow){/* tried again in a while */}
+    }
+
+    /** The groups card, sent to every device of the owner's that reads one, where it changed since it last went. Blocking. */
+    static void sendGroups(Context where,NoteStore store,Keys keys) {
+        List<NoteStore.Contact> own=groupsGoTo(where,store);
+        if(own.isEmpty()||!Node.running())return;
+        try {
+            Groups.Card card=store.groupsCard();
+            // Nobody has made a group or given one anything: nothing to say, and a device with none has nothing to hear.
+            if(card.groups.isEmpty()&&card.given.isEmpty())return;
+            byte[] plain=Groups.wrap(card);
+            String hash=Courier.hex(java.security.MessageDigest.getInstance("SHA-256").digest(plain));
+            MaximaNode node=Node.node(where);
+            if(node==null)return;
+            for(NoteStore.Contact them:own) {
+                String who=fingerprint(them);
+                if(hash.equals(GROUP_CARDS.get(who)))continue;
+                byte[] sealed=Envelope.seal(new byte[16],card.newest(),System.currentTimeMillis(),plain,keys.signing(),Keys.publicKey(them.agreement));
+                boolean went;
+                // One device out of reach is not a card kept from the rest: it goes again at the next round.
+                try{went=hand(where,store,keys,node,them,sealed);}catch(Exception noWay){continue;}
+                if(went)GROUP_CARDS.put(who,hash);
+                groups("a groups card of "+card.groups.size()+" group(s) "+(went?"handed to":"not taken for")+" one of the owner's devices");
+            }
+        } catch(Exception notNow) {
+            groups("could not send a groups card: "+Unsent.reason(notNow));
+        }
+    }
+
+    /**
+     * What groups gave or took away, sent: each thing whose people changed goes whole to everybody it reaches, carrying
+     * its list, as a change of role does. Blocking. Counted together.
+     */
+    static Done sent(Context where,NoteStore store,Keys keys,List<Groups.Changed> changed,String why) {
+        int sent=0,failed=0;String said="";List<Unsent.Problem> problems=new ArrayList<>();
+        if(changed==null||changed.isEmpty())return new Done(0,0,"");
+        for(Groups.Changed one:changed) {
+            try {
+                Done done=changed(where,store,keys,NoteStore.kindFor(one.scope),one.target);
+                sent+=done.sent;failed+=done.failed;problems.addAll(done.problems);if(said.isEmpty())said=done.why;
+            } catch(Exception notNow){failed++;if(said.isEmpty())said=Unsent.reason(notNow);}
+        }
+        // Taken off by a group is taken off: they are told, as Remove tells them.
+        removedAgain(where,store,keys);
+        groups(changed.size()+" thing(s) "+why+": "+sent+" went, "+failed+" did not");
+        return new Done(sent,failed,said,problems);
+    }
+
+    /**
+     * Your groups changed here (a group made, named or deleted, somebody put in or taken out, a thing given to a group or
+     * taken from it): what that gives or takes, sent, and the card to your other devices. Blocking.
+     */
+    static Done groupsChanged(Context where,NoteStore store,Keys keys,List<Groups.Changed> changed) {
+        Done done=sent(where,store,keys,changed,"given by a group, or taken away");
+        sendGroups(where,store,keys);
+        return done;
+    }
+
+    /**
+     * A groups card from another device of the owner's, taken in row by row, the later decision standing; then what the
+     * groups give here, given, and sent off this thread. A card from a device not marked as yours here changes nothing.
+     */
+    private static Landed groupsArrived(Context where,NoteStore store,Keys keys,NoteStore.Contact from,Envelope.Opened opened) {
+        if(!from.mine){groups("a groups card from a device that is not the owner's: nothing changes");return new Landed(null,null);}
+        Groups.Card card=Groups.open(opened.text);
+        if(card==null){groups("a groups card that could not be read");return new Landed(null,null);}
+        // It sent one, so it reads them.
+        groupsHeard(where,fingerprint(from));
+        boolean took=store.mergeGroups(card);
+        final List<Groups.Changed> moved=store.applyGroups();
+        // Something just arrived, so the node is up; where it is not, nothing is started for this, and the next round sends it.
+        if(!moved.isEmpty())ANSWERS.execute(()->{if(Node.running())sent(where,store,keys,moved,"given by a group from another device of yours, or taken away");});
+        groups("a groups card taken in"+(took?"":", nothing new")+(moved.isEmpty()?"":", "+moved.size()+" thing(s) given or taken away"));
+        return took||!moved.isEmpty()?Landed.groups():new Landed(null,null);
+    }
+
+    // ---- a person's Parlons! address, to the devices of the owner's they choose: see Parlons (decision 101) -----------
+
+    /** When each device was last told this run that this build reads Parlons! addresses, by fingerprint, and whether it went. */
+    private static final java.util.Map<String,long[]> TOLD_PARLONS=new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** A device whose build has said it reads Parlons! addresses, kept across restarts. Whether it is the first time. */
+    private static boolean parlonsHeard(Context where,String fingerprint) {
+        if(where==null||fingerprint==null||fingerprint.isEmpty())return false;
+        android.content.SharedPreferences kept=where.getSharedPreferences("post",Context.MODE_PRIVATE);
+        java.util.Set<String> all=new java.util.HashSet<>(kept.getStringSet("parlons",new java.util.HashSet<String>()));
+        if(!all.add(fingerprint))return false;
+        kept.edit().putStringSet("parlons",all).apply();
+        return true;
+    }
+
+    /** Whether a device's build has said it reads Parlons! addresses ({@link Receipt#PARLONS}). A card is never sealed for one that has not. */
+    static boolean readsParlons(Context where,NoteStore.Contact them) {
+        if(where==null||them==null)return false;
+        String who=fingerprint(them);
+        return !who.isEmpty()&&where.getSharedPreferences("post",Context.MODE_PRIVATE)
+            .getStringSet("parlons",new java.util.HashSet<String>()).contains(who);
+    }
+
+    /** Whether a Parlons! card can go to this device of the owner's at all, chosen or not: see {@link Parlons#goesTo}. */
+    static boolean takesParlons(Context where,NoteStore store,NoteStore.Contact them) {
+        return them.paired()&&sendsTo(store,them)&&Parlons.goesTo(true,them.mine,readsParlons(where,them),mineThere(where,fingerprint(them)));
+    }
+
+    /**
+     * Who a Parlons! card goes to: of the devices the owner chose ({@code chosen}, by address), those paired here and marked
+     * theirs, whose build has said it reads them and that count this one as their owner's too. A build from before and
+     * anybody else's device are never among them.
+     */
+    static List<NoteStore.Contact> parlonsGoTo(Context where,NoteStore store,java.util.Collection<String> chosen) {
+        List<NoteStore.Contact> own=new ArrayList<>();
+        for(NoteStore.Contact them:store.addresses())
+            if(chosen!=null&&chosen.contains(them.address)&&takesParlons(where,store,them))own.add(them);
+        return own;
+    }
+
+    /** "This build reads Parlons! addresses", said to each of the owner's own devices, as {@link #tellGroups} says its own. */
+    private static void tellParlons(Context where,NoteStore store,Keys keys) {
+        long now=System.currentTimeMillis();
+        for(NoteStore.Contact them:store.addresses()) {
+            String who=fingerprint(them);
+            if(who.isEmpty()||!them.mine||!them.paired()||!sendsTo(store,them)||!(doesSpeak(where,them)||readsParlons(where,them)))continue;
+            long[] told=TOLD_PARLONS.get(who);
+            if(told!=null&&(told[1]==1||now>=told[0]&&now-told[0]<TELL_AGAIN))continue;
+            tellParlons(where,store,keys,them);
+        }
+    }
+
+    private static void tellParlons(Context where,NoteStore store,Keys keys,NoteStore.Contact them) {
+        String who=fingerprint(them);
+        // Never the reason a node is started: this is said when the node is up for everything else.
+        if(who.isEmpty()||!Node.running())return;
+        long[] told={System.currentTimeMillis(),0};
+        TOLD_PARLONS.put(who,told);
+        try {
+            MaximaNode node=Node.node(where);
+            if(node==null)return;
+            byte[] sealed=Envelope.seal(new byte[16],0,System.currentTimeMillis(),Receipt.wrap(Receipt.PARLONS),
+                keys.signing(),Keys.publicKey(them.agreement));
+            if(hand(where,store,keys,node,them,sealed))told[1]=1;
+            contacts("said this build reads Parlons! addresses"+(told[1]==1?"":": not taken"));
+        } catch(Exception notNow){/* tried again in a while */}
+    }
+
+    /**
+     * A person's Parlons! address, as it is here now (set or removed), sent to the devices of the owner's they chose, by
+     * address: each that takes it is handed it, once, now. Blocking, and started by the owner, so the node is started for
+     * it. What the owner is told, by the names of their devices: where it went, which could not be reached, and which
+     * needs an update first. {@code here} is this device, as the sentence says it.
+     */
+    static String sendParlons(Context where,NoteStore store,Keys keys,String address,java.util.Collection<String> chosen,String here) {
+        Parlons.Card card=store.parlonsCard(address);
+        boolean removed=card==null||card.address.isEmpty();
+        List<String> sent=new ArrayList<>(),notReached=new ArrayList<>(),older=new ArrayList<>();
+        if(card==null||chosen==null||chosen.isEmpty())return Parlons.said(removed,here,sent,notReached,older);
+        List<NoteStore.Contact> to=parlonsGoTo(where,store,chosen);
+        java.util.Set<String> going=new java.util.HashSet<>();for(NoteStore.Contact them:to)going.add(them.address);
+        for(NoteStore.Contact them:store.addresses())if(chosen.contains(them.address)&&them.mine&&them.paired()&&!going.contains(them.address))older.add(them.name);
+        if(to.isEmpty())return Parlons.said(removed,here,sent,notReached,older);
+        byte[] plain=Parlons.wrap(card);
+        MaximaNode node=Node.node(where);
+        for(NoteStore.Contact them:to) {
+            boolean went=false;
+            // One device out of reach is not a card kept from the rest.
+            if(node!=null)try{went=hand(where,store,keys,node,them,Envelope.seal(new byte[16],card.decided,System.currentTimeMillis(),plain,keys.signing(),Keys.publicKey(them.agreement)));}
+                catch(Exception noWay){went=false;}
+            (went?sent:notReached).add(them.name);
+        }
+        contacts("a Parlons! card"+(removed?" (removed)":"")+" handed to "+sent.size()+" of the owner's devices, "+notReached.size()+" out of reach, "+older.size()+" from before");
+        return Parlons.said(removed,here,sent,notReached,older);
+    }
+
+    /**
+     * A Parlons! card from another device of the owner's: kept on the person it is about where it was decided later than
+     * what is here. From a device not marked as yours here, about somebody not known here, or older: nothing changes.
+     */
+    private static Landed parlonsArrived(Context where,NoteStore store,NoteStore.Contact from,Envelope.Opened opened) {
+        if(!from.mine){contacts("a Parlons! card from a device that is not the owner's: nothing changes");return new Landed(null,null);}
+        Parlons.Card card=Parlons.open(opened.text);
+        if(card==null){contacts("a Parlons! card that could not be read");return new Landed(null,null);}
+        // It sent one, so it reads them.
+        parlonsHeard(where,fingerprint(from));
+        NoteStore.ParlonsTaken taken=store.takeParlons(card);
+        contacts("a Parlons! card "+(taken==NoteStore.ParlonsTaken.TAKEN?"taken in":taken==NoteStore.ParlonsTaken.OLDER?"older than what is here: nothing changes"
+            :"about somebody not known here: dropped"));
+        return taken==NoteStore.ParlonsTaken.TAKEN?Landed.contacts():new Landed(null,null);
+    }
+
+    /** One line for the log about Parlons! addresses: counts and states, never a name, an address or a key. */
+    private static void contacts(String said){android.util.Log.i("Mininotes/Parlons",said);}
+
+    /** One line for the log about groups: counts and states, never a name, an id or a key. */
+    private static void groups(String said){android.util.Log.i("Mininotes/Groups",said);}
 
     /** One line for the log about persons: what happened, never a name, an id, an address or a key. */
     private static void persons(String said){android.util.Log.i("Mininotes/Persons",said);}
@@ -2433,7 +3031,7 @@ final class Post {
                 android.util.Log.i("Mininotes/Post","they have left a "+leftAt.name().toLowerCase(java.util.Locale.ROOT)
                     +(any?"":" - which they were not on here, so it changes nothing"));
                 if(!any)return new Landed(null,null);
-                return Landed.left(from.name+" unfollowed a "+(leftAt==Sharing.Scope.PAGE?"note":"collection")+".",id);
+                return Landed.left(from.name+" unfollowed a "+(leftAt==Sharing.Scope.PAGE?"note":leftAt==Sharing.Scope.FILE?"file":"folder")+".",id);
             }
             Sharing.Scope offAt=Receipt.removedScope(about);
             if(offAt!=null) {
@@ -2443,8 +3041,8 @@ final class Post {
                 android.util.Log.i("Mininotes/Post","they say this phone is off a "+offAt.name().toLowerCase(java.util.Locale.ROOT)
                     +(any?"":" - which changes nothing here"));
                 if(!any)return new Landed(null,null);
-                return Landed.left(from.name+" removed you from a "+(offAt==Sharing.Scope.PAGE?"note":"collection")
-                    +". Your copy stays on this phone.",id);
+                return Landed.left(from.name+" removed you from a "+(offAt==Sharing.Scope.PAGE?"note":offAt==Sharing.Scope.FILE?"file":"folder")
+                    +". Your copy stays on "+here()+".",id);
             }
             if((about==Receipt.COLLECTED||about==Receipt.COLLECTED_ANSWER)&&!brought) {
                 // They have what was being carried for them: that note, or that answer, up to that revision.
@@ -2512,6 +3110,53 @@ final class Post {
                 // asked again at once, before anything has gone.
                 return first?Landed.people(""):new Landed(null,null);
             }
+            if(about==Receipt.LOOSE) {
+                // A build that knows files on their own, and says so: heard as trees is, and, the first time, whatever
+                // file waited for it goes now, off this thread. Until this, no sleeve was ever sealed for it.
+                String who=fingerprint(from);
+                boolean first=loose(where,who);
+                long[] told=TOLD_LOOSE.get(who);
+                boolean back=Drop.sayBack(told==null?0:told[0],System.currentTimeMillis());
+                final NoteStore.Contact them=from;
+                if(back)ANSWERS.execute(()->tellLoose(where,store,keys,them));
+                android.util.Log.i("Mininotes/Post","heard their build knows files on their own"+(first?"":", as it said before")
+                    +(back?"; said it back":""));
+                if(first)ANSWERS.execute(()->{
+                    if(!Node.running())return;
+                    try {
+                        Done done=sleeves(where,store,keys,null,them.address,false);
+                        android.util.Log.i("Mininotes/Post","sent the files that waited for their build: "+done.sent+" went, "+done.failed+" did not");
+                    } catch(Exception notNow) {
+                        android.util.Log.w("Mininotes/Post","could not send the files that waited: "+notNow.getClass().getSimpleName());
+                    }
+                });
+                return first?Landed.people(""):new Landed(null,null);
+            }
+            if(about==Receipt.GROUPS) {
+                // A build that reads groups, and says so: heard as files on their own are, and said back to one of the
+                // owner's devices. Said back means it is just started, so the card goes again, as a card of persons does.
+                String who=fingerprint(from);
+                boolean first=groupsHeard(where,who);
+                long[] told=TOLD_GROUPS.get(who);
+                boolean back=from.mine&&Drop.sayBack(told==null?0:told[0],System.currentTimeMillis());
+                final NoteStore.Contact them=from;
+                if(back)ANSWERS.execute(()->tellGroups(where,store,keys,them));
+                if(first||back){GROUP_CARDS.remove(who);ANSWERS.execute(()->sendGroups(where,store,keys));}
+                groups("heard their build reads groups"+(first?"":", as it said before")+(back?"; said it back":""));
+                return new Landed(null,null);
+            }
+            if(about==Receipt.PARLONS) {
+                // A build that reads Parlons! addresses, and says so: heard as groups are, and said back to one of the
+                // owner's devices. Nothing waits for it: an address goes only when the owner saves one.
+                String who=fingerprint(from);
+                boolean first=parlonsHeard(where,who);
+                long[] told=TOLD_PARLONS.get(who);
+                boolean back=from.mine&&Drop.sayBack(told==null?0:told[0],System.currentTimeMillis());
+                final NoteStore.Contact them=from;
+                if(back)ANSWERS.execute(()->tellParlons(where,store,keys,them));
+                contacts("heard their build reads Parlons! addresses"+(first?"":", as it said before")+(back?"; said it back":""));
+                return new Landed(null,null);
+            }
             if(about==Receipt.DROP_HAVE||about==Receipt.DROP_REFUSED||about==Receipt.DROP_MISSING)
                 return answeredAboutTransfer(where,store,keys,from,id,opened.revision,about);
             if(about==Receipt.FILE_HERE||about==Receipt.FILE_MISSING) {
@@ -2539,6 +3184,9 @@ final class Post {
                 // Not a note: a collection that went on its own, which the envelope names by the bytes Things gives it.
                 if(!believed&&store.get(id)==null)
                     believed=store.collectionAcknowledged(from.address,opened.page,opened.revision,about==Receipt.TOOK);
+                // Nor a collection: a file that went on its own, which the envelope names by its own bytes (see Sleeve).
+                if(!believed&&store.get(id)==null)
+                    believed=store.fileAcknowledged(from.address,id,opened.revision,about==Receipt.TOOK);
                 android.util.Log.i("Mininotes/Post","answered: revision "+opened.revision
                     +(about==Receipt.TOOK?", and they now say the same":", and they put it with their own")
                     +(believed?"":" - which this phone never sent, so it changes nothing"));
@@ -2547,16 +3195,26 @@ final class Post {
             // A card from another device of the owner's: see Persons. Known by its first four bytes and read before
             // a note is, which it would otherwise be taken for; never something carried, which is only notes and answers.
             if(Persons.isCard(opened.text))return brought?new Landed(null,null):cardArrived(where,store,keys,from,opened);
+            // A groups card from another device of the owner's: see Groups. Read before a note is too, and never carried.
+            if(Groups.isCard(opened.text))return brought?new Landed(null,null):groupsArrived(where,store,keys,from,opened);
+            // A person's Parlons! address from another device of the owner's: see Parlons. Read before a note is too, never carried.
+            if(Parlons.isCard(opened.text))return brought?new Landed(null,null):parlonsArrived(where,store,from,opened);
             // Files sent to this device on their own, belonging to no note: see Drop. Read before a note is, which
             // these bytes would otherwise be taken for.
             List<Enclosure.Listed> offer=Drop.open(opened.text);
             if(offer!=null)return offered(where,store,keys,from,id,opened.revision,offer);
+            // A file on its own: see Sleeve. Read before a note is too, which it would otherwise be taken for; never one
+            // something carried, as a carton is not.
+            Sleeve.Sent sleeve=Sleeve.open(opened.text);
+            if(sleeve!=null)return brought?new Landed(null,null):sleeveArrived(where,store,keys,from,opened,sleeve);
             // A collection on its own: see Carton. Read before a note is too, which it would otherwise be taken for.
             Carton.Sent carton=Carton.open(opened.text);
             if(carton!=null)return brought?new Landed(null,null):cartonArrived(where,store,keys,from,opened,carton);
             Parcel.Sent parcel=Parcel.open(opened.text);
             // Their build carries: from now on they may be left things, and brought them.
             if(parcel!=null&&parcel.carries)carries(where,from);
+            // The colour they chose for themselves, from them and not from whoever brought it.
+            if(parcel!=null&&!brought&&parcel.inkAt>0)store.inkSaid(from,parcel.ink,parcel.inkAt);
             // Something sent before notes carried their shelf: the text and nothing else. Still readable,
             // and it goes wherever anything whose shelf we were not told goes.
             if(parcel==null) {

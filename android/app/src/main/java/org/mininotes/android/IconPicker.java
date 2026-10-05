@@ -62,8 +62,9 @@ final class IconPicker {
         final TextView icon=sheet.dimRow("Icon…"),picture=sheet.dimRow("Remove the picture");
         // A note being written in is written down first, so the notebook is asked about the note as it is.
         a.lookChanging(thing.kind,thing.id);
-        a.background.submit(()->new boolean[]{kept(a.store,thing.kind,thing.id)&&changes(a.store,thing.kind,thing.id),
-                a.store.imageOf(thing.kind,thing.id)!=null},got->{
+        // Icon… on anything kept, read only or not: a look of this phone's own is always this phone's to choose.
+        a.background.submit(()->new boolean[]{kept(a.store,thing.kind,thing.id),
+                a.store.wornImage(thing.kind,thing.id)!=null&&(a.store.hasOwnLook(thing.kind,thing.id)||changes(a.store,thing.kind,thing.id))},got->{
             if(got[0])sheet.wakeRow(icon,"Icon…",()->open(thing));else sheet.body().removeView(icon);
             if(got[0]&&got[1])sheet.wakeRow(picture,"Remove the picture",()->removePicture(thing));else sheet.body().removeView(picture);
         },e->{sheet.body().removeView(icon);sheet.body().removeView(picture);});
@@ -102,13 +103,21 @@ final class IconPicker {
         a.background.submit(()->{
             // The set read here, off the screen's thread, the first time it is wanted.
             Icons.all();
+            boolean shared=!a.store.everybodyIn(thing.kind,thing.id).isEmpty()||a.store.theirs(thing.kind,thing.id);
             return new Object[]{a.store.colourOf(thing.kind,thing.id),a.store.iconOf(thing.kind,thing.id),a.store.imageOf(thing.kind,thing.id)!=null,
-                changes(a.store,thing.kind,thing.id),kept(a.store,thing.kind,thing.id)};
+                changes(a.store,thing.kind,thing.id),kept(a.store,thing.kind,thing.id),shared,a.store.ownLook(thing.kind,thing.id)};
         },got->{
             if(!(Boolean)got[4]){a.toast("Write in it first: a blank note is not kept");return;}
-            if(!(Boolean)got[3]){a.alert(thing.kind==NoteStore.Branch.Kind.PAGE?"That note is read only here.":"That collection is read only here.");return;}
-            show(thing,(Integer)got[0],(String)got[1],(Boolean)got[2]);
+            String[] own=(String[])got[6];
+            show(thing,(Integer)got[0],new Look((String)got[1],(Boolean)got[2]),own==null?new Look("",false):new Look(own[0],!own[1].isEmpty()),
+                (Boolean)got[5],(Boolean)got[3],own!=null||!(Boolean)got[3]);
         },e->a.alert(MainActivity.READ_FAILED));
+    }
+
+    /** A look as the box rings it: the icon worn (empty for Default), and whether a picture is worn over the set. */
+    private static final class Look {
+        final String icon;final boolean pictured;
+        Look(String icon,boolean pictured){this.icon=icon==null?"":icon;this.pictured=pictured;}
     }
 
     /**
@@ -117,9 +126,14 @@ final class IconPicker {
      *
      * @param pictured whether it wears a picture now: then nothing in the grid is ringed, since the picture is over them all
      */
-    private void show(final NoteStore.Branch thing,int colour,String icon,boolean pictured) {
+    private void show(final NoteStore.Branch thing,int colour,final Look everybody,final Look own,boolean shared,boolean changes,boolean onlyMe) {
         final int[] tint={colour};final boolean[] painted={false};
+        // For whom the look is chosen (the owner, 2026-10-03: "set the icon of a note individually or for everybody when
+        // shared"): what is not shared is everybody's and this phone's at once, so there is nothing to ask; a thing read
+        // only here has a look of this phone's own or none.
+        final boolean[] mine={onlyMe};
         LinearLayout body=a.inside();
+        if(shared&&!changes)body.addView(a.under("Only on this phone: you can only read it."));
 
         // The colours along the top, as the menu has them: the one it has ringed, and a tap colours it at once.
         final LinearLayout rounds=new LinearLayout(a);
@@ -130,13 +144,22 @@ final class IconPicker {
         body.addView(words);
 
         // The grid: Default and the set, building only the cells on the screen - 1,857 are never all made at once.
-        final Found set=new Found(thing,Icons.known(icon)?icon:"",pictured,tint);
+        Look now=mine[0]?own:everybody;
+        final Found set=new Found(thing,Icons.known(now.icon)?now.icon:"",now.pictured,tint);
         final GridView grid=new GridView(a);
         grid.setNumColumns(GridView.AUTO_FIT);grid.setColumnWidth(a.dp(52));grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
         grid.setSelector(a.touchFeedback());grid.setDrawSelectorOnTop(true);grid.setVerticalScrollBarEnabled(false);
         grid.setAdapter(set);
         final AlertDialog[] box={null};
-        grid.setOnItemClickListener((parent,cell,at,row)->{box[0].dismiss();choose(thing,set.names.get(at));});
+        grid.setOnItemClickListener((parent,cell,at,row)->{box[0].dismiss();choose(thing,set.names.get(at),mine[0]);});
+        // The drop-down's choice rings what is worn for whom it now says.
+        if(shared&&changes) {
+            final List<String> whom=java.util.Arrays.asList("Everybody","Only me");
+            body.addView(a.dropRow("For",whom,null,mine[0]?1:0,whom.get(mine[0]?1:0),picked->{
+                mine[0]=picked==1;Look look=mine[0]?own:everybody;
+                set.worn=Icons.known(look.icon)?look.icon:"";set.pictured=look.pictured;set.notifyDataSetChanged();
+            }),0);
+        }
         final TextView none=a.under("No icon is called that.");
         none.setGravity(Gravity.CENTER);none.setVisibility(View.GONE);
         FrameLayout among=new FrameLayout(a);
@@ -162,7 +185,7 @@ final class IconPicker {
         pictureLine.addView(a.label("Choose a picture…",MainActivity.READING,a.INK),new LinearLayout.LayoutParams(0,-2,1));
         pictureLine.setBackgroundResource(a.touchFeedback());
         pictureLine.setContentDescription("Choose a picture");
-        pictureLine.setOnClickListener(v->{box[0].dismiss();choosePicture(thing);});
+        pictureLine.setOnClickListener(v->{box[0].dismiss();choosePicture(thing,mine[0]);});
         body.addView(pictureLine,new LinearLayout.LayoutParams(-1,-2));
 
         final Runnable paint=()->{
@@ -208,7 +231,7 @@ final class IconPicker {
             public void afterTextChanged(android.text.Editable e){words.removeCallbacks(find);words.postDelayed(find,150);}
         });
 
-        String name=thing.name==null||thing.name.trim().isEmpty()?(thing.kind==NoteStore.Branch.Kind.PAGE?"this note":"this collection"):thing.name.trim();
+        String name=thing.name==null||thing.name.trim().isEmpty()?(thing.kind==NoteStore.Branch.Kind.PAGE?"this note":"this folder"):thing.name.trim();
         if(name.length()>32)name=name.substring(0,31).trim()+"…";
         box[0]=a.new Box().setTitle("Icon for “"+name+"”").setView(body).create();
         android.view.Window window=box[0].getWindow();
@@ -233,8 +256,8 @@ final class IconPicker {
         List<String> names=Looks.shown("");
         private final NoteStore.Branch thing;
         /** What it wears now - an icon of the set, or Default ("") - ringed; nothing where a picture is worn over them all. */
-        final String worn;
-        private final boolean pictured;
+        String worn;
+        boolean pictured;
         private final int[] tint;
         Found(NoteStore.Branch thing,String worn,boolean pictured,int[] tint){this.thing=thing;this.worn=worn;this.pictured=pictured;this.tint=tint;}
         @Override public int getCount(){return names.size();}
@@ -263,10 +286,14 @@ final class IconPicker {
 
     // ---- choosing ----------------------------------------------------------------------------------------------------
 
-    /** An icon from the set, or the default (""), worn from now on: any picture comes off with it (decision 34). */
-    private void choose(final NoteStore.Branch thing,final String icon) {
+    /**
+     * An icon from the set, or the default (""), worn from now on: any picture comes off with it (decision 34). Only for this
+     * phone, Default is the look everybody sees again.
+     */
+    private void choose(final NoteStore.Branch thing,final String icon,final boolean mine) {
         a.lookChanging(thing.kind,thing.id);
-        a.background.submit(()->{a.store.setIcon(thing.kind,thing.id,icon);return null;},
+        a.background.submit(()->{if(!mine)a.store.setIcon(thing.kind,thing.id,icon);else if(icon.isEmpty())a.store.dropOwnLook(thing.kind,thing.id);
+                else a.store.setOwnIcon(thing.kind,thing.id,icon);return null;},
             done->a.looked(thing.kind,thing.id),
             e->a.alert(why(e,"Could not change that icon. Nothing was changed.")));
     }
@@ -274,15 +301,17 @@ final class IconPicker {
     /** The picture taken off: the icon under it is worn again. */
     void removePicture(final NoteStore.Branch thing) {
         a.lookChanging(thing.kind,thing.id);
-        a.background.submit(()->{a.store.setImage(thing.kind,thing.id,null);return null;},
+        // This phone's own picture where it has one, else the one everybody sees.
+        a.background.submit(()->{String[] own=a.store.ownLook(thing.kind,thing.id);
+                if(own!=null&&!own[1].isEmpty())a.store.setOwnImage(thing.kind,thing.id,null);else a.store.setImage(thing.kind,thing.id,null);return null;},
             done->{a.toast("Picture removed");a.looked(thing.kind,thing.id);},
             e->a.alert(why(e,"Could not remove the picture. Nothing was changed.")));
     }
 
     /** Choose a picture…: the phone's own picker for pictures, with where the one chosen goes kept until it answers. */
-    private void choosePicture(NoteStore.Branch thing) {
+    private void choosePicture(NoteStore.Branch thing,boolean mine) {
         a.getSharedPreferences("settings",MainActivity.MODE_PRIVATE).edit()
-            .putString(PICTURING,thing.kind.name()+"\n"+thing.id+"\n"+thing.name).apply();
+            .putString(PICTURING,(mine?"mine:":"")+thing.kind.name()+"\n"+thing.id+"\n"+thing.name).apply();
         Intent pick=new Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE);
         try{a.startActivityForResult(pick,MainActivity.PICTURE);}
         catch(ActivityNotFoundException none){a.alert("Nothing on this phone offers pictures to choose from.");}
@@ -298,7 +327,8 @@ final class IconPicker {
         String[] part=kept==null?new String[0]:kept.split("\n",3);
         if(picked==null||part.length<3)return;
         final NoteStore.Branch.Kind kind;
-        try{kind=NoteStore.Branch.Kind.valueOf(part[0]);}catch(IllegalArgumentException unknown){return;}
+        final boolean mine=part[0].startsWith("mine:");
+        try{kind=NoteStore.Branch.Kind.valueOf(mine?part[0].substring(5):part[0]);}catch(IllegalArgumentException unknown){return;}
         final String id=part[1],name=part[2];
         a.lookChanging(kind,id);
         final int job=a.busy("Making the picture small enough to travel…");
@@ -306,7 +336,7 @@ final class IconPicker {
         a.background.submit(()->{
             byte[] thumb=thumbnail(from,picked);
             a.busySay(job,name.isEmpty()?"Keeping the picture…":"Keeping the picture with “"+name+"”…");
-            a.store.setImage(kind,id,thumb);
+            if(mine)a.store.setOwnImage(kind,id,thumb);else a.store.setImage(kind,id,thumb);
             return null;
         },done->{a.busyDone(job,"Picture set");a.looked(kind,id);},
         e->{a.busyDone(job,null);a.alert(why(e,"Could not use that picture. Nothing was changed."));});

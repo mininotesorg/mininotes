@@ -92,6 +92,13 @@ final class DesktopUi {
     /** Quiet text that wraps at a width, measured so it is never cut off or left on one line. */
     static Text note(String text){return note(text,360,QUIET,BODY.deriveFont(13f));}
     static Text note(String text,int width,Color colour,Font font){return new Text(text,font,colour,width);}
+    /**
+     * Quiet text that takes the whole width it is given and wraps there: a line under a device that reads across its card,
+     * never folded into a narrow column beside something else (decision 97).
+     */
+    static Text spread(String text){return new Text(text,BODY.deriveFont(13f),QUIET,SPREAD);}
+    /** The width a spread text wraps at: whatever its column gives it. */
+    private static final int SPREAD=-1;
 
     /**
      * Words that can be selected and copied, like any text on a page - an address, a time, a sentence to
@@ -102,7 +109,7 @@ final class DesktopUi {
         Text(String text,Font font,Color colour,int wrap) {
             super(text);this.wrap=wrap;
             setEditable(false);setOpaque(false);setBorder(null);setMargin(new Insets(0,0,0,0));
-            setFont(font);setForeground(colour);setLineWrap(wrap>0);setWrapStyleWord(true);
+            setFont(font);setForeground(colour);setLineWrap(wrap!=0);setWrapStyleWord(true);
             setSelectionColor(new Color(0xDC,0xE8,0xDF));setSelectedTextColor(INK);
             // No blinking caret in something that cannot be typed in; selecting still works.
             setCaret(new javax.swing.text.DefaultCaret(){
@@ -121,12 +128,22 @@ final class DesktopUi {
             colour.paint(this,g,ground(this));
         }
         @Override public Dimension getPreferredSize() {
+            if(wrap==SPREAD) {
+                // As tall as its lines at the width it was given, and asking for no width of its own, so the column decides.
+                int wide=getWidth()>0?getWidth():360;if(getWidth()<=0)setSize(wide,Short.MAX_VALUE);
+                return new Dimension(Math.min(wide,120),super.getPreferredSize().height);
+            }
             if(wrap<=0)return super.getPreferredSize();
             // Laid out at its width first, so the height is that of the lines it really wraps into.
             if(getWidth()!=wrap)setSize(wrap,Short.MAX_VALUE);
             return new Dimension(wrap,super.getPreferredSize().height);
         }
         @Override public Dimension getMaximumSize(){Dimension d=getPreferredSize();return wrap>0?d:new Dimension(Integer.MAX_VALUE,d.height);}
+        /** Given another width, a spread text has another height: the column is asked to lay it out again. */
+        @Override public void setBounds(int x,int y,int width,int height) {
+            boolean wider=wrap==SPREAD&&width!=getWidth();super.setBounds(x,y,width,height);
+            if(wider)SwingUtilities.invokeLater(()->{revalidate();repaint();});
+        }
     }
     /** The colour actually behind a component: the nearest that says so, or the nearest that paints itself. */
     static Color ground(Component c) {
@@ -225,7 +242,9 @@ final class DesktopUi {
             {setPreferredSize(new Dimension(32,32));setMinimumSize(getPreferredSize());}
             @Override protected void paintComponent(Graphics g0) {
                 Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
-                paintAvatar(g,name,0,0,32);g.dispose();
+                // In the person's colour where one was given it (Desktop.inkOnRound), so two P's are told apart.
+                Object fill=getClientProperty("fill"),letter=getClientProperty("letter");
+                if(fill instanceof Color f&&letter instanceof Color l)paintAvatar(g,name,0,0,32,f,l);else paintAvatar(g,name,0,0,32);g.dispose();
             }
         };
     }
@@ -265,6 +284,38 @@ final class DesktopUi {
     }
     static Border padding(int top,int side,int bottom){return BorderFactory.createEmptyBorder(top,side,bottom,side);}
 
+    /**
+     * A message lying over the foot of a window, as wide as the window less a margin, on a rounded strip of its own:
+     * it comes and goes over what is there without moving any of it (decision 97, the owner: "display the message over
+     * the elements on the page so that they don't move for the message"). Placed again whenever the window changes
+     * size or the words change; shown and hidden by its caller.
+     */
+    static JPanel floating(JFrame frame,Text said) {
+        JPanel strip=new JPanel(new BorderLayout()){
+            @Override protected void paintComponent(Graphics g0) {
+                Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
+                // A faint shadow under it, so it reads as lying over the page and not as a part of it.
+                g.setColor(new Color(20,24,20,22));g.fillRoundRect(1,3,getWidth()-2,getHeight()-3,14,14);
+                g.setColor(SHELF);g.fillRoundRect(0,0,getWidth()-1,getHeight()-3,14,14);
+                g.setColor(LINE);g.drawRoundRect(0,0,getWidth()-1,getHeight()-4,14,14);g.dispose();
+            }
+        };
+        strip.setOpaque(false);strip.putClientProperty("ground",SHELF);strip.setBorder(BorderFactory.createEmptyBorder(8,16,11,16));
+        said.setOpaque(false);said.setBorder(null);said.setLineWrap(true);said.setWrapStyleWord(true);strip.add(said);
+        JLayeredPane layers=frame.getLayeredPane();layers.add(strip,JLayeredPane.MODAL_LAYER);
+        Runnable place=()->{
+            Rectangle content=frame.getContentPane().getBounds();int margin=M,wide=Math.max(80,content.width-2*margin);
+            Insets in=strip.getInsets();said.setSize(wide-in.left-in.right,Short.MAX_VALUE);
+            int tall=said.getPreferredSize().height+in.top+in.bottom;
+            strip.setBounds(content.x+margin,content.y+content.height-tall-margin+4,wide,tall);strip.revalidate();strip.repaint();
+        };
+        strip.putClientProperty("place",place);
+        layers.addComponentListener(new ComponentAdapter(){public void componentResized(ComponentEvent e){place.run();}});
+        place.run();return strip;
+    }
+    /** Puts a floating message where it belongs again, after its words changed. */
+    static void placeFloating(JPanel strip){if(strip.getClientProperty("place") instanceof Runnable place)place.run();}
+
     // ---- windows ---------------------------------------------------------------------------------------
 
     /**
@@ -275,7 +326,7 @@ final class DesktopUi {
         JDialog dialog=new JDialog(owner,title,modal?Dialog.ModalityType.APPLICATION_MODAL:Dialog.ModalityType.MODELESS);
         dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         JPanel page=new JPanel(new BorderLayout());page.setBackground(PAPER);
-        JPanel top=new JPanel(new BorderLayout());top.setOpaque(false);top.setBorder(padding(L-4,L,M));top.add(title(title));page.add(top,BorderLayout.NORTH);
+        JPanel top=new JPanel(new BorderLayout());top.setOpaque(false);top.setBorder(padding(L-4,L,M));top.add(title(title));page.add(top,BorderLayout.NORTH);dialog.getRootPane().putClientProperty("top",top);
         JPanel middle=new JPanel(new BorderLayout());middle.setOpaque(false);middle.setBorder(padding(0,L,M));middle.add(body);page.add(middle);
         if(footer!=null) {
             JPanel bottom=new JPanel(new BorderLayout());bottom.setBackground(SHELF);
@@ -293,9 +344,11 @@ final class DesktopUi {
         return dialog;
     }
     /** Sized to what it holds, within a floor and a ceiling, over its owner. */
-    static void show(JDialog dialog,int width,int maxHeight) {
+    static void show(JDialog dialog,int width,int maxHeight){show(dialog,width,0,maxHeight);}
+    /** The same, never shorter than a floor: a box whose pages differ in length keeps one size as they are turned. */
+    static void show(JDialog dialog,int width,int minHeight,int maxHeight) {
         dialog.pack();
-        dialog.setSize(Math.max(width,Math.min(dialog.getWidth(),width+160)),Math.min(maxHeight,dialog.getHeight()));
+        dialog.setSize(Math.max(width,Math.min(dialog.getWidth(),width+160)),Math.min(maxHeight,Math.max(minHeight,dialog.getHeight())));
         dialog.setLocationRelativeTo(dialog.getOwner());
         if(!dialog.isModal()||!(dialog.getOwner() instanceof RootPaneContainer)){dialog.setVisible(true);return;}
         // Windows lets nothing reach a window behind a modal one, so a click beside the box could not close
@@ -328,6 +381,96 @@ final class DesktopUi {
             shade.setVisible(false);behind.setGlassPane(before);before.setVisible(false);((Window)behind).removeWindowListener(front);
         }});
     }
+    // ---- pages reached from pages, and two views of one box (decision 103) ------------------------------
+
+    /**
+     * A sheet's top drawn again for a page reached from another (the owner, 2026-10-05: "we can always come back to the
+     * previous level when digging an element"): ‹ and where it goes back to, over the page's own title, and what can be
+     * done to the page at its right. {@code backTo} null for a first level, which has its title alone.
+     */
+    static void head(JDialog dialog,String backTo,Runnable back,String title,JComponent more) {
+        JPanel top=(JPanel)dialog.getRootPane().getClientProperty("top");
+        top.removeAll();dialog.setTitle(title);
+        if(backTo!=null) {
+            JButton to=quietButton("‹  "+backTo,back);to.setName("back");
+            to.getAccessibleContext().setAccessibleName("Back to "+backTo);
+            JPanel line=actions(to);line.setBorder(BorderFactory.createEmptyBorder(0,-S-6,4,0));top.add(line,BorderLayout.NORTH);
+        }
+        top.add(title(title));
+        if(more!=null){JPanel right=new JPanel(new GridBagLayout());right.setOpaque(false);right.add(more);top.add(right,BorderLayout.EAST);}
+        top.setBorder(padding(backTo==null?L-4:S,L,M));
+        top.revalidate();top.repaint();
+    }
+    /** Escape and the window's ✕ go back one level, as ‹ does, in a sheet that has levels; its first level closes it. */
+    static void leaves(JDialog dialog,Runnable back) {
+        dialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        dialog.addWindowListener(new WindowAdapter(){public void windowClosing(WindowEvent e){back.run();}});
+        dialog.getRootPane().registerKeyboardAction(e->back.run(),KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE,0),JComponent.WHEN_IN_FOCUSED_WINDOW);
+    }
+    /** A button drawn as words, with no frame round it: ‹ back, › into, a name that folds open. */
+    static JButton quietButton(String text,Runnable action) {
+        JButton b=button(text,action);b.putClientProperty(FlatClientProperties.BUTTON_TYPE,FlatClientProperties.BUTTON_TYPE_BORDERLESS);
+        b.setForeground(QUIET);b.setFont(BODY.deriveFont(14f));b.setMargin(new Insets(2,6,2,6));b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        return b;
+    }
+    /**
+     * Two views of one box, switched at its top, the one in view marked under its name (the owner, 2026-10-05: "it should
+     * be clearly 2 sections").
+     */
+    static JPanel views(String[] names,int shown,java.util.function.IntConsumer show) {
+        JPanel line=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0));line.setOpaque(false);ButtonGroup one=new ButtonGroup();
+        for(int at=0;at<names.length;at++) {
+            int which=at;JToggleButton view=new JToggleButton(names[at],at==shown);view.setFocusPainted(false);
+            view.putClientProperty(FlatClientProperties.BUTTON_TYPE,FlatClientProperties.BUTTON_TYPE_TAB);
+            view.putClientProperty(FlatClientProperties.STYLE,"tabUnderlineColor:#306348;tabUnderlineHeight:3;tabSelectedForeground:#2B302B");
+            view.setFont(BODY.deriveFont(at==shown?Font.BOLD:Font.PLAIN,15f));view.setForeground(at==shown?INK:QUIET);view.setMargin(new Insets(6,14,8,14));
+            view.getAccessibleContext().setAccessibleName(names[at]+" view"+(at==shown?", shown":""));
+            view.addActionListener(e->{if(which!=shown)show.accept(which);else view.setSelected(true);});
+            one.add(view);line.add(view);
+        }
+        JPanel under=new JPanel(new BorderLayout());under.setOpaque(false);under.add(line,BorderLayout.WEST);
+        under.setBorder(BorderFactory.createMatteBorder(0,0,1,0,LINE));under.setAlignmentX(Component.LEFT_ALIGNMENT);
+        under.setMaximumSize(new Dimension(Integer.MAX_VALUE,under.getPreferredSize().height));
+        return under;
+    }
+    /**
+     * A group somebody is in or is not, small, under their name: in is filled, with a tick; not in is outlined, with a
+     * plus. A click changes it, as a switch would.
+     */
+    static JButton chip(String name,boolean in,Runnable flip) {
+        JButton b=button(name+(in?"  ✓":"  +"),flip);b.setFont(BODY.deriveFont(12.5f));b.setMargin(new Insets(1,9,1,9));
+        b.putClientProperty(FlatClientProperties.MINIMUM_HEIGHT,24);b.putClientProperty(FlatClientProperties.MINIMUM_WIDTH,0);
+        b.putClientProperty(FlatClientProperties.STYLE,in?"arc:999;background:#DCE8DF;borderColor:#C3D6C9;foreground:#306348;hoverBackground:#CFE0D4;focusedBackground:#DCE8DF"
+            :"arc:999;background:#FFFFFC;borderColor:#CFCCBE;foreground:#6F756C;hoverBackground:#F3F1EA;focusedBackground:#FFFFFC");
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        return b;
+    }
+    /** Small things in a row that goes on to the next line when it runs out of width, as words do; {@code indent} from the left. */
+    static JPanel wrapping(int indent,JComponent... items) {
+        final int gap=6;
+        JPanel p=new JPanel(new FlowLayout(FlowLayout.LEFT,gap,gap)){
+            @Override public Dimension getPreferredSize() {
+                // As tall as its rows at the width it was given, and asking for no width of its own, so the column decides.
+                int wide=getWidth()>0?getWidth():440;Insets in=getInsets();
+                int most=wide-in.left-in.right-gap*2,x=0,row=0,high=in.top+gap;
+                for(Component c:getComponents()) {
+                    if(!c.isVisible())continue;Dimension d=c.getPreferredSize();
+                    if(x>0&&x+d.width>most){high+=row+gap;x=0;row=0;}
+                    x+=d.width+gap;row=Math.max(row,d.height);
+                }
+                return new Dimension(Math.min(wide,120),high+row+gap+in.bottom);
+            }
+            @Override public Dimension getMaximumSize(){return new Dimension(Integer.MAX_VALUE,getPreferredSize().height);}
+            @Override public void setBounds(int x,int y,int width,int height) {
+                boolean wider=width!=getWidth();super.setBounds(x,y,width,height);
+                if(wider)SwingUtilities.invokeLater(()->{revalidate();repaint();});
+            }
+        };
+        p.setOpaque(false);p.setBorder(BorderFactory.createEmptyBorder(-gap,indent-gap,0,0));p.setAlignmentX(Component.LEFT_ALIGNMENT);
+        for(JComponent item:items)if(item!=null)p.add(item);
+        return p;
+    }
+
     /** A body that scrolls if it must, without a frame drawn round it. */
     static JScrollPane scrolling(JComponent inside) {
         JPanel fits=new Fitting();fits.add(inside);fits.setBorder(BorderFactory.createEmptyBorder(0,0,0,4));
@@ -358,6 +501,16 @@ final class DesktopUi {
         Text words=note(message,360,INK,BODY);
         box[0]=sheet(owner,title,words,footer(go),true);
         box[0].getRootPane().setDefaultButton(go);show(box[0],440,400);return said[0];
+    }
+    /**
+     * A question with one answer that does it and a quieter one beside it, as on the phone (primary last, one primary). 1 for
+     * the first answer, 2 for the other, 0 if the box was closed.
+     */
+    static int confirmOr(Window owner,String title,String message,String yes,String other) {
+        int[] said={0};JDialog[] box={null};
+        JButton go=primary(yes,()->{said[0]=1;box[0].dispose();}),instead=button(other,()->{said[0]=2;box[0].dispose();});
+        box[0]=sheet(owner,title,note(message,360,INK,BODY),footer(instead,go),true);
+        box[0].getRootPane().setDefaultButton(go);show(box[0],460,420);return said[0];
     }
     /** A line of text, asked for. Null if they changed their mind. */
     static String ask(Window owner,String title,String label,String initial) {

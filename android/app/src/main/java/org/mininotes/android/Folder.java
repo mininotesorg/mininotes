@@ -34,7 +34,7 @@ final class Folder {
     /** The dim over Home's grid while the card is up, the card on it, and the card's parts. */
     private FrameLayout scrim;
     View card;
-    private LinearLayout head;
+    LinearLayout head;
     ScrollView scroll;
     GridLayout grid;
     /** The card's grid as it was last drawn: each icon in its cell, and the empty cells between (decision 39). */
@@ -120,7 +120,7 @@ final class Folder {
     void close() {
         if(scrim!=null&&scrim.getParent()!=null)((ViewGroup)scrim.getParent()).removeView(scrim);
         if(home.homePlus!=null)home.homePlus.setVisibility(View.VISIBLE);
-        scrim=null;card=null;head=null;scroll=null;grid=null;laid=null;plus=null;shown="";thing=null;
+        scrim=null;card=null;head=null;scroll=null;grid=null;laid=null;plus=null;shown="";thing=null;aside=false;
         while(a.trail.size()>1)a.trail.remove(a.trail.size()-1);
         home.refresh();
     }
@@ -132,18 +132,31 @@ final class Folder {
     void show() {
         if(!home.showing()||a.trail.size()<2)return;
         if(!isOpen())build();
+        // Opened under a thing being carried (held on a collection, or on the card's name to go up): taken out of the way
+        // no longer, and only the card read, since Home is not drawn again under a carry.
+        if(a.dragging!=null)stepAside(false);
         MainActivity.Step now=last();
-        plus.setVisibility(listing()?View.GONE:View.VISIBLE);
-        if(!now.id.equals(shown)) {
+        // A place's card has a + too, where things can be made in it (decision 87): not Recent, nor Tools.
+        plus.setVisibility(listing()&&!MainActivity.takesNew(now.id)?View.GONE:View.VISIBLE);
+        boolean fresh=!now.id.equals(shown);
+        if(fresh) {
             grid.removeAllViews();laid=null;
             head.removeAllViews();
             head.addView(title(now.name),new LinearLayout.LayoutParams(-1,-2));
             thing=null;
         }
-        // A collection's card is one of the things open, for the overview; the places are not things.
-        if(now.kind==NoteStore.Branch.Kind.COLLECTION)home.overview.remember(Overview.Kind.COLLECTION,now.id);
-        home.refresh();
+        // A collection's card is one of the things opened, for Recent, when it opens, not each time it is drawn again (it
+        // went back to the top of Recent over the note opened from it); the places are not things.
+        if(fresh&&now.kind==NoteStore.Branch.Kind.COLLECTION){home.overview.remember(Overview.Kind.COLLECTION,now.id);
+            final String opened=now.id;a.background.submit(()->{a.store.touch(NoteStore.Branch.Kind.COLLECTION,opened);return null;},done->{},e->{});}
+        if(a.dragging!=null)home.refreshCard();else home.refresh();
     }
+
+    /** The name of the collection the card shows, as the trail has it. */
+    String name(){return a.trail.size()>1?last().name:"Home";}
+
+    /** How deep the card is: 1 for a collection on Home, more for one inside it. */
+    int depth(){return a.trail.size()-1;}
 
     /** The dimmed grid, the card on it, and in the card its bar, its grid and its +. */
     private void build() {
@@ -173,9 +186,19 @@ final class Folder {
         plus=home.plus(this::id);
         inside.addView(plus,home.plusPlace());
         body.addView(inside,new LinearLayout.LayoutParams(-1,0,1));
-        FrameLayout.LayoutParams place=new FrameLayout.LayoutParams(-1,-1);
-        place.setMargins(a.dp(14),a.dp(14),a.dp(14),a.dp(18));
+        // Not the whole of Home (the owner, 2026-10-03: "the group should not be shown full screen so that we have space to
+        // move the notes"): a box in the middle, as a phone's own folder is, with Home round it to carry things out onto.
+        FrameLayout.LayoutParams place=new FrameLayout.LayoutParams(-1,cardHeight(),Gravity.CENTER);
+        place.setMargins(a.dp(CARD_SIDE),0,a.dp(CARD_SIDE),0);
         scrim.addView(body,place);
+        // Never taller than the room it has: with the keyboard up, Home is shorter, and the card, centred at the height it
+        // opened with, had its top under the bar, so a new folder's name was typed where it could not be seen (the owner,
+        // 2026-10-05, on the Graphene). It shrinks to the room, its name at the top in sight, and grows back after.
+        final int tall=place.height;
+        scrim.addOnLayoutChangeListener((v,left,top,right,bottom,wasLeft,wasTop,wasRight,wasBottom)->{
+            int want=Math.max(a.dp(140),Math.min(tall,bottom-top-a.dp(12)));
+            if(body.getLayoutParams().height!=want){body.getLayoutParams().height=want;body.post(body::requestLayout);}
+        });
         card=body;
         paint(Tint.NONE);
         home.desk.addView(scrim,new FrameLayout.LayoutParams(-1,-1));
@@ -186,7 +209,15 @@ final class Folder {
     private static final int DIM=0x59000000,DIMMER=0x8C000000;
 
     /** The card's width, in pixels, for its columns: the screen, less the margins round the card and inside it. */
-    private int width(){return a.getResources().getDisplayMetrics().widthPixels-a.dp(14)*2-a.dp(6)*2;}
+    private int width(){return a.getResources().getDisplayMetrics().widthPixels-a.dp(CARD_SIDE)*2-a.dp(6)*2;}
+
+    /** The room left round the card at each side, and how much of Home's height it takes. */
+    private static final int CARD_SIDE=26;private static final float CARD_TALL=0.62f;
+    private int cardHeight() {
+        int desk=home.desk.getHeight();
+        if(desk<=0)desk=a.getResources().getDisplayMetrics().heightPixels*2/3;
+        return Math.max(a.dp(260),Math.round(desk*CARD_TALL));
+    }
 
     /** The card in its collection's colour, washed as a room is, so the card is the collection you are standing in. */
     private void paint(int tint) {
@@ -201,7 +232,21 @@ final class Folder {
     void painted(String id,int tint){if(isOpen()&&id.equals(shown))paint(tint);}
 
     /** Home's grid darker while a thing carried out of the card would come up a level there. */
-    void lit(boolean on){if(scrim!=null)scrim.setBackgroundColor(on?DIMMER:DIM);}
+    void lit(boolean on){if(scrim!=null&&!aside)scrim.setBackgroundColor(on?DIMMER:DIM);}
+
+    /**
+     * The card out of the way while a thing carried out of it is taken up a level, as a phone's own folder closes when an
+     * icon is pulled out over its edge (the owner, 2026-10-03: "we have to be able to move out of a group by a drag and
+     * drop"); until then the only way up was the thin dimmed strip round the card. Back when the carry ends.
+     */
+    private boolean aside;
+    boolean aside(){return aside;}
+    void stepAside(boolean now) {
+        if(card==null||scrim==null||aside==now)return;
+        aside=now;
+        card.setVisibility(now?View.INVISIBLE:View.VISIBLE);
+        scrim.setBackgroundColor(now?0:DIM);
+    }
 
     // ---- reading and drawing ------------------------------------------------------------------------------------------
 
@@ -212,7 +257,20 @@ final class Folder {
      */
     void read(List<MainActivity.Step> path,Map<String,Object> got) {
         MainActivity.Step end=path.get(path.size()-1);
-        if(end.kind==NoteStore.Branch.Kind.FAVOURITES){got.put("card",a.store.favouritesBeyondDock());return;}
+        if(end.kind==NoteStore.Branch.Kind.FAVOURITES){got.put("card",a.store.favouritesAll());return;}
+        // Tools: the places kept in it (decision 72). Temp: what is to be gone, soonest first. Recent: what was opened lately.
+        if(end.kind==NoteStore.Branch.Kind.TOOLS){got.put("card",home.inTools(a.store.awayCount(false),a.store.awayCount(true),a.store.temporaryCount()));return;}
+        if(end.kind==NoteStore.Branch.Kind.TEMP) {
+            List<NoteStore.Branch> temp=a.store.asDrawn(a.store.temporary(System.currentTimeMillis()));a.store.dress(temp);got.put("card",temp);return;
+        }
+        if(end.kind==NoteStore.Branch.Kind.RECENT) {
+            List<NoteStore.Branch> lately=a.store.asDrawn(a.store.recent(System.currentTimeMillis()-a.recentDays()*86_400_000L));a.store.dress(lately);got.put("card",lately);return;
+        }
+        // Shared with me: the files shown there, kept on Home, and what is still coming to it (decision 94).
+        if(end.kind==NoteStore.Branch.Kind.SHARED) {
+            List<NoteStore.Branch> shown=new java.util.ArrayList<>(a.store.contents(NoteStore.SHARED));shown.addAll(a.store.coming(NoteStore.SHARED));
+            got.put("card",shown);return;
+        }
         if(end.kind==NoteStore.Branch.Kind.ARCHIVE||end.kind==NoteStore.Branch.Kind.BIN) {
             List<NoteStore.Branch> waiting=a.store.heldIn(end.kind==NoteStore.Branch.Kind.BIN);
             a.store.dress(waiting);
@@ -231,8 +289,8 @@ final class Folder {
         got.put("parent",in==null||in.isEmpty()?Things.HOME:in);
         got.put("parentName",in==null||in.isEmpty()?"Home":a.store.collectionName(in));
         // Its look, for its face before its name (docs/HOME.md, step 4).
-        got.put("icon",a.store.iconOf(NoteStore.Branch.Kind.COLLECTION,end.id));
-        got.put("image",a.store.imageOf(NoteStore.Branch.Kind.COLLECTION,end.id));
+        got.put("icon",a.store.wornIcon(NoteStore.Branch.Kind.COLLECTION,end.id));
+        got.put("image",a.store.wornImage(NoteStore.Branch.Kind.COLLECTION,end.id));
     }
 
     /** The card drawn from what was read, if the trail is still where it was when it was read. */
@@ -254,7 +312,8 @@ final class Folder {
         @SuppressWarnings("unchecked") List<NoteStore.Branch> lines=(List<NoteStore.Branch>)got.get("card");
         if(lines==null)lines=new java.util.ArrayList<>();
         NoteStore.Branch face=null;
-        if(place){thing=null;parent=Things.HOME;parentName="Home";paint(Tint.NONE);}
+        // A place's card in the colour chosen for it (decision 81).
+        if(place){thing=null;parent=Things.HOME;parentName="Home";paint(a.placeColour(end.id));}
         else {
             parent=(String)got.get("parent");parentName=(String)got.get("parentName");
             int tint=(Integer)got.get("tint");
@@ -270,7 +329,9 @@ final class Folder {
         final boolean same=end.id.equals(shown);
         shown=end.id;
         // Each icon in its cell, with the empty cells between (decision 39); in a place, one after the other.
-        HomeScreen.Where where=end.kind==NoteStore.Branch.Kind.FAVOURITES?HomeScreen.Where.FAVOURITES:place?HomeScreen.Where.AWAY:HomeScreen.Where.CARD;
+        // Temp and Recent list things as Favourites does: tapped, each opens where it really is.
+        HomeScreen.Where where=end.kind==NoteStore.Branch.Kind.FAVOURITES||end.kind==NoteStore.Branch.Kind.TEMP||end.kind==NoteStore.Branch.Kind.RECENT
+            ||end.kind==NoteStore.Branch.Kind.SHARED?HomeScreen.Where.FAVOURITES:place?HomeScreen.Where.AWAY:HomeScreen.Where.CARD;
         laid=home.lay(grid,lines,java.util.Collections.emptyList(),width(),where,scroll.getHeight(),nothingYet(end.kind));
         // Drawn again because something changed: still where it was scrolled to. Opened on another collection: its top.
         scroll.post(()->{if(scroll!=null)scroll.scrollTo(0,same?kept:0);});
@@ -280,9 +341,13 @@ final class Folder {
     private static String nothingYet(NoteStore.Branch.Kind kind) {
         switch(kind) {
             case FAVOURITES: return "Every favourite is in the dock.";
-            case ARCHIVE: return "Nothing archived. Archive a note or a collection from its menu, or let go of it on the Archive.";
+            case ARCHIVE: return "Nothing archived. Archive a note or a folder from its menu, or let go of it on the Archive.";
             case BIN: return "The bin is empty.";
-            default: return "Nothing in it yet. Tap + to add a note or a collection.";
+            case TOOLS: return "Everything is on Home. Carry the archive, the bin, Temp or Recent here to keep it in Tools.";
+            case TEMP: return "Nothing temporary. Let go of a note on Temp, or choose Temporary… in its menu.";
+            case RECENT: return "Nothing opened lately.";
+            case SHARED: return "Nothing shared with you yet. A file somebody shares with you shows here.";
+            default: return "Nothing in it yet. Tap + to add a note or a folder.";
         }
     }
 
@@ -306,8 +371,11 @@ final class Folder {
      *
      * @param face the collection dressed in its look, for its face; null in a place
      */
+    /** The card's ‹ and the collection it is in, where it is inside another: held on while carrying, the card goes up. */
+    View back;
+
     private void bar(MainActivity.Step end,boolean place,NoteStore.Branch face) {
-        head.removeAllViews();
+        head.removeAllViews();back=null;
         if(a.trail.size()>2) {
             final String above=a.trail.get(a.trail.size()-2).name;
             TextView back=a.label("‹ "+above,MainActivity.QUIET,a.MUTED);
@@ -317,17 +385,30 @@ final class Folder {
             back.setContentDescription("Back to "+above);
             back.setOnClickListener(v->up());
             head.addView(back,new LinearLayout.LayoutParams(-2,-2));
+            this.back=back;
         } else head.addView(new View(a),new LinearLayout.LayoutParams(a.dp(48),a.dp(48)));
         TextView name=title(place?end.name:thing.name);
         if(!place)a.nameable(name,thing);
         // As tall as it needs, and a finger's height at the least: the field it turns into to be renamed is taller.
-        if(place||face==null)head.addView(name,new LinearLayout.LayoutParams(0,-2,1));
+        if(place) {
+            // A place's own glyph before its name, as a collection's face is (the owner, 2026-10-03: "when we open the bin
+            // and archive or any group we should have their icon displayed at the top beside the name").
+            LinearLayout named=new LinearLayout(a);named.setGravity(Gravity.CENTER);
+            View glyph=end.kind==NoteStore.Branch.Kind.FAVOURITES?home.starFace(a.dp(26)):new View(a);
+            if(end.kind!=NoteStore.Branch.Kind.FAVOURITES)glyph.setBackground(IconFace.bare(a,HomeScreen.placeIcon(end.kind),a.INK,0));
+            glyph.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            LinearLayout.LayoutParams at=new LinearLayout.LayoutParams(a.dp(26),a.dp(26));at.setMargins(0,0,a.dp(8),0);
+            named.addView(glyph,at);
+            named.addView(name,new LinearLayout.LayoutParams(-2,-2));
+            head.addView(named,new LinearLayout.LayoutParams(0,-2,1));
+        }
+        else if(face==null)head.addView(name,new LinearLayout.LayoutParams(0,-2,1));
         else {
             LinearLayout named=new LinearLayout(a);named.setGravity(Gravity.CENTER);
             FrameLayout reach=new FrameLayout(a);
             reach.addView(IconFace.view(a,face,a.dp(26)),new FrameLayout.LayoutParams(a.dp(26),a.dp(26),Gravity.CENTER));
             reach.setBackgroundResource(a.borderlessFeedback());
-            reach.setContentDescription("The collection's icon. Tap to change it.");
+            reach.setContentDescription("The folder's icon. Tap to change it.");
             final NoteStore.Branch about=thing;
             reach.setOnClickListener(v->a.picker().open(about));
             named.addView(reach,new LinearLayout.LayoutParams(a.dp(40),a.dp(48)));
