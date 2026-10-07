@@ -10,9 +10,16 @@ final class DesktopProfile {
     record Connection(String name,String address,String permanent,int relays,String pairing,boolean onlyMine) {
         Connection(String name,String address,String permanent,int relays,String pairing){this(name,address,permanent,relays,pairing,false);}
     }
-    static void open(Desktop app) {
+    static void open(Desktop app){open(app,null,null);}
+    /**
+     * @param over   the box it is opened from, People and devices on its line This device; null from the window
+     * @param backTo what its ‹ says it goes back to (the owner, 2026-10-05: "from the profile page, we should be able to go
+     *               back to people and devices"; decision 105); null from the window
+     */
+    static void open(Desktop app,Window over,String backTo) {
+        JDialog[] box={null};
         JTextField name=new JTextField(24);name.setName("profileName");
-        DesktopUi.Text outcome=DesktopUi.quiet(" "),counts=DesktopUi.quiet(" "),direct=DesktopUi.quiet(" ");direct.setName("directState");JLabel state=new Desktop.Dot(app.offline?"Offline session":"Connecting…");
+        DesktopUi.Text outcome=DesktopUi.quiet(" "),counts=DesktopUi.quiet(" "),direct=DesktopUi.quiet(" "),door=DesktopUi.quiet(" "),travel=DesktopUi.quiet(" ");direct.setName("directState");door.setName("doorState");JLabel state=new Desktop.Dot(app.offline?"Offline session":"Connecting…");
         state.setFont(DesktopUi.BODY);state.setIconTextGap(8);
         JLabel qr=new JLabel("<html><div style='width:150px'>Your code appears here once this PC is connected.</div></html>");qr.setFont(DesktopUi.BODY.deriveFont(13f));qr.setForeground(DesktopUi.QUIET);qr.setName("profileQr");qr.setHorizontalAlignment(SwingConstants.CENTER);
         qr.setPreferredSize(new Dimension(220,220));qr.setMinimumSize(new Dimension(220,220));
@@ -48,7 +55,7 @@ final class DesktopProfile {
         DesktopUi.add(you,DesktopUi.body("This device"));DesktopUi.gap(you,4);DesktopUi.add(you,device);DesktopUi.gap(you,6);DesktopUi.add(you,deviceHelp);
 
         // Your code: the picture another device scans, and the same thing as text for when it cannot.
-        JButton link=app.button("Copy pairing link",()->{if(current[0]!=null&&!current[0].pairing.isEmpty()){clipboard(Pairing.link(current[0].pairing));outcome.setText("Pairing link copied");}});link.setEnabled(false);
+        JButton link=app.button("Copy my link",()->{if(current[0]!=null&&!current[0].pairing.isEmpty()){clipboard(Pairing.invite(current[0].name,Pairing.link(current[0].pairing),Desktop.DOWNLOAD));outcome.setText("Your link is copied, with a few words. Paste it in a message, a mail or a post.");}});link.setEnabled(false);
         JButton copy=app.button("Copy address",()->{if(current[0]!=null&&!current[0].address.isEmpty()){clipboard(current[0].address);outcome.setText("Address copied");}});copy.setEnabled(false);
         JButton raw=app.button("Address QR…",()->{if(current[0]!=null&&!current[0].address.isEmpty())try{JLabel big=new JLabel(new ImageIcon(DesktopQr.draw(current[0].address,320)));DesktopUi.tell(SwingUtilities.getWindowAncestor(qr),"Maxima address",big);}catch(Exception e){app.failed(e);}});raw.setEnabled(false);
         JPanel side=DesktopUi.column();
@@ -69,6 +76,9 @@ final class DesktopProfile {
         JPanel stateRow=new JPanel(new BorderLayout(DesktopUi.M,0));stateRow.setOpaque(false);JPanel stateWords=DesktopUi.column();DesktopUi.add(stateWords,state);DesktopUi.gap(stateWords,2);DesktopUi.add(stateWords,counts);
         // Whether devices away from home can reach this PC straight, or only through a relay: docs/DIRECT.md.
         DesktopUi.gap(stateWords,2);DesktopUi.add(stateWords,direct);
+        // Its door and how notes travel, which People and devices said on its line This device: here, where this device
+        // is the subject (the owner: "direct connections open on port 9601 and so on should show in the profile page").
+        DesktopUi.gap(stateWords,2);DesktopUi.add(stateWords,door);DesktopUi.gap(stateWords,2);DesktopUi.add(stateWords,travel);
         stateRow.add(stateWords);JPanel rc=new JPanel(new GridBagLayout());rc.setOpaque(false);rc.add(reconnect);stateRow.add(rc,BorderLayout.EAST);
         // Listening while the window is closed is a switch, and every switch is in Settings.
         JPanel connection=DesktopUi.column();DesktopUi.add(connection,stateRow);
@@ -76,7 +86,7 @@ final class DesktopProfile {
         DesktopUi.add(connection,DesktopUi.actions(app.button("Copy permanent address",()->{if(current[0]!=null&&!current[0].permanent.isEmpty()){clipboard(current[0].permanent);outcome.setText("Permanent address copied");}})));
 
         JPanel people=DesktopUi.column();
-        DesktopUi.add(people,DesktopUi.actions(app.button("Connect my other device…",()->app.showCode(Desktop.library())),app.button("From another device…",()->app.scanCode(null)),app.button("People…",()->app.people(null))));
+        DesktopUi.add(people,DesktopUi.actions(app.button("Connect my other device…",()->app.showCode(Desktop.library())),app.button("From another device…",()->app.scanCode(null)),app.button("People…",()->{if(backTo!=null)box[0].dispose();else app.people(null);})));
         // The lock lives in Security, which the bar shows at all times; here, where it stands and the way there.
         JPanel lock=DesktopUi.column();
         boolean isLocked=DesktopLock.locked(app.context.getFilesDir().toPath());
@@ -86,16 +96,22 @@ final class DesktopProfile {
         DesktopUi.add(backup,DesktopUi.note("One file holding every folder, note and attachment on this PC."));DesktopUi.gap(backup,12);
         DesktopUi.add(backup,DesktopUi.actions(app.button("Export…",()->app.save(app::backup)),app.button("Add from a backup…",()->app.save(app::importBackup))));
 
+        // The owner's help request, set up and controlled here (decision 115): a row that opens the set-up page, as the phone's does.
+        JPanel help=DesktopUi.column();
+        DesktopUi.add(help,DesktopUi.note("Send your location to people you choose the moment a note or folder you set opens, for when you may be in danger. Set up and controlled here."));
+        DesktopUi.gap(help,12);
+        DesktopUi.add(help,DesktopUi.actions(app.button("Help request…",()->helpRequest(app,box[0]))));
         JPanel body=DesktopUi.column();
-        for(JPanel card:new JPanel[]{DesktopUi.card("You",you),DesktopUi.card("Your code",codeCard),DesktopUi.card("Connection",connection),DesktopUi.card("People and devices",people),DesktopUi.card("Security",lock),DesktopUi.card("Backup",backup)}){DesktopUi.add(body,card);DesktopUi.gap(body,12);}
-        JDialog[] box={null};
+        for(JPanel card:new JPanel[]{DesktopUi.card("You",you),DesktopUi.card("Your code",codeCard),DesktopUi.card("Connection",connection),DesktopUi.card("People and devices",people),DesktopUi.card("Help request",help),DesktopUi.card("Security",lock),DesktopUi.card("Backup",backup)}){DesktopUi.add(body,card);DesktopUi.gap(body,12);}
         JPanel foot=new JPanel(new BorderLayout(DesktopUi.M,0));foot.setOpaque(false);foot.add(outcome);
         JScrollPane scroll=DesktopUi.scrolling(body);scroll.setName("profileScroll");
-        JDialog dialog=DesktopUi.sheet(app.frame,"Profile",scroll,foot,false);box[0]=dialog;
+        JDialog dialog=DesktopUi.sheet(over!=null?over:app.frame,"Profile",scroll,foot,false);box[0]=dialog;
+        if(backTo!=null)DesktopUi.head(dialog,backTo,dialog::dispose,"Profile",null);
         AtomicBoolean busy=new AtomicBoolean();
         Runnable refresh=()->{
             app.disk.submit(()->new int[]{app.store.addresses().size(),app.store.owed(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING).size()},values->counts.setText((values[0]==1?"1 paired device":values[0]+" paired devices")+"  ·  "+(values[1]==0?"nothing waiting to send":values[1]==1?"1 delivery waiting":values[1]+" deliveries waiting")),app::failed);
             if(!app.offline)app.connectivity.submit(Node::reachability,line->{if(dialog.isDisplayable())direct.setText(line.isEmpty()?" ":line);},e->{});
+            app.connectivity.submit(()->Node.hereLines(app.context),lines->{if(!dialog.isDisplayable())return;door.setText(lines.isEmpty()?" ":lines.get(0));travel.setText(lines.size()<2?" ":lines.get(1));},e->{});
             if(app.offline||!busy.compareAndSet(false,true))return;
             app.connectivity.submit(()->{
                 String called=Node.nameHere(app.context);var addresses=Node.addresses(app.context);String live=addresses.isEmpty()?"":addresses.get(0);
@@ -124,6 +140,85 @@ final class DesktopProfile {
             qr.putClientProperty("pairing",value.pairing);
         }
     }
+    // ---- the help request, set up and controlled in Profile (decision 115) -------------------------------------------
+
+    /** The set-up page the Help request row opens: who receives it, the message, the notes and folders that send it. */
+    static void helpRequest(Desktop app,Window over) {
+        app.disk.submit(()->new Object[]{app.store.addresses(),app.store.helpTriggers()},got->{
+            Object[] g=(Object[])got;
+            @SuppressWarnings("unchecked") java.util.List<NoteStore.Contact> all=(java.util.List<NoteStore.Contact>)g[0];
+            java.util.List<NoteStore.Contact> paired=new java.util.ArrayList<>();
+            for(NoteStore.Contact one:all)if(one.paired())paired.add(one);
+            JPanel body=DesktopUi.column();
+            DesktopUi.add(body,DesktopUi.note(Help.WHAT));
+            DesktopUi.add(body,DesktopUi.note(Help.PC_PLACE));
+            DesktopUi.add(body,DesktopUi.note("It is set up and controlled here. To turn it off, remove every note and folder below."));
+            DesktopUi.add(body,DesktopUi.heading(Help.TO));
+            java.util.Set<String> seeded=new java.util.LinkedHashSet<>(helpRecipients(app));
+            final java.util.Map<String,JCheckBox> picks=new java.util.LinkedHashMap<>();
+            if(paired.isEmpty())DesktopUi.add(body,DesktopUi.note("Nobody is paired yet. Pair someone in People and devices first."));
+            for(NoteStore.Contact one:paired){JCheckBox box=DesktopUi.toggle(one.name,seeded.contains(one.address));picks.put(one.address,box);DesktopUi.add(body,DesktopUi.switchRow(one.name,box));}
+            DesktopUi.add(body,DesktopUi.heading("Message"));
+            final JTextField message=new JTextField(helpMessage(app),28);DesktopUi.add(body,message);
+            DesktopUi.add(body,DesktopUi.heading("Notes and folders that send it"));
+            final JPanel list=DesktopUi.column();DesktopUi.add(body,list);
+            final java.util.function.Supplier<java.util.List<String>> chosen=()->{java.util.List<String> to=new java.util.ArrayList<>();for(java.util.Map.Entry<String,JCheckBox> e:picks.entrySet())if(e.getValue().isSelected())to.add(e.getKey());return to;};
+            final JDialog[] box={null};
+            final Runnable[] redraw={null};
+            redraw[0]=()->app.disk.submit(()->app.store.helpTriggers(),now->{
+                list.removeAll();
+                if(now.isEmpty())DesktopUi.add(list,DesktopUi.quiet("None yet. Choose one below."));
+                for(NoteStore.HelpTrigger t:now) {
+                    JButton remove=app.button("Remove",()->app.disk.submit(()->{app.store.helpWhenOpened(t.kind,t.id,false,null,null);return null;},d->redraw[0].run(),app::failed));
+                    DesktopUi.add(list,DesktopUi.row(DesktopUi.body(t.name),DesktopUi.actions(remove)));
+                }
+                list.revalidate();list.repaint();
+            },app::failed);
+            DesktopUi.add(body,DesktopUi.actions(app.button("Choose…",()->helpChoose(app,box[0],chosen.get(),message.getText().trim(),redraw[0]))));
+            JButton done=DesktopUi.primary("Done",()->{saveHelp(app,chosen.get(),message.getText().trim());box[0].dispose();});
+            box[0]=DesktopUi.sheet(over!=null?over:app.frame,"Help request",DesktopUi.scrolling(body),DesktopUi.footer(done),true);
+            box[0].getRootPane().setDefaultButton(done);
+            redraw[0].run();
+            DesktopUi.show(box[0],540,700);
+        },app::failed);
+    }
+
+    /** Choose an ordinary note or folder over Home's tree to send the help request (decision 115). */
+    private static void helpChoose(Desktop app,Window over,java.util.List<String> to,String words,Runnable redraw) {
+        if(to.isEmpty()){DesktopUi.tell(over,"Help request",DesktopUi.note(Help.NEED_SOMEONE));return;}
+        app.disk.submit(()->{
+            java.util.Set<String> already=new java.util.HashSet<>();
+            for(NoteStore.HelpTrigger t:app.store.helpTriggers())already.add(t.id);
+            java.util.List<NoteStore.Branch> pick=new java.util.ArrayList<>();
+            for(NoteStore.Branch b:app.store.wholeTree())if(!already.contains(b.id))pick.add(b);
+            return pick;
+        },got->{
+            @SuppressWarnings("unchecked") java.util.List<NoteStore.Branch> pick=(java.util.List<NoteStore.Branch>)got;
+            if(pick.isEmpty()){DesktopUi.tell(over,"Help request",DesktopUi.note("Every note and folder is already chosen."));return;}
+            NoteStore.Branch b=DesktopUi.pick(over,"Choose a note or folder","A help request is sent the moment it opens.",pick,
+                x->(x.kind==NoteStore.Branch.Kind.COLLECTION?"Folder: ":"")+x.name,"Choose");
+            if(b==null)return;
+            app.disk.submit(()->{app.store.helpWhenOpened(b.kind,b.id,true,to,words);return null;},d->{persistHelp(app,to,words);redraw.run();},app::failed);
+        },app::failed);
+    }
+
+    static java.util.List<String> helpRecipients(Desktop app) {
+        java.util.List<String> to=new java.util.ArrayList<>();
+        for(String a:app.context.getSharedPreferences("settings",0).getString("helpTo","").split("\n"))if(!a.trim().isEmpty())to.add(a.trim());
+        return to;
+    }
+    static String helpMessage(Desktop app){return app.context.getSharedPreferences("settings",0).getString("helpWords","");}
+    private static void persistHelp(Desktop app,java.util.List<String> to,String words) {
+        app.context.getSharedPreferences("settings",0).edit()
+            .putString("helpTo",to==null?"":String.join("\n",to)).putString("helpWords",words==null?"":words).apply();
+    }
+    /** Remember who receives the request and the message, and set them on every ordinary note and folder that sends it. */
+    private static void saveHelp(Desktop app,java.util.List<String> to,String words) {
+        persistHelp(app,to,words);
+        java.util.List<String> recipients=to==null?new java.util.ArrayList<>():to;String message=words==null?"":words;
+        app.disk.submit(()->{for(NoteStore.HelpTrigger t:app.store.helpTriggers())app.store.helpWhenOpened(t.kind,t.id,true,recipients,message);return null;},d->{},app::failed);
+    }
+
     /** A field that keeps what is typed in it as it is typed. */
     private static void saveAsTyped(JTextField field,Runnable save) {
         field.getDocument().addDocumentListener(new javax.swing.event.DocumentListener(){

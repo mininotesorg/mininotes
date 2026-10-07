@@ -145,6 +145,8 @@ final class DesktopOverview extends JComponent {
     }
 
     boolean showing(){return isVisible();}
+    /** Its cards read again while it is up: a colour or a strength set from a card's menu is on the card at once (decision 107). */
+    void again(){if(showing())load();}
     boolean cycling(){return cycling&&isVisible();}
 
     // ---- up and away --------------------------------------------------------------------------------------------------
@@ -297,6 +299,7 @@ final class DesktopOverview extends JComponent {
             NoteStore.Branch thing=what instanceof NoteStore.Note note
                 ?new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,note.id,note.book,name(),"",0,0,false,note.colour)
                 :(NoteStore.Branch)what;
+            if(what instanceof NoteStore.Note note)thing.tone=note.tone;
             return pad.thingMenu(thing);
         }
         @Override protected void paintComponent(Graphics g0) {
@@ -304,7 +307,7 @@ final class DesktopOverview extends JComponent {
             Object hints=Toolkit.getDefaultToolkit().getDesktopProperty("awt.font.desktophints");if(hints instanceof java.util.Map<?,?> map)g.addRenderingHints(map);
             boolean picked=cards.indexOf(this)==chosen;
             for(int i=4;i>=1;i--){g.setColor(new Color(0,0,0,6+i*3));g.fillRoundRect(i-1,i+1,getWidth()-2*i+2,getHeight()-2*i,22,22);}
-            Color paper=what instanceof NoteStore.Note note?DesktopLook.wash(note.colour,DesktopUi.PAPER,0.12f,0.72f,pad.tone):DesktopUi.CARD;
+            Color paper=what instanceof NoteStore.Note note?DesktopLook.wash(note.colour,DesktopUi.PAPER,0.12f,0.72f,Tint.tone(note.tone,pad.usual)):DesktopUi.CARD;
             g.setColor(paper);g.fillRoundRect(0,0,getWidth()-1,getHeight()-3,22,22);
             g.setColor(picked?DesktopUi.ACCENT:over?DesktopUi.ACCENT.brighter():DesktopUi.LINE.darker());g.setStroke(new BasicStroke(picked?3f:over?1.6f:1f));
             g.drawRoundRect(1,1,getWidth()-3,getHeight()-5,22,22);
@@ -315,7 +318,7 @@ final class DesktopOverview extends JComponent {
                 // Its icon, then its title - or where it has none its first line; a rule; then the first lines, as many as it holds.
                 g.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,15f));g.setColor(DesktopUi.INK);FontMetrics m=g.getFontMetrics();
                 int face=26,words=18+face+10;
-                DesktopHome.face(g,look,18,16,face,pad.tone);g.setColor(DesktopUi.INK);
+                DesktopHome.face(g,look,18,16,face,pad.usual);g.setColor(DesktopUi.INK);
                 List<String> title=DesktopHome.lines(name(),m,side-26-face-10,1);int y=16+(face-m.getHeight())/2+m.getAscent();
                 if(!title.isEmpty())g.drawString(title.get(0),words,y);
                 y=Math.max(y+m.getDescent(),16+face)+10;g.setStroke(new BasicStroke(1f));g.setColor(DesktopUi.LINE);g.drawLine(18,y,WIDE-18,y);y+=12;
@@ -330,7 +333,7 @@ final class DesktopOverview extends JComponent {
             } else {
                 NoteStore.Branch collection=(NoteStore.Branch)what;
                 int face=104,fx=(getWidth()-face)/2,fy=56;
-                DesktopHome.face(g,look,fx,fy,face,pad.tone);
+                DesktopHome.face(g,look,fx,fy,face,pad.usual);
                 g.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,15f));g.setColor(DesktopUi.INK);FontMetrics m=g.getFontMetrics();
                 int y=fy+face+22+m.getAscent();
                 for(String line:DesktopHome.lines(name(),m,side,2)){g.drawString(line,(getWidth()-m.stringWidth(line))/2f,y);y+=m.getHeight();}

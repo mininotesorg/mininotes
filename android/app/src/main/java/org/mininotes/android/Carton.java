@@ -41,6 +41,14 @@ final class Carton {
         final boolean answer;
         /** The files it keeps at the sender's end, or null where the sender did not say; and when that list was made. */
         final java.util.List<Enclosure.Listed> files; final long filesAsOf;
+        /**
+         * How strongly its colour lands ({@link Tint#USUAL} for the usual), and when its colour and its strength were last
+         * decided, 0 for never (the owner, 2026-10-06: "when sharing everything should travel, then on the other device it
+         * can be set individually"; decision 108). After the files, behind a mark, where a build from before stops reading;
+         * said only where one was decided. Set after the carton is made.
+         */
+        int tone=Tint.USUAL;long colourDecided=0L,toneDecided=0L;
+        boolean looks(){return colourDecided>0||toneDecided>0;}
         Sent(String id,String name,String icon,byte[] image,int tint,long ordinal,java.util.List<Parcel.Step> path,
              boolean writes,String scope,String target,java.util.List<Parcel.Member> members,boolean answer,
              java.util.List<Enclosure.Listed> files,long filesAsOf) {
@@ -96,7 +104,8 @@ final class Carton {
                 Parcel.put(out,one.manifest,Parcel.MANIFEST_MOST);
             }
         }
-        // Anything a later build adds goes after this, where this one stops reading.
+        // Anything a later build adds goes after this, where a build from before stops reading: each behind its mark.
+        if(sent.looks()){out.writeInt(Parcel.LOOK_MARK);out.writeInt(sent.tone);out.writeLong(sent.colourDecided);out.writeLong(sent.toneDecided);}
         out.flush();
         return bytes.toByteArray();
     }
@@ -123,8 +132,10 @@ final class Carton {
     }
 
     private static Sent with(Sent sent,java.util.List<Enclosure.Listed> files) {
-        return new Sent(sent.id,sent.name,sent.icon,sent.image,sent.tint,sent.ordinal,sent.path,sent.writes,sent.scope,sent.target,
+        Sent lighter=new Sent(sent.id,sent.name,sent.icon,sent.image,sent.tint,sent.ordinal,sent.path,sent.writes,sent.scope,sent.target,
             sent.members,sent.answer,files,sent.filesAsOf);
+        lighter.tone=sent.tone;lighter.colourDecided=sent.colourDecided;lighter.toneDecided=sent.toneDecided;
+        return lighter;
     }
 
     /** What arrived, or null when this is not one - or is not one whole: half a collection is not a collection. */
@@ -164,7 +175,22 @@ final class Carton {
                     files.add(new Enclosure.Listed(fileId,fileName,kind,size,Parcel.get(in,Parcel.MANIFEST_MOST)));
                 }
             }
-            return new Sent(id,name,path.icon,path.image,tint,ordinal,path.steps,writes,scope,target,members,answer,files,asOf);
+            Sent read=new Sent(id,name,path.icon,path.image,tint,ordinal,path.steps,writes,scope,target,members,answer,files,asOf);
+            looks(in,read);
+            return read;
         } catch(IOException | IllegalArgumentException broken){return null;}
+    }
+
+    /**
+     * Its strength and when its look was decided, where they follow the files (decision 108). What does not read whole is left
+     * unsaid, and the collection still arrives: a later mark not known here ends the reading, as a parcel's tail does.
+     */
+    private static void looks(DataInputStream in,Sent into) {
+        try {
+            if(in.available()<24||in.readInt()!=Parcel.LOOK_MARK)return;
+            int tone=in.readInt();long colourAt=in.readLong(),toneAt=in.readLong();
+            if(colourAt>0)into.colourDecided=colourAt;
+            if(toneAt>0){into.tone=Tint.toned(tone)?tone:Tint.USUAL;into.toneDecided=toneAt;}
+        } catch(IOException damaged){/* unsaid */}
     }
 }

@@ -232,14 +232,23 @@ final class PhoneLock {
         }
     }
 
-    /** One kept file's own bytes: opened on the way out when it is sealed. */
+    /** One kept file's own bytes: opened on the way out when it is sealed, and unpacked when it is packed (decision 112). */
     static void copyOut(File kept,OutputStream out) throws IOException {
+        Shrink.Unpacking plain=Shrink.unpacking(out);
         try(InputStream in=new BufferedInputStream(new FileInputStream(kept))) {
-            if(!sealed(kept)){byte[] part=new byte[16384];int n;while((n=in.read(part))!=-1)out.write(part,0,n);return;}
+            if(!sealed(kept)){byte[] part=new byte[16384];int n;while((n=in.read(part))!=-1)plain.write(part,0,n);plain.finish();return;}
             byte[] key=NoteStore.key();
             if(key==null)throw new IOException("This attachment is locked, and the notebook is not open.");
-            try{Sealed.open(key,in,out);}catch(Vault.Refused refused){throw new IOException("This attachment could not be opened: "+refused.getMessage());}
+            try{Sealed.open(key,in,plain);}catch(Vault.Refused refused){throw new IOException("This attachment could not be opened: "+refused.getMessage());}
         }
+        plain.finish();
+    }
+
+    /** Whether a kept file lies packed, not sealed (decision 112): then it is unpacked on its way out too. */
+    static boolean packed(File f) {
+        byte[] head=new byte[Shrink.MAGIC.length];
+        try(InputStream in=new FileInputStream(f)){int n=0,got;while(n<head.length&&(got=in.read(head,n,head.length-n))>0)n+=got;return n==head.length&&Shrink.isPacked(head);}
+        catch(IOException e){return false;}
     }
 
     // ---- what arrives while the notebook cannot be written ---------------------------------------------------

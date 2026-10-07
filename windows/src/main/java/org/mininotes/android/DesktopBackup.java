@@ -8,29 +8,35 @@ import java.util.zip.*;
 
 final class DesktopBackup {
     private static final String TEXT="mininotes-backup.json";
+    /**
+     * The private file, as every backup carries it whether anything is private or not (decision 111): the same size for
+     * everybody, random without a password, and put back as it was by a restore, where it opens with the same passwords.
+     */
+    static final String PAGES="pages";
     private static final long TEXT_LIMIT=32L*1024*1024;
     /** The start of a backup written while the notebook was locked: this, then its lock, then the sealed zip. */
     static final byte[] LOCKED={'M','N','B','1'};
 
-    static void write(NoteStore store,Path target) throws Exception{write(store,target,null,null);}
+    static void write(NoteStore store,Path target) throws Exception{write(store,target,null,null,null);}
+    static void write(NoteStore store,Path target,byte[] key,byte[] lock) throws Exception{write(store,target,key,lock,null);}
     /**
      * With a key and its lock, the backup is sealed whole, and carries the lock so it opens with the same
      * password or recovery words anywhere - on a new PC, after this one is gone. The zip inside is never
      * written to disk plain: it is sealed as it is made.
      */
-    static void write(NoteStore store,Path target,byte[] key,byte[] lock) throws Exception {
+    static void write(NoteStore store,Path target,byte[] key,byte[] lock,Slots pages) throws Exception {
         Path temp=Files.createTempFile(target.toAbsolutePath().getParent(),".mininotes-backup-",".tmp");
         var db=store.getWritableDatabase();db.beginTransaction();
         try {
             try(FileOutputStream file=new FileOutputStream(temp.toFile())) {
                 // Read from the notebook here, on the thread holding it: the zip is made on another.
                 List<NoteStore.Held> held=store.everyFile();
-                if(key==null){zip(store,store.backup(),held,file,null);}
+                if(key==null){zip(store,store.backup(),held,file,null,pages);}
                 else {
                     DataOutputStream head=new DataOutputStream(file);head.write(LOCKED);head.writeShort(lock.length);head.write(lock);head.flush();
                     PipedInputStream plain=new PipedInputStream(1<<16);PipedOutputStream into=new PipedOutputStream(plain);
                     String text=store.backup();Exception[] failed={null};
-                    Thread making=new Thread(()->{try(into){zip(store,text,held,into,key);}catch(Exception e){failed[0]=e;}},"mininotes-backup");
+                    Thread making=new Thread(()->{try(into){zip(store,text,held,into,key,pages);}catch(Exception e){failed[0]=e;}},"mininotes-backup");
                     making.start();
                     try{Sealed.seal(key,plain,file);}finally{making.join();}
                     if(failed[0]!=null)throw failed[0];
@@ -41,16 +47,23 @@ final class DesktopBackup {
             db.setTransactionSuccessful();
         } finally{db.endTransaction();Files.deleteIfExists(temp);}
     }
-    private static void zip(NoteStore store,String text,List<NoteStore.Held> held,OutputStream out,byte[] key) throws IOException {
+    private static void zip(NoteStore store,String text,List<NoteStore.Held> held,OutputStream out,byte[] key,Slots pages) throws IOException {
         ZipOutputStream zip=new ZipOutputStream(out);
         zip.putNextEntry(new ZipEntry(TEXT));zip.write(text.getBytes(StandardCharsets.UTF_8));zip.closeEntry();
         for(NoteStore.Held one:held) {
             if(Attachment.idOf(Attachment.entry(one.id))==null)throw new IOException("Invalid attachment identifier");
             zip.putNextEntry(new ZipEntry(Attachment.entry(one.id)));
-            // Plain inside the backup, which is itself sealed when locked: it opens anywhere with its own lock.
-            Path kept=store.fileFor(one.id).toPath();
-            if(DesktopFiles.sealed(kept)){try(InputStream in=new BufferedInputStream(Files.newInputStream(kept))){Sealed.open(key,in,zip);}catch(Vault.Refused r){throw new IOException("An attachment could not be opened: "+r.getMessage());}}
-            else Files.copy(kept,zip);
+            // Plain inside the backup, which is itself sealed when locked: it opens anywhere with its own lock. Unpacked too
+            // (decision 112), so a backup is the files' own bytes, as an older build reads them.
+            Path kept=store.fileFor(one.id).toPath();Shrink.Unpacking plain=Shrink.unpacking(zip);
+            if(DesktopFiles.sealed(kept)){try(InputStream in=new BufferedInputStream(Files.newInputStream(kept))){Sealed.open(key,in,plain);}catch(Vault.Refused r){throw new IOException("An attachment could not be opened: "+r.getMessage());}}
+            else Files.copy(kept,plain);
+            plain.finish();
+            zip.closeEntry();
+        }
+        if(pages!=null) {
+            zip.putNextEntry(new ZipEntry(PAGES));
+            try{pages.portable(zip);}catch(java.security.GeneralSecurityException e){throw new IOException("The backup could not be written",e);}
             zip.closeEntry();
         }
         zip.finish();zip.flush();
@@ -68,8 +81,11 @@ final class DesktopBackup {
     static int add(NoteStore store,Path source) throws Exception{return add(store,source,null);}
     static int add(NoteStore store,Path source,Unlock unlock) throws Exception{return add(store,source,unlock,false);}
     /** Replacing is a restore, as on the phone: the pad becomes what the backup was, ids and files included. */
-    static int add(NoteStore store,Path source,Unlock unlock,boolean replacing) throws Exception {
-        if(Files.size(source)>Attachment.PLENTY+TEXT_LIMIT+(1<<20))throw new IOException("That backup is too large");
+    static int add(NoteStore store,Path source,Unlock unlock,boolean replacing) throws Exception{return add(store,source,unlock,replacing,null);}
+    /** With {@code pages}, a restore puts the private file the backup carries in place of this one's; adding leaves it. */
+    static int add(NoteStore store,Path source,Unlock unlock,boolean replacing,Slots pages) throws Exception {
+        if(Files.size(source)>Attachment.PLENTY+TEXT_LIMIT+(long)Slots.COUNT*Slots.INNER+(2<<20))throw new IOException("That backup is too large");
+        File[] staged={null};
         Map<String,Path> files=new LinkedHashMap<>();String text=null;
         Path staging=Files.createTempDirectory(store.landing().toPath(),"backup-");
         Thread[] opening={null};Exception[] failed={null};
@@ -93,6 +109,8 @@ final class DesktopBackup {
                 while((entry=archive.getNextEntry())!=null) {
                     if(!entries.add(entry.getName()))throw new IOException("Duplicate backup entry");
                     if(entry.getName().equals(TEXT))text=new String(bounded(archive,TEXT_LIMIT),StandardCharsets.UTF_8);
+                    // Laid down beside the file now, put in its place only once the notes are in.
+                    else if(entry.getName().equals(PAGES)){if(pages!=null&&replacing)staged[0]=pages.stage(archive);else archive.transferTo(OutputStream.nullOutputStream());}
                     else {
                         String id=Attachment.idOf(entry.getName());
                         if(id==null)throw new IOException("Unexpected backup entry");
@@ -112,9 +130,11 @@ final class DesktopBackup {
         new org.json.JSONObject(text).getJSONArray("notes");
         try {
             for(var entry:files.entrySet())Files.move(entry.getValue(),store.landingFor(entry.getKey()).toPath(),StandardCopyOption.REPLACE_EXISTING);
-            return store.importBackup(text,replacing);
+            int count=store.importBackup(text,replacing);
+            if(staged[0]!=null){pages.adopt(staged[0]);staged[0]=null;}
+            return count;
         } finally {for(String id:files.keySet())Files.deleteIfExists(store.landingFor(id).toPath());}
-        } finally {for(Path path:files.values())Files.deleteIfExists(path);Files.deleteIfExists(staging);}
+        } finally {for(Path path:files.values())Files.deleteIfExists(path);Files.deleteIfExists(staging);if(staged[0]!=null)staged[0].delete();}
     }
     private static byte[] bounded(InputStream in,long limit) throws IOException {
         ByteArrayOutputStream out=new ByteArrayOutputStream();copyBounded(in,out,limit);

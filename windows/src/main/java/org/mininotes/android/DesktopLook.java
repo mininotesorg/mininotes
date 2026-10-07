@@ -9,7 +9,7 @@ import javax.swing.*;
 
 /**
  * How the pad looks, as the phone decides it: the reading ladder of ten rungs, the eight colours a thing can
- * be given, and how strongly those colours land. The same rungs, the same colour numbers and the same ten
+ * be given, and how strongly each thing's colour lands. The same rungs, the same colour numbers and the same ten
  * tones as the phone, kept under the same names, so "step 5", "Red" and "strength 4" mean one thing on both.
  */
 final class DesktopLook {
@@ -36,14 +36,38 @@ final class DesktopLook {
     }
     static void keepRung(Context context,int rung){context.getSharedPreferences("settings",0).edit().putString("rung",Integer.toString(clamp(rung))).apply();}
 
-    /** How strongly colours land, kept as the phone keeps it ("tone"): one setting for the whole pad. */
-    static int tone(Context context) {
+    /**
+     * The usual strength: what a thing is washed at until it is given one of its own (the owner, 2026-10-06: "the color
+     * intensity applies to the whole app, it should be specific to the elements selected"; decision 107). It is the one
+     * setting the whole pad had ("tone"), read as it was left and never written again, so nothing changed its look when
+     * each thing got its own.
+     */
+    static int usual(Context context) {
         try{return Math.max(0,Math.min(Tint.TONES.length-1,Integer.parseInt(context.getSharedPreferences("settings",0).getString("tone",Integer.toString(Tint.FIRST_TONE)))));}
         catch(NumberFormatException e){return Tint.FIRST_TONE;}
     }
-    static void keepTone(Context context,int tone){context.getSharedPreferences("settings",0).edit().putString("tone",Integer.toString(tone)).apply();}
+    /**
+     * The strength of something kept in the settings beside its colour, Home ("homeTone") or a place ("tone_" and its
+     * id), as the phone keeps them: its own, or {@link Tint#USUAL} where it was never given one.
+     */
+    static int tone(Context context,String key) {
+        try{int own=Integer.parseInt(context.getSharedPreferences("settings",0).getString(key,Integer.toString(Tint.USUAL)));return Tint.toned(own)?own:Tint.USUAL;}
+        catch(NumberFormatException e){return Tint.USUAL;}
+    }
+    static void keepTone(Context context,String key,int tone){context.getSharedPreferences("settings",0).edit().putString(key,Integer.toString(tone)).apply();}
 
-    /** A colour washed over a surface at the pad's tone, never so strong that the writing on it stops reading. */
+    /**
+     * A line of a menu that is set by looking stays up when it is clicked (the owner, 2026-10-06: "when I pick the color,
+     * the menu should stay open so that I can set other elements, now it closes and I have to reopen it"; decision 107):
+     * a colour, Writing lines, Same as other notes. The whole menu stays, the one it dropped from too; it closes as
+     * menus do, by a click outside, Esc, or a line that does something.
+     */
+    static <T extends JMenuItem> T stays(T line) {
+        line.putClientProperty(line instanceof JCheckBoxMenuItem?"CheckBoxMenuItem.doNotCloseOnMouseClick":"RadioButtonMenuItem.doNotCloseOnMouseClick",Boolean.TRUE);
+        return line;
+    }
+
+    /** A colour washed over a surface at a tone, never so strong that the writing on it stops reading. */
     static Color wash(int colour,Color ground,float base,float most,int tone) {
         if(!Tint.known(colour))return ground;
         return new Color(Tint.over(colour,ground.getRGB(),Tint.weigh(base,tone,most),false));
@@ -111,20 +135,29 @@ final class DesktopLook {
     }
 
     /**
-     * Colour ▸, for one thing: the nine choices with the one it has ringed, and under them how strongly colours
-     * land, drawn in this thing's colour. Choosing repaints the pad at once, so it is chosen by looking.
+     * Colour ▸, for one thing: the nine choices with the one it has ringed, and under them how strongly this thing's
+     * colour lands, drawn in it. Choosing repaints the thing at once behind the menu, which stays up (see stays): the
+     * ring moves to the colour picked and the strength under it takes that colour, so it is chosen by looking.
      */
     static JMenu colours(int now,IntConsumer choose,IntSupplier tone,IntConsumer setTone) {
         JMenu menu=new JMenu("Colour");
-        if(Tint.known(now))menu.setIcon(swatch(now,14,false));
+        int[] at={Tint.known(now)?now:Tint.NONE};
+        JMenuItem[] lines=new JMenuItem[Tint.count()];
+        JComponent strength=strength(()->at[0],tone,setTone);
+        Runnable mark=()->{
+            menu.setIcon(Tint.known(at[0])?swatch(at[0],14,false):null);
+            for(int c=0;c<lines.length;c++){boolean chosen=c==at[0];lines[c].setIcon(swatch(c,18,chosen));lines[c].getAccessibleContext().setAccessibleName(Tint.NAMES[c]+(chosen?", chosen":""));}
+            strength.repaint();
+        };
         for(int c=0;c<Tint.count();c++) {
-            final int colour=c;boolean chosen=c==now||c==Tint.NONE&&!Tint.known(now);
-            JMenuItem one=new JMenuItem(Tint.NAMES[c],swatch(c,18,chosen));
-            one.getAccessibleContext().setAccessibleName(Tint.NAMES[c]+(chosen?", chosen":""));
-            one.addActionListener(a->choose.accept(colour));menu.add(one);
+            final int colour=c;
+            // A line with a round, not a radio button's dot: its model never turns on, so the ring is the one mark.
+            JRadioButtonMenuItem one=stays(new JRadioButtonMenuItem(Tint.NAMES[c]));one.setModel(new DefaultButtonModel());
+            one.addActionListener(a->{if(at[0]==colour)return;at[0]=colour;mark.run();choose.accept(colour);});lines[c]=one;menu.add(one);
         }
+        mark.run();
         menu.addSeparator();
-        menu.add(strength(Tint.known(now)?now:Tint.NONE,tone,setTone));
+        menu.add(strength);
         return menu;
     }
 
@@ -136,15 +169,15 @@ final class DesktopLook {
     static JMenu sizes(int own,int device,IntConsumer choose) {
         JMenu menu=new JMenu("Text size");
         int[] now={own};
-        JCheckBoxMenuItem same=new JCheckBoxMenuItem("Same as other notes",Reading.followsDevice(own));
+        JCheckBoxMenuItem same=stays(new JCheckBoxMenuItem("Same as other notes",Reading.followsDevice(own)));
         JComponent ladder=ladder(()->Reading.of(now[0],device),rung->{now[0]=Reading.clamp(rung);choose.accept(now[0]);same.setSelected(false);});
         same.addActionListener(a->{if(Reading.followsDevice(now[0])){same.setSelected(true);return;}now[0]=Reading.NONE;choose.accept(Reading.NONE);});
         menu.add(ladder);menu.addSeparator();menu.add(same);
         return menu;
     }
 
-    /** "Colour strength": ten tones, pastel at the left, the colour itself at the right. */
-    static JComponent strength(int colour,IntSupplier tone,IntConsumer setTone) {
+    /** "Colour strength": ten tones, pastel at the left, the colour itself at the right, for the one thing the menu is about. */
+    static JComponent strength(IntSupplier colour,IntSupplier tone,IntConsumer setTone) {
         JPanel holder=new JPanel(new BorderLayout(0,4));holder.setOpaque(false);holder.setBorder(BorderFactory.createEmptyBorder(6,16,10,16));
         JLabel what=new JLabel("Colour strength");what.setFont(DesktopUi.BODY.deriveFont(12.5f));what.setForeground(Desktop.QUIET);
         holder.add(what,BorderLayout.NORTH);holder.add(new Band(colour,tone,setTone));
@@ -153,11 +186,12 @@ final class DesktopLook {
 
     /**
      * The tones as the washes they would make, in the colour of the thing the menu is about, with the one in use
-     * held by a round grip. With no colour there is nothing to show a tone of, so the band runs paper to ink.
+     * held by a round grip. With no colour there is nothing to show a tone of, so the band runs paper to ink. The
+     * colour is asked for as it is drawn: one picked in the menu above is the band's at once.
      */
     private static final class Band extends JPanel {
-        private final int colour;private final IntSupplier tone;private final IntConsumer setTone;
-        Band(int colour,IntSupplier tone,IntConsumer setTone) {
+        private final IntSupplier colour,tone;private final IntConsumer setTone;
+        Band(IntSupplier colour,IntSupplier tone,IntConsumer setTone) {
             this.colour=colour;this.tone=tone;this.setTone=setTone;setOpaque(false);
             setPreferredSize(new Dimension(200,28));setFocusable(true);setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             said();
@@ -173,7 +207,7 @@ final class DesktopLook {
         private void take(int x){int w=Math.max(1,getWidth()-getHeight());go(Math.round((x-getHeight()/2f)*(step()-1)/(float)w));}
         private void go(int to){to=Math.max(0,Math.min(step()-1,to));if(to==tone.getAsInt())return;setTone.accept(to);said();repaint();}
         private void said(){getAccessibleContext().setAccessibleName("Colour strength, "+(tone.getAsInt()+1)+" of "+step()+". Pastel at the left, the colour itself at the right.");setToolTipText("Colour strength "+(tone.getAsInt()+1)+" of "+step());}
-        private Color at(int t){return Tint.known(colour)?new Color(Tint.over(colour,DesktopUi.CARD.getRGB(),Tint.weigh(0.22f,t,0.92f),false)):DesktopUi.mix(DesktopUi.CARD,Desktop.INK,0.06f+0.5f*t/(step()-1));}
+        private Color at(int t){int colour=this.colour.getAsInt();return Tint.known(colour)?new Color(Tint.over(colour,DesktopUi.CARD.getRGB(),Tint.weigh(0.22f,t,0.92f),false)):DesktopUi.mix(DesktopUi.CARD,Desktop.INK,0.06f+0.5f*t/(step()-1));}
         @Override protected void paintComponent(Graphics g0) {
             Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
             int h=getHeight(),w=getWidth(),track=h-10,top=5,r=h/2;

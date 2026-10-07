@@ -65,7 +65,8 @@ public class DesktopCourierTest {
         // The phone comes back and is brought it: it lands as if it had come from the writer.
         byte[] brought=Envelope.seal(page(id),4,5,Courier.bring(Courier.NOTE,inner),carrier.keys.signing(),away.keys.agreement().getPublic());
         Post.Landed landed=away.hear(brought);
-        assertEquals(id,landed.note);assertEquals("Bread\nMilk",away.store.get(id).body);
+        // Shared with the phone for the first time by somebody else: kept, and waiting for its answer (decision 109).
+        assertTrue(landed.waiting);assertEquals("Bread\nMilk",away.store.get(id).body);
 
         // It says it has it, and the carrier lets go - of the note, and of nothing else.
         byte[] answerFor=Envelope.seal(page(id),1,6,Courier.leave(Courier.ANSWER,away.fingerprint(),inner),writer.keys.signing(),carrier.keys.agreement().getPublic());

@@ -49,8 +49,9 @@ public final class Lending extends ContentProvider {
         NoteStore.Held held=asked(uri);
         File file=store().fileFor(held.id);
         if(!file.isFile())throw new FileNotFoundException("The file is gone");
-        if(!PhoneLock.sealed(file))return ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY);
-        // Sealed: opened into a pipe as the other app reads it, so no plain copy is ever written down.
+        if(!PhoneLock.sealed(file)&&!PhoneLock.packed(file))return ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY);
+        // Sealed or packed (decision 112): opened into a pipe as the other app reads it, so no plain copy is ever written down
+        // and the other app reads the file's own bytes.
         try {
             ParcelFileDescriptor[] pipe=ParcelFileDescriptor.createPipe();
             new Thread(()->{try(java.io.OutputStream out=new ParcelFileDescriptor.AutoCloseOutputStream(pipe[1])){PhoneLock.copyOut(file,out);}catch(java.io.IOException gone){/* they stopped reading */}},"mininotes-lending").start();

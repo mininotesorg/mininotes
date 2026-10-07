@@ -140,7 +140,8 @@ final class DesktopRecorder extends JPanel {
         app.disk.submit(()->{
             String id=UUID.randomUUID().toString();Path dest=app.store.fileFor(id).toPath();
             DesktopFiles.keep(app.context,whole,dest);
-            try{app.store.keep(new NoteStore.Held(id,was.note,was.name,"audio/wav",whole.length,System.currentTimeMillis()));}
+            // Packed where that saves room, as every file added is (decision 112): a WAV often does.
+            try{app.store.keep(app.store.settle(new NoteStore.Held(id,was.note,was.name,"audio/wav",whole.length,System.currentTimeMillis())));}
             catch(Exception failure){Files.deleteIfExists(dest);throw failure;}
             return null;
         },done->{

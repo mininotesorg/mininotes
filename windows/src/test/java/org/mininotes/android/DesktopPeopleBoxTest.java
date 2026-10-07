@@ -56,10 +56,19 @@ public class DesktopPeopleBoxTest {
                     assertEquals(DesktopPeople.TITLE,box.getTitle());assertNull(named(in,"back"));
                     assertTrue(toggle(in,"People").isSelected());assertFalse(toggle(in,"Groups").isSelected());
                     List<String> said=new ArrayList<>();texts(in,said);
-                    int self=said.indexOf("This device"),mine=said.indexOf("My devices"),people=said.indexOf("People");
-                    assertTrue(said.toString(),self>=0&&mine>self&&people>mine);
-                    assertTrue("the laptop under My devices",said.indexOf("Work laptop")>mine&&said.indexOf("Work laptop")<people);
-                    assertTrue("Ana under People",said.indexOf("Ana")>people);
+                    // In the order the page is called by: People, My devices, then this one (decision 105). "People" is the
+                    // view's own name too, so the part's is the last said.
+                    int self=said.indexOf("This device"),mine=said.indexOf("My devices"),people=said.lastIndexOf("People");
+                    assertTrue(said.toString(),people>=0&&mine>people&&self>mine);
+                    assertTrue("Ana under People",said.indexOf("Ana")>people&&said.indexOf("Ana")<mine);
+                    assertTrue("the laptop under My devices",said.indexOf("Work laptop")>mine&&said.indexOf("Work laptop")<self);
+                    // Each part's one thing to do is beside its name, the same place in both.
+                    // A + for each, the same sign at the same place (decision 106), and nothing at the foot.
+                    JButton person=named(in,"addPerson"),device=named(in,"addDevice");
+                    assertNotNull(person);assertNotNull(device);assertEquals("+",person.getText());assertEquals("+",device.getText());
+                    assertEquals("Connect with someone",person.getAccessibleContext().getAccessibleName());assertEquals("Add a device",device.getAccessibleContext().getAccessibleName());
+                    assertEquals("beside their headings, at the same edge",person.getLocationOnScreen().x+person.getWidth(),device.getLocationOnScreen().x+device.getWidth());
+                    assertNull("no foot on the list",button(in,"Scan a code or paste a link…"));
                     // Under each person, a chip for each group: in is ticked, not in has a plus. None under a device of mine.
                     assertNotNull(called(in,"Ana is in Friends. Take Ana out of Friends"));
                     assertNotNull(called(in,"Ana is not in Colleagues. Put Ana in Colleagues"));

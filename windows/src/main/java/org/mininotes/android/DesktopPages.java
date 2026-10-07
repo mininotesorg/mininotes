@@ -75,7 +75,7 @@ final class DesktopPages extends JComponent {
         Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
         Object hints=Toolkit.getDefaultToolkit().getDesktopProperty("awt.font.desktophints");if(hints instanceof Map<?,?> map)g.addRenderingHints(map);
         // Its own view, on Home's paper a shade darker, so the pages read as pages and not as Home seen through a dim.
-        Color paper=DesktopLook.wash(home.pad.homeColour(),DesktopUi.PAPER,0.12f,0.72f,home.pad.tone);
+        Color paper=DesktopLook.wash(home.pad.homeColour(),DesktopUi.PAPER,0.12f,0.72f,home.pad.homeTone());
         g.setColor(DesktopUi.mix(paper,DesktopUi.INK,0.08f));g.fillRect(0,0,getWidth(),getHeight());
         DesktopHome.Icons grid=home.grid;
         Map<String,Layout.Spot> spots=grid.spots();
@@ -126,7 +126,7 @@ final class DesktopPages extends JComponent {
                 if(s==null||thing==null||!s.on(page.get(0),page.get(1)))continue;
                 int side=Math.max(4,Math.round(DesktopHome.FACE*scale));
                 int fx=x+Math.round((s.column()*DesktopHome.CELL+(DesktopHome.CELL-DesktopHome.FACE)/2f)*scale),fy=y+Math.round((s.row()*DesktopHome.HIGH+10)*scale);
-                DesktopHome.face(g,thing,fx,fy,side,home.pad.tone);
+                DesktopHome.face(g,thing,fx,fy,side,home.pad.usual);
             }
             if(page.get(0)==0&&page.get(1)==0) {
                 g.setFont(DesktopUi.BODY.deriveFont(12f));g.setColor(DesktopUi.QUIET);

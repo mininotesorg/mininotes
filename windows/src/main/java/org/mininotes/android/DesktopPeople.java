@@ -140,7 +140,8 @@ final class DesktopPeople {
     private void lay(Level at,Read r) {
         JPanel body=DesktopUi.column();JComponent more=null;String title=at.name;JComponent[] buttons={};
         switch(at.kind) {
-            case LIST: list(body,r);buttons=new JComponent[]{app.button("Scan a code or paste a link…",()->leave(()->app.scanCode(null)))};break;
+            // No foot: what adds to a part is the + beside its name (decision 106).
+            case LIST: list(body,r);buttons=new JComponent[0];break;
             case SELF: self(body,r);break;
             case GROUP: {
                 Groups.Group group=r.group(at.id);
@@ -230,12 +231,15 @@ final class DesktopPeople {
         if(groupsView)groupsView(body,r);else peopleView(body,r);
     }
 
-    /** People: this device, my devices, then everybody else with the groups each is in under their name, changed there. */
+    /**
+     * People, then my devices, then this one: in the order the page is called by, each part built the same way, its name
+     * with the one thing to do in it at its right, then its lines (the owner, 2026-10-05: "My devices and People sections
+     * should be structured the same way, with the buttons located at the same place, the text too ... since we say People
+     * and devices, people section should be first"; decision 105). Everybody else has the groups each is in under their
+     * name, changed there.
+     */
     private void peopleView(JPanel body,Read r) {
         String here=Node.deviceHere(app.context);
-        section(body,"This device");
-        DesktopUi.add(body,DesktopUi.card(null,opens(DesktopUi.person(here,r.here.isEmpty()?null:r.here.get(0)),here,()->go(new Level(SELF,"",here)),null)));
-        DesktopUi.gap(body,DesktopUi.L);
         JPanel own=DesktopUi.column(),others=DesktopUi.column();
         for(NoteStore.Contact one:r.contacts) {
             if(one.mine){DesktopUi.add(own,line(one,r));continue;}
@@ -255,15 +259,42 @@ final class DesktopPeople {
                 DesktopUi.add(others,DesktopUi.wrapping(44,chips.toArray(new JComponent[0])));
             }
         }
-        // Each part says what to do when it is empty, and My devices always offers to connect another.
-        section(body,Groups.MY_DEVICES);
-        if(own.getComponentCount()==0)DesktopUi.add(body,DesktopUi.spread("No other device yet. Connect my other device to keep the same notes on both."));
-        else DesktopUi.add(body,DesktopUi.card(null,own));
-        DesktopUi.gap(body,DesktopUi.S);DesktopUi.add(body,DesktopUi.actions(app.button("Connect my other device…",()->leave(()->app.showCode(Desktop.library())))));
-        DesktopUi.gap(body,DesktopUi.L);
-        section(body,"People",app.button("Add someone…",()->leave(()->app.scanCode(null))));
-        if(others.getComponentCount()==0)DesktopUi.add(body,DesktopUi.spread("Nobody else yet. Share a note or a folder to add somebody."));
+        // Each part says what to do when it is empty.
+        JButton connect=adds("addPerson","Connect with someone",null);
+        connect.addActionListener(e->{
+            // The ways to connect, theirs and mine, from the + itself (decision 110), as the phone's +.
+            JPopupMenu ways=new JPopupMenu();
+            item(ways,"Scan a code or paste their link…",()->leave(()->app.scanCode(null)));
+            ways.addSeparator();
+            item(ways,"Copy my link",app::copyMyLink);
+            item(ways,"Show my code…",()->app.profile(box,"People and devices"));
+            ways.show(connect,0,connect.getHeight());
+        });
+        section(body,"People",connect);
+        if(others.getComponentCount()==0)DesktopUi.add(body,DesktopUi.spread("Nobody else yet. Press + to connect with someone, or share a note or a folder with them."));
         else DesktopUi.add(body,DesktopUi.card(null,others));
+        DesktopUi.gap(body,DesktopUi.L);
+        section(body,Groups.MY_DEVICES,adds("addDevice","Add a device",()->leave(()->app.showCode(Desktop.library()))));
+        if(own.getComponentCount()==0)DesktopUi.add(body,DesktopUi.spread("No other device yet. Press + to connect another device of yours and keep the same notes on both."));
+        else DesktopUi.add(body,DesktopUi.card(null,own));
+        DesktopUi.gap(body,DesktopUi.L);
+        // This device is the one Profile is about: its line goes there, where its name, its code and how it connects are,
+        // and Profile's ‹ comes back here (the owner: "it should bring to the profile page ... and from the profile page,
+        // we should be able to go back to people and devices").
+        section(body,"This device");
+        DesktopUi.add(body,DesktopUi.card(null,opens(DesktopUi.person(here,"Your name, your code and how this device connects"),here,()->app.profile(box,"People and devices"),null)));
+    }
+
+    /**
+     * A + at the right of a part's name, which adds to it: the one sign for adding, at the one place, in both parts (the
+     * owner, 2026-10-06: "just put a + on the right side of both My devices and People so that people will understand that
+     * this is to add elements"; decision 106). What it adds is said under the pointer and to a screen reader.
+     */
+    private JButton adds(String name,String does,Runnable go) {
+        JButton plus=app.button("+",go==null?()->{}:go);plus.setName(name);plus.setToolTipText(does);
+        plus.getAccessibleContext().setAccessibleName(does);
+        plus.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,18f));plus.setMargin(new Insets(2,12,4,12));
+        return plus;
     }
 
     /** One device or person in the list: their round in their colour, their name, how they are reached, and › to their page. */

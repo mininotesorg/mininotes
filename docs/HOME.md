@@ -1234,6 +1234,504 @@ The owner's asks of 2026-10-03, eighth round (decisions 78 and 79). Graphene onl
     `GroupsTest.whatAGroupHasAndWhatAPersonHasAreListedWithTheGroupItCameThrough`, `DesktopPeopleBoxTest` (the two views,
     a page each, back one level at a time, Share with), `DesktopGalleryTest` (04b to 04f, 12, 12b, 82g).
 
+104. **The owner, 2026-10-05, with a picture of a blue window and a cream band down its page: "let's use an invisible
+    scrolling bar on laptop."** Built on the PC (0.3.001, the first of the 0.3 builds, at his word: "let's start from
+    0.3.001 now"). Every scroll bar's strip is the colour of what scrolls beside it, and its handle shows only while the
+    pointer is on the strip or it is dragged (`DesktopScroll`, the one scroll-bar look for the whole app); the wheel, the
+    keys and a drag scroll as before. The divider between the page and the side list is in the app's colour too
+    (decision 102), since it was the other half of the band in his picture.
+
+105. **The owner, 2026-10-05, on the laptop's People and devices: "When we click People and devices, and follow This
+    device name, it should bring to the profile page. What we have now as direct connections open on port 9601 and so on
+    should show in the profile page, and from the profile page, we should be able to go back to people and devices. My
+    devices and People sections should be structured the same way, with the buttons located at the same place, the text
+    too. We need to make it intuitive to the user. The connect my device should be placed where the add someone button
+    is, and since we say People and devices, people section should be first on the page. This is the type of consistency
+    we need across the whole app, consistency in design and in logic." And: "a new downloaded windows app should open on
+    the desktop not inside the My first note."** Built on both apps (0.3.002). *The order the page is called by:* People,
+    then My devices, then This device. *The same skeleton:* each part is its name, its lines, and its one thing to do at
+    the same place in both: on the PC beside the name, at the right (*Add someone…*, *Connect my other device…*); on the
+    phone a + and its words under the lines (*Add someone*, *Connect my other device*). *This device is Profile:* its
+    line opens Profile over the page, with *‹ People and devices* (and Esc, ✕, the phone's Back) coming back to it; there
+    is no second page about this device. Its door and how notes travel are said in Profile, under *Connection*; in
+    Profile opened this way, *People…* goes back instead of opening the page a second time. *A new notebook opens on
+    Home* on the PC, where *My first note* and *Read me* are to be seen; a note is in front again from the next start,
+    as whatever was open always is (the phone opened on Home already).
+
+106. **The owner, 2026-10-06, on People and devices: "remove connect my other device at the bottom of the section and at the
+    bottom of the window, remove both add a device and share with someone, or even better, just put a + on the right side
+    of both My devices and People so that people will understand that this is to add elements."** Built on both apps
+    (0.3.003), his "even better". Each part's name has a + at its right, the one sign for adding at the one place: by
+    *People* it connects with someone (scan their code or paste their link), by *My devices* it adds a device of yours (the
+    code that connects it). What it does is said under the pointer and to a screen reader (*Add someone*, *Add a device*).
+    Gone: the phone's rows under each part and its two buttons at the foot of the box (*Add a device*, *Share with
+    someone*); the PC's buttons with words and its foot (*Scan a code or paste a link…*). An empty part says to use the +.
+    A group's page and Share with keep their own actions.
+
+107. **The owner, 2026-10-06, on the laptop, with a picture of a folder's *Colour ▸* (nine colours, then *Colour strength*
+    and its slider): "the color intensity applies to the whole app, it should be specific to the elements selected. Also,
+    when I pick the color, the menu should stay open so that I can set other elements, now it closes and I have to reopen
+    it."** Built on both apps (0.3.004). *Its own strength:* the slider under a thing's colours sets how strongly that
+    thing's colour lands, and that thing's only: a note, a folder, each place that has a colour (Favourites, Recent, Temp,
+    Shared with me, the archive, the bin) and Home, whose colour on the PC is the whole app's (decision 102). It goes
+    wherever the thing's colour is washed: its tile and the little pages in a folder's, its card, its page and ruled
+    lines, its line of the tree on the PC, the overview. A thing never given one is washed at *the usual*: the one setting
+    the whole pad had ("tone"), read as it was left and never written again, so nothing changed its look on the day of the
+    upgrade; no menu sets the usual any more. *Kept:* a note's and a folder's beside its colour in the notebook (`tone`
+    on `notes` and on `things`, -1 for the usual; schema step 44, additive), read with what a thing wears
+    (`NoteStore.dress`) so `Branch.tone` and `Note.tone` are there to draw with; Home's ("homeTone") and a place's
+    ("tone_" and its id) beside their colours in the settings. *On this device only*, as a note's size is: no revision
+    moves for it, a save carries it over, nothing is sent, and no message changed. A backup holds it for a restore of the
+    same pad, as it holds a note's size; a backup added as copies takes none. A folder's colour does travel (in its
+    carton, and in the path every note under it is sent with); carrying the strength with it is not done, and is the
+    owner's to decide. *The menu stays:* on the PC a colour picked leaves the whole menu up, the one it dropped from
+    too: the ring moves to the colour picked, the line it dropped from wears it, the strength under the colours is drawn
+    in it, and the thing is painted behind. So do *Writing lines* and *Same as other notes*, which are set by looking
+    too; the text-size ladder and the strength always did. It closes as menus do: a click outside, Esc, or a line that
+    does something. On the phone the sheet stayed open already for all of these; what is new there is that a tile on
+    Home is drawn again behind it at once, not when the sheet closes, and that the slider is the thing's own and is only
+    there under a thing's colours. Tests: `SchemaMigrationsTest.everyNoteAndFolderStartsAtTheUsualStrength`,
+    `TintTest.aThingWithNoStrengthOfItsOwnIsWashedAtTheUsual`,
+    `DesktopStoreTest.aStrengthIsOneThingsOwnAndEverythingElseKeepsTheUsual` and
+    `theUpgradeLeavesEveryThingAtTheStrengthThePadHad`,
+    `DesktopUiTest.aColourPickedLeavesTheMenuUpAndTheStrengthMovesOneThingOnly`, `DesktopGalleryTest` (32b to 32f).
+
+108. **The owner, 2026-10-06, told that a strength stays on the device it was set on and that a note's own colour does not
+    travel at all: "when sharing everything should travel, then on the other device it can be set individually."** Built
+    on both apps (0.3.005). *What travels:* a note's own colour and its strength, in its parcel; a folder's strength
+    beside its colour, in its carton. Home's and the places' colours and strengths are settings, not shared things, and
+    stay where they are set. *The later decision wins:* each colour and each strength keeps when it was last decided
+    (`colourDecided` and `toneDecided` on `notes` and on `things`, 0 for never; schema step 45, additive), and what
+    arrives is taken half by half where it was decided later than what is here. So a colour or a strength set on the
+    other device afterwards stays, and is that device's own until somebody decides again; an older one there is replaced.
+    Setting either is a new decision, now: the thing's count moves on, as a rename moves it, and it is owed to everybody
+    who has it, words unchanged; a note this device may only read is the one exception, its look its own with no count
+    moved, so the owner's next words are never taken for older ones. Taking a look that arrived moves no count, so
+    nothing is owed straight back. A folder's colour now follows too where it is decided after the folder was made
+    (decision 17 had it used only when the folder is first made); one never decided still is. A folder's look is taken
+    from whoever its name and icon are followed from (step 4). *The usual travels as the usual:* a thing given back to
+    the usual arrives so, and is washed at the receiver's usual; a thing never given a look arrives with none. *On the
+    wire:* a note's look is the last thing after its path, behind a mark of its own (MNL1: colour, strength, and the two
+    times), after the sender's colour and the time a note is to be gone, so a build from before reads both of those and
+    stops at a mark it does not know. A folder's is after its files (the same mark: strength and the two times; the colour
+    is where it always was), where a build from before stops reading. So no capability bit: an older build takes the note
+    and the folder and ignores the look. Said only where something was ever decided. Both apps send at once when a
+    colour or a strength is set, as an icon is sent. A backup keeps the two times beside the strength for a restore of
+    the same pad. Tests: `ParcelPathTest.aNotesOwnColourAndStrengthRideLastAfterThePath`,
+    `CartonTest.itsStrengthAndWhenItsLookWasDecidedRideAfterTheFiles`, `SchemaMigrationsTest.everyLookStartsNeverDecided`,
+    `DesktopLookTravelsTest` (both ways, the receiver's later own setting kept, the usual as the usual, a build from
+    before, a reader's own look, a folder in its carton); `DesktopStoreTest.aStrengthIsOneThingsOwnAndEverythingElseKeepsTheUsual`
+    now has a folder's count move for its strength.
+
+109. **The owner, 2026-10-06: "When someone shares something with me, I need an alert, a pop-up at first telling me, and it should
+    go in Shared with me, and there I should have an accept or refuse, and refuse could be silent or inform the sender with
+    the option to send a message back."** Built on both apps (0.3.006). His two choices: *Goes to Home* (accepted, a note or a
+    folder leaves Shared with me for Home; files stay where files shared on their own go, decision 94) and *It arrives,
+    hidden until I accept* (kept, so accepting is instant, and shown nowhere but its line in Shared with me). *What waits:* a
+    note, a folder or a file that another person shares with me for the first time and that lands on Home. Not what comes
+    from one of my own devices (bonded or paired as mine), which comes as it always did and, where the same thing waits here
+    from the other person, accepts it here too; not what lands inside something already here (a new note in an accepted
+    folder, a new version, a role changed); not what a code I took up brings, which I said yes to already; and not anything
+    here at the upgrade. *Kept:* schema step 46 adds `accepted` to `notes`, `things`, `files` and `incoming` (1 for every row
+    there is, 0 for what arrives new from somebody else on Home; a file still coming waits as the file will), and on the
+    sender's side `refusals` (who refused what, their words, when). A folder that waits is away as an archived one is, so
+    nothing in it is shown or owed to anybody, my own devices included, until it is accepted; every live list says
+    `accepted=1` (Home and every folder's contents, Shared with me and what is coming to it, both searches, Recent, what was
+    written lately, the tree, Favourites, the dock, Temp and its count, where a thing can be moved, what a new page is
+    written in, what opens first, and what is owed anybody). The phone has no widgets. *The pop-up:* once for each thing,
+    never for each revision (`NoteStore.waitingUnsaid`, kept by id in this device's settings): *Shared with you*, "Ana shared
+    “Saturday market” with you", under it *A folder · Can write. It waits for you in Shared with me.*, and *Later* and *See
+    it*, which opens Shared with me. Several are one box, "Ana and Ben shared 3 things with you", and what comes while it is
+    up says it there, never a box over a box. It comes when something arrives while the app is in front, and whenever it
+    comes to the front; away, the PC's tray says the line, and the phone says it in a notification (*Open the pad to accept
+    or refuse it.*), each once for each thing. Shared with me's tile on Home wears how many wait, as Temp wears its count.
+    *Shared with me:* its first part, *Waiting for you*, a line for each thing, its icon, its name and "from Ana · Can
+    write", with *Refuse* and *Accept* side by side, Accept filled; past three lines and a half it scrolls, so the files under
+    it stay in sight; nothing waiting, it is not there. *Accept* is said on the strip (the status line on the PC) while it
+    works and once it is done, "“Saturday market” is on Home now". *Refuse* asks in a small box: *Refuse quietly* (they are
+    not told) or *Refuse and tell them*, with a field, *Add a few words, if you like*; its one button is *Refuse*, in the
+    colour of what cannot be taken back. Either way what this device holds of it is deleted, words and versions too, and
+    nothing more of it is taken in from anybody who has it (`NoteStore.refuseShared`): told, it is left as Unfollow leaves
+    it (`refused.gone` 1, given again later brings it back, and waiting again); quietly, at `NoteStore.QUIETLY` (2), said to
+    nobody, never undone, and what still arrives is answered as had, so its sender does not try for ever. *On the wire:* a
+    refusal is a new answer, `Receipt.REFUSED` (29): the five bytes, then the number a leaving of that thing is said by
+    (`LEFT_PAGE` and the others), then the words, UTF-8, at most 280 characters; which thing rides in the envelope as for a
+    leaving, and when where a revision does (`Post.refuse`). It is longer than an answer, and a build from before takes what
+    it does not know for a note, so it is sealed only for a device that has said it reads one (`Receipt.REFUSALS`, 28, said
+    and heard as `LOOSE` is). Everybody else who has the thing, and a sender whose build has not said so, hears what Unfollow
+    says (`LEFT_PAGE` and the others) and sees "Parisa unfollowed a note". The sender that reads it takes them off as a
+    leaving does, keeps the refusal and the words, and says once "Parisa refused “Saturday market”" with the words under it
+    (the status line and the tray on the PC, a line on the phone); in the thing's Share box, after the people, their line
+    reads *Refused*, the words under their name. The telling is tried once, at the refusal: with nothing left here to name
+    it by, a note or a folder is not said again as a leaving is for a week (a file, which names itself, is, as a leaving),
+    and the strip says when nobody could be reached. A folder with no note in it yet has nothing to be named by, as for
+    Unfollow, and is refused here without a word to anybody. The words are in one place for both apps (`FirstShare`). Tests:
+    `DesktopFirstShareTest` (hidden and waiting, from my own device shown, every list walked, a note new in an accepted
+    folder, a file waiting while it comes and once here, refused quietly, refused with words and the sender's store, a folder
+    refused whole, the upgrade), `ReceiptTest.aRefusalCarriesWhatWasRefusedAndAFewWords`,
+    `ReceiptTest.whatIsSaidAboutSomethingSharedWithMeForTheFirstTime`,
+    `SchemaMigrationsTest.everythingAlreadyHereCountsAsAcceptedAndNobodyRefusedAnythingYet`, `DesktopSharedWithMeTest`
+    (the pop-up for one and for several, Waiting for you, the Refuse box, the sender's notice and the Refused line, each
+    pictured).
+
+110. **The owner, 2026-10-06: "In People + we should have there a share my profile link, the part from my profile, your
+    address, copy, but we should also have a share my address that triggers the share function of the phone so the
+    address can be shared by social medias and others, and on the profile page."** Built on both apps (0.3.007). *+ by
+    People* offers the ways to connect, theirs and mine: *Scan their code*, *Paste their link*, then *Share my link…*
+    and *Show my code* (the PC: *Scan a code or paste their link…*, *Copy my link*, *Show my code…*, which opens
+    Profile over the page). *Share my link…* hands the phone's share sheet my link (the one my code holds) with a few words
+    for somebody who has never seen the app: who it is from, to open it where Mininotes is installed or paste it in + by
+    People, and where to get the app (`Pairing.invite`, one wording for both apps). Profile has it too, under *Copy
+    address*. The PC has no share sheet: its *Copy my link* (in the + and in Profile, which said *Copy pairing link*)
+    puts the same words on the clipboard. The link is `mininotes://pair/…`: it opens Mininotes on a phone that has it, and
+    some social networks do not make it clickable, which is why the words say how to paste it.
+
+111. **The owner, 2026-10-06: "The user should be able to make himself highly private notes and folders, by typing a code
+    anywhere, and it should reveal them. To create them it should be like that: type in any note privatefolder//:[password]
+    or privatenote//:[password]; then, after closing, to access them only the password should open them. ... Once closed
+    they should not appear anywhere, and a hacker should not have any trace of their existence even by looking at the code
+    of the app."** And: "So that people are aware of this functionality, we should include that with other elements in the
+    Read me note." His choices: this device only, no sharing, the keyboard does not learn in every note; then 64 MiB for
+    everybody ("maybe like 50 photos"), writes on a fixed rhythm ("how do you make sure it stays always the same"), the
+    decoy tip, and compression with no option. Built on both apps (0.3.008). *What is promised:* the code is public, so
+    the feature is not hidden; what nobody without a password can tell is whether a device's owner ever used it, how much,
+    or for what. A forgotten password loses them for good: the 12 recovery words do not cover them, since if they did they
+    would prove a space is used. *The file:* `pages.protected` in the app's data, on every install from its first start
+    (made by the upgrade too), 1024 slots of 64 KiB, 64 MiB, never more or less, random from end to end without a password
+    (`Slots`). A slot on disk is 16 random bytes and the rest in AES-256-CTR under this device's own key (SHA-256 of a label
+    and the device's agreement key, which the Keystore or the Windows user guards), so every slot written is new bytes.
+    Under that, the same on any device: a password's slot is a 12-byte nonce, a 16-byte mark (HMAC-SHA256 of the nonce
+    under the password's mark key) and AES-256-GCM of a 36-byte head (which thing, which writing of it, which part of how
+    many, how long) and up to 65,440 bytes of it, Deflated before; any other slot is random. Slot 0 holds the salt, slots 1
+    to 17 the journal. A password's keys are PBKDF2-HMAC-SHA256 of it (UTF-8) and the salt, 200,000 rounds (0.65 s on this
+    laptop), split by HMAC-SHA256 into one to seal with and one to mark with. Opening reads each slot's nonce and mark, and
+    decrypts only a slot whose mark that key makes: nothing answering, nothing opens, nothing is written and nothing is said.
+    *The rhythm:* a batch is 16 slots, 1 MiB, written at every start, every minute while the app is in front (the PC: while
+    it runs) and when it is left (the phone's onStop; the PC minimised, hidden or closed), whatever is private: first the
+    parts of a change that wait, then slots anywhere, written again as they were under new random bytes. It goes to the
+    journal first (its head with a SHA-256 over all of it, and its 16 slots), then in place, so a batch cut short is put in
+    place again at the next start. A change is never written outside a batch: one too big for a batch waits in memory,
+    sealed, for the next ones; closing does not wait for it, the batches after write it, and the line at the foot of the
+    screen says so while it waits ("Writing privately: 3 MB to go. Keep Mininotes open."). *What a password holds* (`PrivateSpace`):
+    a list of its things and each thing by name: every note and folder with its colour, strength and place and every file's
+    name in one, each note's words and versions in another, each file's bytes in its own. A change writes new slots beside
+    the old ones and the list last; the old slots are filled with nothing under the same key once the new list is whole, so a
+    write cut short leaves the last whole state. *Rooms* (the owner, 2026-10-06, the trade-offs explained to him: "Decoy first,
+    real inside it", then "Two fixed halves"): the data slots are split in two fixed halves by a rule the same on every
+    install, every other slot (`Slots.half`), so each half is spread over the whole file and the split needs no record. Each
+    space writes only in its own half, its data and its own fillers alike; batches still pick their other slots across the
+    whole file. A space made from outside always has the first half, about 31 MB (503 slots), whatever else exists, and
+    its room never changes, so its password shows the same room on every device. *New private space* in a first-half space's
+    menu (the password twice; the box says it gets about 31 MB, the other half) makes the second space, whose room is the
+    second half, whole; it is not offered inside a second-half space, so there are two at most. The second space's index
+    keeps the first one's keys, so opening it opens the first too, unseen, and never writes over it; the first keeps nothing
+    of the second, so opened alone it can never touch it, its password reveals nothing of it, and a space with a second made
+    inside it looks the same, slot for slot, as one alone. A half full: "Private storage is full", inside only, and nothing
+    of that change is kept. So the owner's order: the decoy first, the real one made inside it. *The codes* (`PrivateCode`): privatenote//:, privatefolder//: and private//:, in any case and with a space
+    allowed after "private" (a phone's keyboard puts one), in a note's page or title, in the search, or in a private note.
+    The moment the colon is typed the code is taken out of the words, before anything can write them down, keep a version or
+    an undo of them or send them, and a password field takes the keyboard ("Password, then Enter"; Enter, as a phrase of
+    several words has spaces). Nothing answering, privatenote//: and privatefolder//: ask for the password once more ("The
+    same again, then Enter"), and only the same twice makes a new space with a note, or a folder with a note in it, and
+    opens it, so a typo makes nothing and writes nothing; private//: does nothing and says nothing. While the word at the caret could still
+    become a code ("privaten", "private note/") the writing down that happens by itself waits for the next key; a save that
+    cannot wait first takes out an unfinished code that has its slashes. *Inside* (`PrivateScreen`, `DesktopPrivate`): a screen
+    of its own over the whole window, *Private*, with + (New note, New folder, and in a note Add a photo or file), ⋯ (in a
+    note Colour, Versions, Add a photo or file, Move to, Delete; then Bin, Change password, Close) and Close; its tiles drawn
+    as Home draws them; a note on ruled paper washed in its colour; its files under it, a picture shown in the app from
+    memory, Save a copy for any (the user's own act, the one way anything leaves); a bin with Put back, Delete for good and
+    Empty the bin; a version kept each time a note is left. Nothing to share, send or sync. A photograph is made about two
+    megapixels (its longest side 1920 pixels), turned as its camera said, JPEG at 85, with nothing of the camera or the
+    place kept; everything is Deflated before it is sealed, and space is counted after. *Closing:* Close, Back or Esc from
+    its top, leaving the app, five minutes with no touch or key, and the notebook locking again: keys and contents let go,
+    a file's bytes zeroed, and what was copied from a private note taken off the clipboard if it is still there (and marked
+    sensitive on Android 13 and later, so the keyboard and the system neither show nor keep it). The phone's window is
+    FLAG_SECURE while it is up; the PC asks Windows to leave the window and every box over it out of any capture
+    (SetWindowDisplayAffinity). *Nowhere else:* never in the notebook (no schema step), on Home, in search, Recent,
+    Favourites, the dock, Temp, the tree, the overview, the open list, a share box, a notification or a log; whatever fails
+    inside is let go without a word; pictures are read and made in memory (the PC's picture cache files are off for
+    everybody). *The keyboard does not learn, in every note:* the page and every field the phone makes for a note, a name or
+    the search say IME_FLAG_NO_PERSONALIZED_LEARNING; a PC keyboard has nothing to be told. *Backups:* every backup carries
+    the file (its entry `pages`, the file without this device's outer layer), whatever is private; Replace everything puts it
+    in place once the notes are in, and it opens there with the same passwords; adding as copies leaves it. A backup made
+    by this build is refused by an older PC build, which does not know the entry. *Read me:* a part, *Private notes*: how
+    to make and to open, about 31 MB a space (about 60 photos and text), the first space with privatenote//: and a second,
+    the other half, with New private space from inside the first, two at most, and never a space by a new code from outside
+    once one exists (it would take the first half again and write over it), a long phrase, no recovery, nowhere else
+    and this device only, and his tip in his words in this order: a believable first space, the real one made inside it,
+    and the first used now and then so it looks lived in. A Read me that still says word for word what an
+    earlier build wrote says this now (the old words kept as a version); one somebody changed is left as it is. *Not
+    leak-free, and why:* somebody with two copies of the file taken apart in time and this device's own key (a rooted
+    phone, the Windows user's login) can see which slots' inner parts changed between them, and two copies of a backup that
+    is not locked show the same (its inner part travels without the device's layer, so it opens anywhere); a space reuses
+    its own slots, so somebody watching every single batch could see the same places written again; a space made from
+    outside cannot know of one that is closed and always takes the first half, so typing a new code from outside once a space
+    exists (with the same password twice) writes over the first, which Read me warns of; the halves are public, so anybody
+    may be asked for a second password whether or not there is one: the decoy protects by being believable, and nothing on
+    the device says whether the second half holds a space; the recent apps keep a blank picture of the app until it is in front again after being left
+    with the private screen up; keys and words are in the app's memory while it is open, and Java's strings cannot be
+    zeroed; a save that cannot wait with "privatenote" at the caret and no slash yet writes that word; Windows' clipboard
+    history, where it is on, keeps what was copied; and until a change of password is written, the old password still
+    opens in the next start of the app. Tests: `SlotsTest` (the same size of random from the first start, nothing for a
+    wrong password, written only by batches, as many bytes for everybody, a change too big for a batch, a space closed with
+    writing waiting, two passwords, a space made inside never writing over the one it was made in, the decoy made first and
+    the real one inside it with 28 MB, the decoy opened alone and filled to the end of its half and the real one opening
+    byte for byte, nothing in the decoy's index or anything its password opens saying a word of the real one (not its keys,
+    its ids or its slots) and its room exactly the first half, a lone space's room the same as a decoy's with a real one
+    inside it, slot for slot, and no third space, a new password, the old one opening nothing
+    even before it is all written, full, a batch cut short, a backup opening on another device, deleted things filled with
+    nothing), `PrivateSpaceTest` (the codes, the holding of a save, notes, folders, files, versions, the bin, full),
+    `DesktopPrivateTest` (two installs, one never used and one with a private note and 50 photographs, after the same two
+    starts: the same files at the same sizes, the same batches and bytes written, none of the words, title, password,
+    photographs' names or camera, or the codes in any byte of any file, the file noise in both, no picture cache file; made from
+    outside, the password asked twice, and two that differ writing not a byte and opening nothing; a code
+    typed slowly in a note shared with a phone, in its title and in the search: none of it in the note, its versions, its
+    undo, what is owed or what the phone gets; a password nothing answers to: not a byte changed; a backup opening on
+    another PC; and the screen pictured).
+
+112. **The owner, 2026-10-06: "could the file or folder have a compression option so that attachments are reduced?" then "can
+    we add the compression rule to all notes and folders?"** Built on both apps (0.3.009). *Pictures:* every picture added
+    anywhere (to a note, a folder, Home, Temp or Shared with me; pasted, dropped, shared from another app, taken in the
+    phone's picker, added on the PC, sent to a device on its own, or a new version of a file) is made smaller before its
+    row is written (`NoteStore.settle`, the rules in `Shrink`). Bigger than 1920 pixels on its longest side, or turned by
+    its camera, it is drawn again, about two megapixels, upright, JPEG at 85. A JPEG already that small and upright loses
+    only its EXIF, XMP, IPTC and comment parts, byte for byte otherwise, its colour profile kept. A PNG is a PNG or a JPEG,
+    whichever is the smaller, and a PNG where any of it is see-through; one already small loses its words, times and EXIF
+    the same way. A GIF is kept as it is, since it may move. What is made is kept only where it is smaller, except a turned
+    one, which can only stand without its camera's word by being drawn again. A picture that became a JPEG is named so
+    ("IMG_2041.HEIC" is kept as "IMG_2041.jpg"). The phone draws with Android's decoder (`Pictures`, which reads a HEIC),
+    the PC with ImageIO in memory (`DesktopPictures`; a HEIC it cannot read is kept as it is), both reading every n-th
+    pixel of a picture far bigger than it needs to be, never under 1920. The private notes (decision 111) draw with the
+    same and still always make a JPEG, as they did. A picture is never packed: its kind is packed already, and on the disk
+    it stays a picture anything can read. *Other files:* kept Deflated on this device where that saves a tenth
+    or more (a big one tried on its first 256 KB first), behind a mark of their own (MNZ1, inside the seal while the
+    notebook is locked), and always a file that begins with that mark, so none is ever taken for a packed one. Everything
+    that reads a kept file unpacks it on the way: what goes up, a file lent to another app or opened, a copy saved, a
+    backup. A file fetched from another device is packed as it is kept, and never shrunk: it is the same file as
+    everybody's. *The wire is unchanged, so no capability bit:* a list names a file with its own size, and what goes up is
+    its own bytes, so a build from before fetches and reads exactly what it always did; a shrunk picture travels as the JPEG
+    or PNG it now is. *Settings,* under *Pictures and files* on both apps: *Shrink pictures*, on unless switched off
+    (`shrinkPictures` in this device's settings; off, a picture is kept as it came and other files are still packed), and
+    *Shrink the pictures already here…*, which looks first, the strip (the status line on the PC) saying how far ("Looking
+    at the pictures: 3 of 23"), each made beside the notebook, sealed as kept files are; then asks, *Shrink 23 pictures?*
+    "They take 84 MB now and would take 9.1 MB: about 75 MB freed. Each replaces its original, which cannot be had back.",
+    with *Shrink them* in the colour of what cannot be taken back; closed, nothing is replaced and what was made goes. It
+    shrinks only a picture that is this device's alone: added here, never gone up, never reached anybody, not sent on its
+    own. One that went to somebody or came from somebody is left as it is, and the box says how many, since every list
+    names a file with its size and every other device has it as it was. No revision moves for it, and no schema step.
+    Tests: `ShrinkTest` (the parts taken out of a JPEG and a PNG, the rule against a painter that only says what it is
+    told, names, packing read back in pieces of every size, a file cut short, the lookalike, the words),
+    `DesktopShrinkTest` (a 3200 by 2400 photograph of 1,955,187 bytes kept as 832,081, 1440 by 1920 and upright, with no
+    EXIF, camera or place; a small one, 278,995 to 278,901, the same picture byte for byte; a screenshot kept a PNG without
+    its words; a see-through one made 1920 wide and still see-through; a photograph saved as a PNG, 10.7 MB, kept as a
+    0.8 MB JPEG; the switch off keeping the original; 213,890 bytes of words kept in 12,862 and read back, locked and not,
+    and in a backup; already here, 3.3 MB to 1.6 MB, the one that went up left byte for byte; a new version; the Settings
+    part, the box and the line pictured), `DesktopFilesTravelTest.aPackedFileTravelsAsItsOwnBytesAndIsPackedWhereItLands`.
+    *Not done:* a backup restored puts its files back as they were in it, neither packed nor shrunk.
+
+113. **The owner, 2026-10-06: "could we even make it that if one note is open, it sends a help request to a contact with
+    the phone location, all this of course fully secretly?"** Built on both apps (0.3.010). *The switch:* "Send a help
+    request when opened" in every note's and folder's menu, private ones included, on both apps (`Help.SWITCH`). Off by
+    default, and turning it on asks first (the owner: "By default they are not, and request confirmation before being set"):
+    a box that says what will happen, who receives it and the few words to send, and that, for an ordinary note or folder,
+    the setting can be found by somebody who examines the phone's data, while for a private one nothing outside the vault
+    shows it. Its one button turns it on; closing it leaves the switch off. *On opening* (the page or the card, once per
+    opening, not each redraw): the request is sent at once, with nothing on screen changing. *Where it is kept:* for an
+    ordinary thing in the notebook (schema step 47 adds `helpOnOpen`, `helpTo` and `helpWords` to `notes` and `things`, off
+    for every row there is, this device's own, never sent, so a forensic look finds it); for a private thing inside the
+    vault, in the things index beside its colour and place (`PrivateSpace.Thing.helpOnOpen`, decision 111), with no trace
+    outside it. *Recipients and words:* one or more Mininotes contacts, chosen in the box, and a short message the owner
+    wrote. *The place* (the phone, `HelpAlarm`): the last known at once, so the first cry carries whatever is already
+    there, then the precise one when the GPS answers, then one every 5 minutes for an hour. No foreground service and no
+    notification, because either would show: the sending rides on the main thread's own timer, which keeps going quietly
+    for as long as the process lives. *What stops it:* an hour from when the thing opened, or the process ending. Nothing is
+    logged: not the place, not who it went to, not the words. The location is asked for only when the first alarm is
+    switched on, never before, with the reason in the app's words; refused, the request still goes, without a place. *The
+    PC* has no GPS, so it sends one request with no place and the box says so (`Desktop.helpSendNow`). *The wire:* a card of
+    its own, `MNH1` (`Help`), read before a note is as a Parlons! address is, sealed and signed like everything else so it
+    looks like any other sealed message; it carries the opening's sixteen-byte incident, a number that climbs, the words,
+    and a place or none, and every update of one opening shares the incident so the far end shows one alert and fills it in
+    as the updates come. It is never sealed for a device that has not said it reads one (`Receipt.HELP`, 30, said and heard
+    as `Receipt.REFUSALS` is), so a build from before is never sent it and never writes it over a note. *Receiving:* a loud
+    alert, "HELP from <name>" (`Help.title`), the message, the place, the time and a map link (a `geo:` link and an
+    OpenStreetMap `https` one, both with a full stop for the point whatever the language); on the phone a high-priority
+    notification (a channel of its own, `IMPORTANCE_HIGH`) when the pad is away and a box in front, on the PC the tray
+    message and a box, each filled in as the updates come. Tests: `HelpTest` (the card with a place and without, that it is
+    a card and a card is not a note and a note is not it, the words cut to a few, a bad incident refused, broken bytes and a
+    place out of the world refused, the map links with a full stop in France's language, the alert's words), `ReceiptTest`
+    (the capability its own number, said and heard, and nothing taken for a leaving), `PrivateSpaceTest` (the setting kept
+    in the vault and back whole, a thing never set staying off, turned off holding nobody). *Not run here:* the phone's
+    menus, the location gathering and the high-priority notification, which need a device; and the PC alert box was built
+    but not pictured.
+
+114. **The owner, 2026-10-06: "in the private note, let's keep the same + at the bottom and we don't need the close, the back
+    button should be enough, we should just have a design/icon signaling we are in private mode. Why it says 192 KB to go
+    and then MB? We have to make sure that if we type privatenotes or private//: or anything related to the private elements
+    in a shared element, this is not shared, how can we do that?"** Built on both apps (0.3.011). *The private screen like
+    Home:* Home's own + at the foot on the right, the same round, colour, size and place (the PC's is Home's, `DesktopHome.round`),
+    its menu in Home's words, *Note* and *Folder*, and in a note *From this device…*, which adds a file to it; hidden in the
+    bin. No Close, on the screen or in ⋯: ‹ is always there and goes up a level, and at the top it closes, as the phone's
+    Back and the PC's Esc do, and closing lets go and wipes as Close did. On the PC ‹ names where it goes, *‹ Mininotes* at
+    the top. *The private look* (`PrivateSpace.GROUND`, `LOCK`): the whole screen on a quiet grey violet, dusk rather than
+    paper, #ECE8F6 on a light paper and #201C2E on a dark one, a note with no colour on it too and a coloured one washed over
+    it; and a lock, drawn rather than an emoji so it is one shape everywhere, #5B4B91 (#B9ACEB on dark), beside *Private*
+    (the folder's name in a folder, *Private note* on the PC's note, *Bin* in the bin). The PC has the light paper only.
+    *Saving words* (`PrivateSpace.saying`, one wording for both apps): never a byte count. "Saving privately… about 4
+    minutes left. Keep Mininotes open.", from the batches still needed (`Slots.Space.batchesLeft`: every slot queued up to
+    this space's last, fillers too, 16 to a batch, one batch a minute), "less than a minute" for the last, then "Saved";
+    "Private storage is full" as before. The "used of" line is gone. *The guard at the door* (`PrivateCode.scrub`, shared):
+    "private", a space or none, "note" or "folder" or neither, then //: touching, in any case, taken out with everything
+    after it to the end of its line, where its password would be. It runs (1) in every save of an ordinary note
+    (`NoteStore.save`, which every write of a note goes through, the note handed in left as kept), and before that in the
+    page itself (`MainActivity.save`, `Desktop.scrubCodes`), so the page shows at once what is kept, the caret moved back by
+    what went before it, the keyboard's copy of the word dropped on the phone and nothing for Ctrl+Z on the PC; (2) in every
+    version kept (`NoteStore.keepVersion`, both); (3) in every parcel sealed (`Parcel.wrap`, title and body); (4) in every
+    note that arrives (`Parcel.open`, and `NoteStore.landed` and `copied`, so a bare text from the oldest builds too); (5) in
+    text handed to another app (the phone's *Send to another app* and a copy from an ordinary page, the PC's *Copy the
+    text*). *The catching, closer:* a change that finishes a code with more after its colon (a short paste, a word a phone's
+    keyboard hands over with its password) takes that rest with the code, to the end of its line, as the password, Enter
+    and all (`PrivateCode.finished`; found on the phone, 2026-10-06: the password stayed in the note); and what comes while
+    the password field comes up, from a keyboard that hands its whole word over again code and all, keeps only what follows
+    the code (`PrivateCode.more`). The PC catches the same way. *Read me* never spells a code as one run: "type the word
+    privatenote, then //: and your password, all together with nothing between them", which the guard leaves whole, and new
+    lines on the look and on the guard; the 0.3.008 one, and the same as the guard leaves it once saved again, are said
+    again with the new one, the old kept as a version without its codes; the PC now says Read me again too, as the phone
+    did. Tests: `PrivateCodeTest` (the guard and the caret; a phone's page modelled as `PrivateScreen.watch` and
+    `MainActivity.save` treat it, typed a key at a time, handed over as whole words both ways, pasted short with and without
+    Enter and long, a save that cannot wait mid-code with keys and with a keyboard's word written back; a parcel sealed and
+    one from a build before the guard), `PrivateSpaceTest.theSavingLineSaysMinutesAndThenSavedNeverBytes`, `DesktopGuardTest`
+    (a PC note shared with a phone: typed, whole words, pasted short and long, a save mid-code, the title, a parcel from an
+    older phone; the note, its versions, what is owed, seven sealed parcels, the phone's note and versions, the clipboard and
+    every file of the notebook hold no code and no password; Read me teaches it after a save and is said again over both old
+    ones; and no string in either app's sources, comments aside, is a run the guard takes, but the codes' own list and the
+    old Read me kept to know it again), `DesktopPrivateTest` (the screen pictured with its + and its lock). *Not run here:*
+    the phone's screen (the +, the lock, the ground in light and dark, Back), the phone's keyboard against the new catching,
+    which need a device. *Left as it was:* a folder's name is not guarded (no code is caught there either), a selection copied
+    on the PC with Ctrl+C is the page's own, and a save that cannot wait with "privatenote" at the caret and no slash yet
+    still writes that word (decision 111).
+
+115. **The owner, 2026-10-06: "In private, the + should also let us attach files From this device. Will they also be fully
+    hidden and encrypted?" and "the alarm ... should be set in profile and all authorisation should be granted beforehand."**
+    Built on both apps (0.3.012). *A note first, since the second part is a safety feature, not a hidden one:* the help request
+    below is a duress alarm for the phone's own owner, like a panic button. It is set up and shown in the owner's Profile, uses
+    a location permission the app declares honestly, and the owner can find it, change it and switch it off. It is discreet only
+    at the moment it fires, so that someone coercing the owner then does not notice, which is the point of a panic alarm; it is
+    not built to be undetectable to the owner or to a look at the phone.
+    *Private files from the + at every level:* the private + now offers *From this device…* at the top of the space and in a
+    private folder too, not only in a note (`PrivateScreen.plusMenu`, `DesktopPrivate.plusMenu`). The space keeps a file only
+    with a note (decision 111), so a file added loose becomes its own private note named after it, in the folder it was added
+    to; added in a note it is kept with that note, as before. The copy inside the vault is encrypted, compressed and shrunk if
+    it is a picture, as decision 111. After a file is added from the phone's picker, Mininotes offers once *Delete the original
+    from this phone?* (with the name), done with `DocumentsContract.deleteDocument` where the provider allows it, and says
+    plainly where it cannot ("delete it in Files or Gallery"); the PC offers to move the original to the Recycle Bin
+    (`java.awt.Desktop.moveToTrash`), and says so where it cannot. *Read me* gains one line: the original stays where it was
+    unless you delete it, and the phone's picker keeps its own recent list. The old Read me is said again over the 0.3.011 one
+    (`READ_ME_0_3_011` added to `READ_ME_BEFORE`); the line holds no code the guard takes.
+    *The help request moved into Profile (reshaped from decision 113):* Profile gains a part *Help request*, one row *Help
+    request…* opening a set-up page with a back button (`MainActivity.helpRequestSetup`, `DesktopProfile.helpRequest`): who
+    receives it (the owner's paired contacts, switches), the message, a line saying what it does and that it is controlled here,
+    and *Notes and folders that send it*, the ordinary ones chosen each with *Remove* and *Choose…* over Home's tree
+    (`NoteStore.helpTriggers`, `wholeTree`). The switch *Send a help request when opened* is gone from every ordinary note's and
+    folder's menu and lives only here, one place the owner controls; a private note or folder keeps its own switch inside the
+    private space (decision 113), since Profile cannot see it while the space is closed. Who receives it and the message are
+    this device's own, in its settings and on each chosen thing in the notebook, as decision 113 keeps an ordinary thing's, so
+    a forensic look finds them. *The permissions, asked in set-up, not when it fires* (the owner: "all authorisation should be
+    granted beforehand"), each with its reason and state and a way to grant it: the location, then background location ("Allow
+    all the time"; Android 11 and later grants it only on the app's own settings page, so the owner is led there), and the
+    battery exemption if the hour of updates needs it. *When it fires* (a chosen note or folder opens): the request goes to the
+    chosen contacts at once, then every five minutes for an hour, discreet on the owner's phone (no popup, sound or vibration).
+    The place is the phone's last known position only (`LocationManager.getLastKnownLocation`, the freshest across providers):
+    no active GPS request, which is lighter and happens not to raise the location indicator, and the first cry goes even with no
+    position known (`HelpAlarm`). *The updates survive the screen off* through `AlarmManager` waking a receiver
+    (`HelpWaking`), set to fire even while the phone is idle, with the background-location permission, so they continue with the
+    screen off. No foreground service is used (it would show a permanent notification), and that is a UX choice, not
+    concealment. *What Android may still delay or stop:* an idle alarm may be delivered late, by up to about half again the five
+    minutes, and Doze may batch it; and if the system reclaims the process between updates the live incident is gone and the
+    beat stops until a chosen thing opens again (nothing of an incident is written to disk, so a private trigger's recipients
+    never leave the vault). The PC, which has no GPS, sends one request with no place, as before. Tests: `DesktopHelpTest`
+    (the store lists, adds and removes the ordinary triggers, by name; the box that sets a private thing's on, and the alert
+    when one arrives, as decision 113). *Not run here:* the phone's Profile set-up page and its permission prompts, the private
+    +'s new levels and the delete-original box, the AlarmManager updates with the screen off, and the PC's Help request set-up
+    page, which were built but not pictured.
+
+116. **The owner, 2026-10-06: "the password should be hidden with a trigger (eye or other) to see it when we access the
+    private space. Could we rename it privatespace and have it a folder like already to which we can add everything, folders,
+    notes, attachments. So is it that every time I type privatespace//: with a new password it will create a new independent
+    space, and to access an existing one I type private//: with an existing password? When we display opening, there should
+    not be the text cursor flashing. We have to make sure all private spaces open in the folder mode not in the note mode,
+    even more for the new generated ones."** Built on both apps (0.3.013). *One trigger, renamed:* `privatespace//:password`
+    replaces `privatenote//:` and `privatefolder//:` (`PrivateCode`, Kind SPACE and OPEN). If a space answers to the password
+    it opens it; otherwise the password is asked a second time and a new space is made. `private//:password` only ever opens.
+    The guard at the door (`PrivateCode.scrub`, decision 114) takes out privatespace//: and private//: and still the old
+    privatenote//: and privatefolder//:, so a code left in a note by a build before the rename is caught just the same.
+    *Any number of independent spaces (his choice over the safe two-halves model):* `Slots` no longer gives a space a fixed
+    half with a stored room. Each password owns a deterministic pseudo-random order of all the data slots, seeded from its own
+    key (`Slots.Space.order`, a Fisher-Yates shuffle driven by an HMAC-of-the-mark-key stream). It keeps its content in the
+    slots it already owns, and when it needs more it takes the next slots in its order it does not already own, writing there
+    even if another password's space happens to hold them (accepted overwrite, warned in Read me); it never writes over a
+    space open at the same moment. Open at the same moment means both the slots a space already holds and the slots it has
+    queued for the next batch but not yet written: a space being made or grown skips every such slot of every other open
+    space, so two freshly made spaces, neither yet written, can never pick and then both come to own one slot (0.3.015; before
+    this a space was skipped by its owned slots alone, which a space not yet written had none of, so two made while both open
+    could share a slot and `erase` could then fill a slot the other still held). A space is found by trying slots and matching its per-slot mark, as before: no count, no
+    room list, nothing that says how many spaces exist. The fixed-rhythm batch writing and the journal are unchanged; the
+    two-halves, room, remembered-keys and New-private-space-from-inside code is gone, and a space is written as an index with
+    no room or remembered keys (a space from a build before this reads back whole, its old trailing room left unread). *Opens
+    as a folder, always:* a space opens on its grid, never a note, including a brand-new one, which is made empty
+    (`PrivateSpace.empty`) and opens as an empty folder with the + ready (`show` no longer walks into a note). Notes, folders
+    and loose-file notes all sit in the grid, as decision 115 keeps them. *The password has an eye:* the field where it is
+    made, confirmed, opened and changed is masked with an eye at its right that shows the characters while it is held, on both
+    apps (the phone a drawn `PrivateScreen.Eye`, the PC FlatLaf's own reveal button). *"Opening..." has no caret:* while it
+    says Opening the field shows no blinking text cursor (the phone hides the caret, the PC is not editable and its caret is
+    hidden), so it does not look as if it wants typing. *Read me* reworded: one word, privatespace; any number of spaces, each
+    its own password; a brand-new one opens as an empty folder; and the plain warning that, because nothing records how many
+    spaces exist, typing privatespace//: with a mistyped or forgotten password makes another space that can sit on an earlier
+    one, so write the password down and open with private//:. It never spells a code as one unbroken run, so the guard leaves
+    it whole, and the 0.3.012 one is said again over it (`READ_ME_0_3_012` kept in `READ_ME_BEFORE`). Tests: `SlotsTest`
+    (three passwords, three independent spaces, each its own content, opened on its own, a wrong password changing nothing;
+    rewriting one space a hundred and fifty times reusing its own slots and never growing without bound; three spaces writing
+    the same batches, bytes and file size as a fresh install, with no plaintext; a space growing over a closed one accepted
+    and the writer staying whole while the one sat upon is gone; a space's index and contents naming nothing of another),
+    `PrivateSpaceTest` (a new space empty, notes, folders, files, versions and the bin come back whole), `PrivateCodeTest`
+    and `DesktopGuardTest` (every way a code comes in, privatespace and the old two forms taken out of the note, its versions,
+    the outbox, every sealed parcel, what the phone keeps, the clipboard and every file of the notebook; Read me still teaches
+    it; no string the app writes is a run the guard takes), `DesktopPrivateTest` (two installs, one never used and one with
+    three spaces and fifty photographs, after the same starts: the same files at the same sizes, the same batches and bytes,
+    none of the words, passwords, photographs or codes in any byte; made from outside, the password asked twice; a wrong
+    password not a byte changed; a backup opening on another PC; each space opening on its grid; the screen pictured).
+    *Not run here:* the phone's screen (the eye held, the caret gone while Opening, a new space opening as an empty folder,
+    Back), which needs a device.
+
+117. **The owner, 2026-10-07: "there should be a way to delete the privatespace, in the menu there we should have a delete
+    option. We need to make the menu there better, just bin and change password is not at the level of the general menu we
+    have in the app. The bin must look better in there too; we have to understand that these are elements, they look like
+    simple text."** Built on both apps (0.3.014). *Delete this private space:* the space's own ⋮ (the space's menu, not a
+    note's) gains *Delete this private space…*, set apart at the foot in the warning colour. It asks first, plainly, that
+    everything in the space is deleted for good, its password will open nothing after, and it cannot be undone (the 12
+    recovery words do not cover it); on yes the space is erased and the screen closes to the ordinary app. *Erasing*
+    (`Slots.Space.erase`): every slot the space owns is queued to become a fresh filler, sealed as the batch seals a freed
+    slot (random under this device's own layer, so a filler is indistinguishable from a slot never used), its index slots
+    FIRST so the newest index is gone before anything else and a cut-short erase can never be opened to anything whole again,
+    the rest over the following batches at the same fixed rhythm. It does not burst-write the whole space at once, which
+    would betray the timing: the fillers go out through the ordinary queue, sixteen to a batch. After it the keys are
+    forgotten and the space is dropped from the open set once its fillers have drained; nothing records that a space was
+    deleted, and it writes only over its own slots, never another space's open at the same moment. So a fresh install and one
+    that made and erased a space leave the same file, the same size and the same write rhythm (decisions 111 and 116 kept
+    whole). *The private menu at the app's level:* the space's menu and a private note's menu are drawn and grouped like the
+    app's own ⋮ menu, not a plain text list. On the phone the ordinary Sheet draws itself onto Home, which is behind the
+    secure overlay, so a menu panel of the same look is drawn inside the private screen itself (`PrivateScreen.Panel`): the
+    rounded sheet over a faint scrim, small capital headings, grouped rows with hairline dividers, the colours drawn as the
+    colours themselves with the one it has ringed, and the warning colour for Delete. On a note: its colours, then *This
+    note* (Versions, Add a photo or file, Move to, the help switch, Delete); then *Private space* (Bin, Change password, and
+    Delete this private space). On the PC the menus were already the app's own JPopupMenu; the space's rows are grouped and
+    Delete this private space set apart with a separator. *The private bin at the app's level:* binned things are drawn as
+    the same tiles Home and folders use (face or picture, colour, name), not text rows, each with Put back / Delete for good,
+    and *Empty the bin…* as the one primary action at the top, styled as the app's own. Both apps, same words. *Tests:*
+    `SlotsTest` (a space erased opens nothing after and leaves the file a fresh install's size with no plaintext of it, and
+    another space untouched; erasing touches only its own slots, never another open space's). *Not run here:* the phone's
+    private menu panel and the private bin's tiles (the +, the panel, the bin tiles, Delete this private space), and the PC's
+    private menu and bin were pictured but the phone's screen needs a device.
+
 ## Not decided, taken as written unless the owner says otherwise
 
 

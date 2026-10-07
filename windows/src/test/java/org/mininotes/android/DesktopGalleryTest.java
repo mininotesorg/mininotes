@@ -106,10 +106,34 @@ public class DesktopGalleryTest {
                 MenuElement[] path=javax.swing.MenuSelectionManager.defaultManager().getSelectedPath();
                 picture((JComponent)path[0].getComponent(),"31-card-menu");picture((JComponent)path[path.length-1].getComponent(),"32-colour-menu");
             }catch(Exception e){throw new RuntimeException(e);}});
+            // A colour picked (the owner, 2026-10-06: "the menu should stay open so that I can set other elements"; decision
+            // 107): the menu is still up, the ring on the colour picked, the strength under it in that colour, and the note
+            // behind it blue. Then its strength, its own: the loudest, and nothing else on the card moves.
+            SwingUtilities.invokeAndWait(()->release(lineOf((JPopupMenu)javax.swing.MenuSelectionManager.defaultManager().getSelectedPath()[2].getComponent(),"Blue")));
+            pad.disk.flush(10000);settle(pad);
+            SwingUtilities.invokeAndWait(()->{try{
+                MenuElement[] path=javax.swing.MenuSelectionManager.defaultManager().getSelectedPath();
+                assertTrue("the menu stays up after a colour",path.length>=3&&path[0].getComponent().isShowing());
+                picture((JComponent)path[0].getComponent(),"32b-card-menu-after-a-pick");picture((JComponent)path[path.length-1].getComponent(),"32c-colour-menu-after-a-pick");
+            }catch(Exception e){throw new RuntimeException(e);}});
+            shoot(pad.frame,"32d-colour-picked-behind");
+            SwingUtilities.invokeAndWait(()->{JComponent band=band((JPopupMenu)javax.swing.MenuSelectionManager.defaultManager().getSelectedPath()[2].getComponent());
+                band.dispatchEvent(new java.awt.event.MouseEvent(band,java.awt.event.MouseEvent.MOUSE_PRESSED,System.currentTimeMillis(),0,band.getWidth()-3,band.getHeight()/2,1,false,java.awt.event.MouseEvent.BUTTON1));});
+            pad.disk.flush(10000);settle(pad);
+            SwingUtilities.invokeAndWait(()->{try{
+                MenuElement[] path=javax.swing.MenuSelectionManager.defaultManager().getSelectedPath();
+                assertTrue("the menu stays up after the strength",path.length>=3&&path[0].getComponent().isShowing());
+                picture((JComponent)path[path.length-1].getComponent(),"32e-colour-menu-its-own-strength");
+            }catch(Exception e){throw new RuntimeException(e);}});
+            shoot(pad.frame,"32f-its-own-strength-behind");
+            assertEquals(Tint.TONES.length-1,store.toneOf(NoteStore.Branch.Kind.PAGE,id));assertEquals("the folder it is in keeps the usual",Tint.USUAL,store.toneOf(NoteStore.Branch.Kind.BOOK,book));
             SwingUtilities.invokeAndWait(()->javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath());
+            // As it was, for the pictures after this one.
+            store.paint(NoteStore.Branch.Kind.PAGE,id,3);store.tone(NoteStore.Branch.Kind.PAGE,id,Tint.USUAL);
+            SwingUtilities.invokeAndWait(pad::refresh);settle(pad);
             // Louder: the strongest tone, the card and the icons drawn again in it.
-            SwingUtilities.invokeAndWait(()->pad.useTone(Tint.TONES.length-2));Thread.sleep(300);shoot(pad.frame,"33-colours-loud");
-            SwingUtilities.invokeAndWait(()->pad.useTone(Tint.FIRST_TONE));
+            SwingUtilities.invokeAndWait(()->usual(pad,Tint.TONES.length-2));Thread.sleep(300);shoot(pad.frame,"33-colours-loud");
+            SwingUtilities.invokeAndWait(()->usual(pad,Tint.FIRST_TONE));
             SwingUtilities.invokeAndWait(()->pad.open(id));pad.disk.flush(10000);Thread.sleep(300);shoot(pad.frame,"34-coloured-note");
             // Dragging: two more notes in the book, so there is an order to change.
             for(String[] one:new String[][]{{"Tuesday","Bins out"},{"Ferry times","08:10 and 12:40"}}){NoteStore.Note more=new NoteStore.Note();more.book=book;more.title=one[0];more.body=one[1];store.save(more);}
@@ -130,7 +154,7 @@ public class DesktopGalleryTest {
             // Held over the middle of another note: it is ringed, and letting go would put the two together in a new collection.
             SwingUtilities.invokeAndWait(()->{DesktopHome.Tile onto=tile(pad.home.folder.grid,"Tuesday");carryTo(pad,onto,onto.getWidth()/2,DesktopHome.FACE/2+10);});
             Thread.sleep(300);shoot(pad.frame,"41b-drag-onto-note");
-            SwingUtilities.invokeAndWait(()->assertTrue(pad.status.getText().startsWith("Let go to put them together")));
+            SwingUtilities.invokeAndWait(()->assertTrue(pad.status.getText(),pad.status.getText().startsWith("Let go to put them together")));
             SwingUtilities.invokeAndWait(pad.home.carry::cancel);
             // A note's line in the tree carried onto another book (a green edge: it goes inside), then between two notes.
             SwingUtilities.invokeAndWait(()->pad.home.folder.close());
@@ -536,10 +560,10 @@ public class DesktopGalleryTest {
             shoot(pad.frame,"83-writing-colours-yours");
             // On a note washed red at the loudest strength: still read.
             store.paint(NoteStore.Branch.Kind.PAGE,together.id,1);
-            SwingUtilities.invokeAndWait(()->{pad.useTone(Tint.TONES.length-1);pad.refresh();});pad.disk.flush(10000);
+            SwingUtilities.invokeAndWait(()->{usual(pad,Tint.TONES.length-1);pad.refresh();});pad.disk.flush(10000);
             SwingUtilities.invokeAndWait(()->pad.open(together.id));pad.disk.flush(10000);SwingUtilities.invokeAndWait(pad::washPage);Thread.sleep(300);
             shoot(pad.frame,"84-writing-colours-on-red");
-            SwingUtilities.invokeAndWait(()->pad.useTone(Tint.FIRST_TONE));
+            SwingUtilities.invokeAndWait(()->usual(pad,Tint.FIRST_TONE));
             dialog(pad,"27h-settings-writing-colours",()->{turnTo("Writing colours");DesktopSettings.open(pad);});
             // A card's own +, pressed, then Note: a new note in that collection, opened.
             int before=pagesIn(store,book);
@@ -719,6 +743,13 @@ public class DesktopGalleryTest {
         if(failure.get()!=null)throw new AssertionError(failure.get());
         pad.disk.flush(10000);SwingUtilities.invokeAndWait(()->{});
     }
+    /** A click let go on a line of a menu, as the mouse does it: through the menu's own handling, which is what closes a menu or leaves it up. */
+    private static void release(JComponent line){line.dispatchEvent(new java.awt.event.MouseEvent(line,java.awt.event.MouseEvent.MOUSE_RELEASED,System.currentTimeMillis(),0,4,4,1,false,java.awt.event.MouseEvent.BUTTON1));}
+    private static JMenuItem lineOf(JPopupMenu menu,String words){for(Component c:menu.getComponents())if(c instanceof JMenuItem m&&words.equals(m.getText()))return m;throw new AssertionError("no line "+words);}
+    /** The strength under a menu's colours: the band in its holder, last in the menu. */
+    private static JComponent band(JPopupMenu colours){return (JComponent)((Container)colours.getComponent(colours.getComponentCount()-1)).getComponent(1);}
+    /** The usual strength, for a picture of everything louder: no menu sets it since each thing has its own (decision 107). */
+    private static void usual(Desktop pad,int tone){pad.usual=tone;pad.washPage();pad.paintApp();pad.home.paintRoom();pad.frame.repaint();}
     /** A menu, drawn on its own at its own size. */
     private static void picture(JComponent menu,String name) throws Exception {
         var image=new java.awt.image.BufferedImage(Math.max(1,menu.getWidth()),Math.max(1,menu.getHeight()),java.awt.image.BufferedImage.TYPE_INT_RGB);

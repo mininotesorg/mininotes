@@ -29,6 +29,15 @@ public class TintTest {
         for(int colour=1;colour<Tint.count();colour++)
             assertTrue(Tint.NAMES[colour],brightness(Tint.of(colour,true))>brightness(Tint.of(colour,false)));
     }
+    @Test public void aThingWithNoStrengthOfItsOwnIsWashedAtTheUsual() {
+        // Decision 107: each thing's own, or the usual, which is what the whole pad had; a number that is no tone is the usual.
+        assertEquals(7,Tint.tone(7,3));assertEquals(0,Tint.tone(0,3));
+        assertEquals(3,Tint.tone(Tint.USUAL,3));assertEquals(3,Tint.tone(Tint.TONES.length,3));assertEquals(3,Tint.tone(-9,3));
+        assertEquals("a usual that is no tone is where a pad starts",Tint.FIRST_TONE,Tint.tone(Tint.USUAL,99));
+        assertFalse(Tint.toned(Tint.USUAL));assertTrue(Tint.toned(0));assertTrue(Tint.toned(Tint.TONES.length-1));
+        // The same wash as the day before for a thing never given one: the usual, weighed as the one setting was.
+        assertEquals(Tint.weigh(0.12f,5,0.72f),Tint.weigh(0.12f,Tint.tone(Tint.USUAL,5),0.72f),0f);
+    }
     @Test public void noWeightLeavesTheSurfaceAsItWas() {
         for(int colour=1;colour<Tint.count();colour++)assertEquals(PAPER,Tint.over(colour,PAPER,0f,false));
     }

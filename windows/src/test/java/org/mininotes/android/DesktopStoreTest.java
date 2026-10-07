@@ -62,13 +62,82 @@ public class DesktopStoreTest {
         assertNull(store.get(later.id));assertEquals("Synthetic list kept in the backup",store.get(kept.id).body);
         assertEquals(4,store.colourOf(NoteStore.Branch.Kind.PAGE,kept.id));assertEquals(6,store.colourOf(NoteStore.Branch.Kind.BOOK,book));
     }
+    /** The owner, 2026-10-06: "the color intensity ... should be specific to the elements selected" (decision 107). */
+    @Test public void aStrengthIsOneThingsOwnAndEverythingElseKeepsTheUsual() throws Exception {
+        NoteStore.Note red=note("Red, loud"),other=note("Red too, as it was");
+        store.paint(NoteStore.Branch.Kind.PAGE,red.id,1);store.paint(NoteStore.Branch.Kind.PAGE,other.id,1);
+        var trips=store.addCollection("Trips");var walks=store.addCollection("Walks");
+        // Never given one: the usual, for a note and for a folder, on its row, on the note read whole and on its line.
+        assertEquals(Tint.USUAL,store.toneOf(NoteStore.Branch.Kind.PAGE,red.id));assertEquals(Tint.USUAL,store.toneOf(NoteStore.Branch.Kind.COLLECTION,trips.id));
+        assertEquals(Tint.USUAL,store.get(red.id).tone);
+        for(NoteStore.Branch one:store.wholeTree())assertEquals(one.name,Tint.USUAL,one.tone);
+        long count=revisionOf(trips.id);
+        store.tone(NoteStore.Branch.Kind.PAGE,red.id,8);store.tone(NoteStore.Branch.Kind.COLLECTION,trips.id,1);
+        // Read back on it, and on nothing else.
+        assertEquals(8,store.toneOf(NoteStore.Branch.Kind.PAGE,red.id));assertEquals(8,store.get(red.id).tone);
+        assertEquals(Tint.USUAL,store.toneOf(NoteStore.Branch.Kind.PAGE,other.id));assertEquals(Tint.USUAL,store.get(other.id).tone);
+        assertEquals(1,store.toneOf(NoteStore.Branch.Kind.COLLECTION,trips.id));assertEquals(Tint.USUAL,store.toneOf(NoteStore.Branch.Kind.COLLECTION,walks.id));
+        // Beside its colour on every line that is drawn, so nothing is asked while drawing: the tree, and what Home holds.
+        for(List<NoteStore.Branch> lines:List.of(store.wholeTree(),store.contents(Things.HOME)))for(NoteStore.Branch one:lines)
+            assertEquals(one.name,one.id.equals(red.id)?8:one.id.equals(trips.id)?1:Tint.USUAL,one.tone);
+        // Since decision 108 it travels as the colour does: a folder's count moves for a strength as for a colour.
+        assertEquals("a strength is a change that travels",count+1,revisionOf(trips.id));
+        store.paint(NoteStore.Branch.Kind.COLLECTION,trips.id,4);assertEquals(count+2,revisionOf(trips.id));
+        // A save writes the note's whole row: its strength is carried over, whatever the page that saved it knew.
+        NoteStore.Note written=store.get(red.id);written.tone=Tint.USUAL;written.body="Red, loud, and longer";store.save(written);
+        assertEquals(8,store.get(red.id).tone);
+        // What it is washed at: its own, or the usual one where it has none; a number that is no tone is the usual.
+        assertEquals(8,Tint.tone(store.get(red.id).tone,3));assertEquals(3,Tint.tone(store.get(other.id).tone,3));assertEquals(3,Tint.tone(99,3));
+        // The usual again: given back.
+        store.tone(NoteStore.Branch.Kind.PAGE,red.id,Tint.USUAL);assertEquals(Tint.USUAL,store.get(red.id).tone);
+        // A restore of this pad puts each strength back with its colour; a backup added as copies takes none.
+        store.tone(NoteStore.Branch.Kind.PAGE,red.id,6);
+        Path zip=temp.getRoot().toPath().resolve("tones.zip");DesktopBackup.write(store,zip);
+        store.tone(NoteStore.Branch.Kind.PAGE,red.id,0);store.tone(NoteStore.Branch.Kind.COLLECTION,trips.id,9);
+        DesktopBackup.add(store,zip,null,true);
+        assertEquals(6,store.toneOf(NoteStore.Branch.Kind.PAGE,red.id));assertEquals(1,store.toneOf(NoteStore.Branch.Kind.COLLECTION,trips.id));
+        assertEquals(Tint.USUAL,store.toneOf(NoteStore.Branch.Kind.PAGE,other.id));
+        DesktopBackup.add(store,zip);
+        for(NoteStore.Branch one:store.wholeTree())if(one.kind==NoteStore.Branch.Kind.PAGE&&!one.id.equals(red.id))assertEquals(one.name,Tint.USUAL,one.tone);
+    }
+    private long revisionOf(String thing){try(Cursor c=store.getReadableDatabase().rawQuery("SELECT revision FROM things WHERE id=?",new String[]{thing})){assertTrue(c.moveToFirst());return c.getLong(0);}}
+    /** The upgrade keeps every look (decision 107): nothing has a strength of its own, and the usual is the setting there was. */
+    @Test public void theUpgradeLeavesEveryThingAtTheStrengthThePadHad() throws Exception {
+        Context old=new Context(temp.newFolder("before-tones"));
+        try(java.sql.Connection db=java.sql.DriverManager.getConnection("jdbc:sqlite:"+old.getFilesDir().toPath().resolve("mininotes.db"));
+            java.sql.Statement run=db.createStatement()) {
+            for(String sql:SchemaMigrations.create().subList(0,2))run.execute(sql);
+            for(String sql:SchemaMigrations.upgrade(1,43))run.execute(sql);
+            run.execute("INSERT INTO notes(id,title,body,notebook,pinned,deleted,updated,colour) VALUES('n-1','Groceries','Bread','',0,0,1,4)");
+            run.execute("INSERT INTO things(id,parent,kind,name,made,updated,tint) VALUES('t-1','HOME','collection','Kitchen',1,1,5)");
+            run.execute("PRAGMA user_version=43");
+        }
+        // The one setting the pad had, as the PC kept it: loud.
+        old.getSharedPreferences("settings",0).edit().putString("tone","8").apply();
+        try(NoteStore upgraded=new NoteStore(old)) {
+            try(Cursor row=upgraded.getReadableDatabase().rawQuery("PRAGMA user_version",null)){assertTrue(row.moveToFirst());assertEquals(SchemaMigrations.VERSION,row.getInt(0));}
+            assertEquals(4,upgraded.get("n-1").colour);assertEquals(Tint.USUAL,upgraded.get("n-1").tone);
+            assertEquals(5,upgraded.colourOf(NoteStore.Branch.Kind.COLLECTION,"t-1"));assertEquals(Tint.USUAL,upgraded.toneOf(NoteStore.Branch.Kind.COLLECTION,"t-1"));
+            // So each is washed at 8, as the day before: the note, the folder, Home and a place.
+            int usual=DesktopLook.usual(old);assertEquals(8,usual);
+            assertEquals(8,Tint.tone(upgraded.get("n-1").tone,usual));assertEquals(8,Tint.tone(upgraded.toneOf(NoteStore.Branch.Kind.COLLECTION,"t-1"),usual));
+            assertEquals(8,Tint.tone(DesktopLook.tone(old,Desktop.HOME_TONE),usual));assertEquals(8,Tint.tone(DesktopLook.tone(old,"tone_"+NoteStore.FAVOURITES),usual));
+            java.awt.Color before=DesktopLook.wash(4,Desktop.PAPER,0.12f,0.72f,8);
+            assertEquals(before,DesktopLook.wash(upgraded.get("n-1").colour,Desktop.PAPER,0.12f,0.72f,Tint.tone(upgraded.get("n-1").tone,usual)));
+        }
+    }
     @Test public void theReadingRungAndColourStrengthAreKeptAsThePhoneKeepsThem() {
         // A PC set on the older four sizes lands on the nearest rung of the ten; a new one in the middle.
         assertEquals(DesktopLook.FIRST,DesktopLook.rung(context));
         context.getSharedPreferences("settings",0).edit().putString("textSize","3").apply();assertEquals(7,DesktopLook.rung(context));
         DesktopLook.keepRung(context,12);assertEquals(9,DesktopLook.rung(context));
         assertEquals(18f,DesktopLook.size(DesktopLook.FIRST),0.01f);
-        assertEquals(Tint.FIRST_TONE,DesktopLook.tone(context));DesktopLook.keepTone(context,7);assertEquals(7,DesktopLook.tone(context));
+        // The usual strength is the one setting the pad had, read as it was left (decision 107); Home's and a place's own are
+        // kept beside their colours, and one never given is the usual.
+        assertEquals(Tint.FIRST_TONE,DesktopLook.usual(context));
+        context.getSharedPreferences("settings",0).edit().putString("tone","7").apply();assertEquals(7,DesktopLook.usual(context));
+        assertEquals(Tint.USUAL,DesktopLook.tone(context,Desktop.HOME_TONE));assertEquals(7,Tint.tone(DesktopLook.tone(context,Desktop.HOME_TONE),DesktopLook.usual(context)));
+        DesktopLook.keepTone(context,Desktop.HOME_TONE,2);assertEquals(2,DesktopLook.tone(context,Desktop.HOME_TONE));assertEquals("the usual is not moved by it",7,DesktopLook.usual(context));
         // No colour washes nothing; a colour at a louder tone washes further from the paper.
         java.awt.Color paper=Desktop.PAPER;assertEquals(paper,DesktopLook.wash(Tint.NONE,paper,0.12f,0.72f,9));
         int quiet=DesktopLook.wash(1,paper,0.12f,0.72f,0).getBlue(),loud=DesktopLook.wash(1,paper,0.12f,0.72f,9).getBlue();
@@ -109,7 +178,9 @@ public class DesktopStoreTest {
         byte[] plain=Parcel.wrap(new Parcel.Sent("c","From phone","b","Shared notes","A note","From Android's wire format",false));
         UUID uuid=UUID.fromString(id);byte[] page=java.nio.ByteBuffer.allocate(16).putLong(uuid.getMostSignificantBits()).putLong(uuid.getLeastSignificantBits()).array();
         byte[] sealed=Envelope.seal(page,1,12345,plain,sender,receiver.agreement().getPublic());
-        Post.Landed arrived=Post.arrived(context,store,receiver,sealed);assertEquals(id,arrived.note);assertEquals("From Android's wire format",store.get(id).body);
+        Post.Landed arrived=Post.arrived(context,store,receiver,sealed);
+        // Shared with this PC for the first time by somebody else: kept, and waiting for an answer (decision 109).
+        assertTrue(arrived.waiting);assertEquals("From Android's wire format",store.get(id).body);
         assertTrue((Boolean)store.readOnlyHere(id)[0]);
         assertThrows(IllegalStateException.class,()->DesktopEdits.save(store,store.get(id),"","unauthorized edit"));
         assertEquals("From Android's wire format",store.get(id).body);

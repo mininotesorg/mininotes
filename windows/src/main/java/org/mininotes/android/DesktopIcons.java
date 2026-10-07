@@ -227,46 +227,9 @@ final class DesktopIcons {
     /**
      * The turn a camera wrote into a JPEG (EXIF orientation, 1 to 8), which Explorer and every photo viewer turn the
      * picture by before showing it; ImageIO does not, and a photograph held upright would be worn on its side. 1 where
-     * nothing says otherwise, or the bytes cannot be read that far.
+     * nothing says otherwise, or the bytes cannot be read that far. Read where every picture added is made smaller too.
      */
-    static int orientation(byte[] b) {
-        try {
-            if(b==null||b.length<4||(b[0]&0xff)!=0xFF||(b[1]&0xff)!=0xD8)return 1;
-            int at=2;
-            while(at+4<=b.length) {
-                if((b[at]&0xff)!=0xFF)return 1;
-                int marker=b[at+1]&0xff;at+=2;
-                if(marker==0xD8||marker>=0xD0&&marker<=0xD7||marker==0x01)continue;
-                if(marker==0xDA||marker==0xD9)return 1;
-                int length=((b[at]&0xff)<<8)|(b[at+1]&0xff);
-                if(length<2||at+length>b.length)return 1;
-                if(marker==0xE1&&length>=16&&b[at+2]=='E'&&b[at+3]=='x'&&b[at+4]=='i'&&b[at+5]=='f'&&b[at+6]==0&&b[at+7]==0) {
-                    int tiff=at+8,end=at+length;
-                    boolean little=b[tiff]=='I'&&b[tiff+1]=='I';
-                    if(!little&&!(b[tiff]=='M'&&b[tiff+1]=='M'))return 1;
-                    int first=tiff+(int)number(b,tiff+4,4,little);
-                    if(first<tiff||first+2>end)return 1;
-                    int entries=(int)number(b,first,2,little);
-                    for(int e=0;e<entries;e++) {
-                        int entry=first+2+e*12;
-                        if(entry+12>end)return 1;
-                        if(number(b,entry,2,little)==0x0112) {
-                            int turn=(int)number(b,entry+8,2,little);
-                            return turn>=1&&turn<=8?turn:1;
-                        }
-                    }
-                    return 1;
-                }
-                at+=length;
-            }
-        } catch(RuntimeException damaged){/* unturned, then */}
-        return 1;
-    }
-    private static long number(byte[] b,int at,int bytes,boolean little) {
-        long n=0;
-        for(int i=0;i<bytes;i++)n|=(long)(b[at+(little?i:bytes-1-i)]&0xff)<<(8*i);
-        return n;
-    }
+    static int orientation(byte[] b){return Shrink.orientation(b);}
 
     /**
      * A square picture turned as EXIF says - where each pixel goes, as the matrix {m00,m10,m01,m11} and whether the side

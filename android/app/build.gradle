@@ -6,8 +6,8 @@ android {
         applicationId 'org.mininotes.android'
         minSdk 28
         targetSdk 35
-        versionCode 2037
-        versionName '0.2.037'
+        versionCode 3016
+        versionName '0.3.016'
         // True only in the demo build below: made-up notes on first start and pretend recovery words (see Demo).
         buildConfigField 'boolean','DEMO','false'
     }

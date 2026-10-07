@@ -23,6 +23,8 @@ public final class Desktop {
     static final Color PAPER=new Color(250,249,244),INK=new Color(43,48,43),QUIET=new Color(111,117,108),ACCENT=new Color(48,99,72);
     // The look is set before a single component is made, fields included: a tree made first keeps the old one.
     static{DesktopUi.install();}
+    // Pictures added on this PC are drawn smaller with ImageIO (decision 112): said before any is kept.
+    static{Shrink.painter=DesktopPictures.PAINTER;}
     final JFrame frame=new JFrame("Mininotes");
     final JTextField title=new JTextField();
     final Paper page=new Paper();
@@ -30,7 +32,7 @@ public final class Desktop {
     /** Whether this PC's notebook is encrypted, always in sight; a click opens Security. */
     final JLabel security=new JLabel();
     /** This build, beside the name in the bar - and, when a newer one is out, the way to it. */
-    static final String VERSION="0.2.037";
+    static final String VERSION="0.3.016";
     final JLabel version=new JLabel();
     /** Beside the version, only while a newer one is out: an outlined button, so it reads as one to press. */
     final JButton updateButton=new JButton();
@@ -115,7 +117,7 @@ public final class Desktop {
     /** The main area: Home, or the note that is open, filling the window (docs/HOME.md, decision 2). */
     private final JPanel mainArea=new JPanel(new CardLayout());
     /** Whether the note is what is on the screen, rather than Home. */
-    private boolean onPage;
+    boolean onPage;
     /** What is open, the newest first, as cards over the window: the tab bar's place (see DesktopOverview). */
     final DesktopOverview overview=new DesktopOverview(this);
     /** What is open, down the left of the page area (decision 77). */
@@ -158,10 +160,13 @@ public final class Desktop {
         @Override public void paint(Graphics g0) {
             Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
             int w=getWidth(),h=getHeight(),mid=w/2;
-            g.setColor(PAPER);g.fillRect(0,0,w,h);
-            g.setColor(over?ACCENT:DesktopUi.LINE);g.fillRect(over?mid-1:mid,0,over?2:1,h);
+            // In the app's colour, as the bar and the side list are (see paintApp): a cream band down a coloured window was
+            // the one thing left that was not (the owner's picture, 2026-10-05).
+            Color shelf=DesktopLook.wash(homeColour(),DesktopUi.SHELF,0.12f,0.72f,homeTone());
+            g.setColor(shelf);g.fillRect(0,0,w,h);
+            g.setColor(over?ACCENT:DesktopUi.mix(shelf,INK,0.12f));g.fillRect(over?mid-1:mid,0,over?2:1,h);
             int top=h/2-HANDLE/2;
-            g.setColor(over?DesktopUi.mix(ACCENT,Color.WHITE,0.85f):DesktopUi.SHELF);g.fillRoundRect(0,top,w,HANDLE,w,w);
+            g.setColor(over?DesktopUi.mix(ACCENT,Color.WHITE,0.85f):shelf);g.fillRoundRect(0,top,w,HANDLE,w,w);
             g.setColor(over?ACCENT:DesktopUi.LINE);g.drawRoundRect(0,top,w-1,HANDLE-1,w,w);
             g.setColor(over?ACCENT:QUIET);g.setStroke(new BasicStroke(1.6f,BasicStroke.CAP_ROUND,BasicStroke.JOIN_ROUND));
             // The arrow says which way a click moves the panel: the tree folds left; the open list folds right, and opens left.
@@ -211,6 +216,8 @@ public final class Desktop {
     final Context context;
     final NoteStore store;
     final Keys keys;
+    /** Private notes and folders, and the file that keeps them the same for everybody (decision 111). */
+    final DesktopPrivate privately;
     final Background disk=new Background(SwingUtilities::invokeLater),network=new Background(SwingUtilities::invokeLater);
     final Background connectivity=new Background(SwingUtilities::invokeLater);
     final javax.swing.Timer autosave,syncLater;
@@ -240,10 +247,11 @@ public final class Desktop {
     private final Map<String,Long> offeredAt=new HashMap<>();
     private final Map<String,Long> due=new HashMap<>();
     /**
-     * The reading rung and how strongly colours land, as the phone keeps them (see DesktopLook). The rung is this
-     * PC's: what every note is read at unless it has one of its own (see Reading).
+     * The reading rung and the usual strength of a colour, as the phone keeps them (see DesktopLook). The rung is this
+     * PC's: what every note is read at unless it has one of its own (see Reading). The usual strength is the same for
+     * colours: what a thing is washed at unless it has one of its own (see toneOf; decision 107).
      */
-    int rung=DesktopLook.FIRST,tone=Tint.FIRST_TONE;
+    int rung=DesktopLook.FIRST,usual=Tint.FIRST_TONE;
     /** The notes with a rung of their own, by id, read with the tree, so a note's menu knows it before it is open. */
     private volatile Map<String,Integer> rungsNow=Map.of();
     /** The notes shown without their writing lines on this PC, as last read, for their menus. */
@@ -393,14 +401,21 @@ public final class Desktop {
         Post.filesMoved=note->SwingUtilities.invokeLater(()->{if(base!=null&&base.id.equals(note)){fileCards.show(note);updateStanding();}});
         // Files sent or received on their own moved on - fetched, answered: said, and the list drawn again (see DesktopDrops).
         Post.news=landed->SwingUtilities.invokeLater(()->{if(!closing)DesktopDrops.heard(this,landed);});
-        autosave=new javax.swing.Timer(350,e->save(null));autosave.setRepeats(false);
+        // Not while a private code is half typed at the caret (decision 111): the writing down waits for the next key.
+        autosave=new javax.swing.Timer(350,e->{if(codeBeingTyped()){((javax.swing.Timer)e.getSource()).restart();return;}save(null);});autosave.setRepeats(false);
         syncLater=new javax.swing.Timer(1000,e->sendDue());syncLater.start();
         Toolkit.getDefaultToolkit().addAWTEventListener(using,AWTEvent.KEY_EVENT_MASK|AWTEvent.MOUSE_EVENT_MASK|AWTEvent.MOUSE_WHEEL_EVENT_MASK);
         idle=new javax.swing.Timer(20_000,e->relockIfIdle());idle.start();
         // Mininotes started again while this one runs: it asked this window to come forward.
         try{Files.writeString(folder.resolve(RUNNING),VERSION);}catch(IOException ignored){/* an older one simply is not asked to make way */}
         current=this;
+        privately=new DesktopPrivate(this);
         build();
+        // A code typed in a note's page or title, or in the search, is caught there before anything can keep it (decision 111).
+        privately.watch(page,()->!drawing&&base!=null,()->((javax.swing.undo.UndoManager)page.getClientProperty("undo")).discardAllEdits());
+        privately.watch(title,()->!drawing&&base!=null,()->{});
+        privately.watch(home.search,()->true,()->{});
+        privately.start(folder);
         // Files dropped from Explorer: on a note, attached to it; on a collection, kept with it; on Home, kept there (see DesktopDrops.aim).
         DesktopDrops.takeDrops(this);
         disk.submit(()->{
@@ -413,9 +428,12 @@ public final class Desktop {
             step="reading your notebook";store.getWritableDatabase();
             store.usually=syncAfter();
             // Shared with me a place, out of the collection 0.2.026 made for it, and the two notes everybody has, once a
-            // device (decision 94): before the note to open is chosen, so a fresh notebook opens on My first note.
+            // device (decision 94): before what to open is chosen, so a fresh notebook opens on Home with the two on it.
             store.sharedWithMeBecomesAPlace();
-            if(welcomes)store.welcome(VERSION);
+            boolean welcomed=welcomes&&store.welcome(VERSION);
+            // Read me said again where it still says what an earlier build wrote, as the phone does: since 0.3.011 its codes
+            // are taught with the word and //: apart, so the guard at the door leaves them whole (decision 114).
+            if(welcomes)welcomed|=store.readMeAgain();
             // A locked notebook seals any attachment still plain: one kept before the lock covered attachments.
             byte[] opened=context.databaseKey();if(opened!=null){step="sealing attachments";DesktopFiles.every(store,opened,true);}
             step="reading your last note";
@@ -430,12 +448,16 @@ public final class Desktop {
             if(note==null&&!HOME_SHOWN.equals(where)) {
                 note=store.latest();
                 if(note==null){note=new NoteStore.Note();note.book=store.someBook();store.save(note);}
+                // Opened for the first time, the notes everybody starts with made just now: on Home, where they are to be
+                // seen, not inside one of them (the owner, 2026-10-05: "a new downloaded windows app should open on the
+                // desktop not inside the My first note"). Any other notebook opens on its last note, as it did.
+                else if(where.isEmpty()&&welcomed)note=null;
             }
             return new Object[]{note,open};
         },opened->{
             NoteStore.Note note=(NoteStore.Note)opened[0];overview.use((Overview)opened[1]);
             step="drawing your notes";
-            tone=DesktopLook.tone(context);showSize(DesktopLook.rung(context));whoWrote=DesktopLook.whoWrote(context);
+            usual=DesktopLook.usual(context);showSize(DesktopLook.rung(context));whoWrote=DesktopLook.whoWrote(context);
             startNote=note==null?null:note.id;
             if(note!=null)display(note);else showHome();
             refresh();status.setText(" ");if(!treeWanted)showTree(false);else split.setDividerLocation(sideWidth);if(!offline){startNode();lookForUpdate(false);}
@@ -493,7 +515,12 @@ public final class Desktop {
         frame.setIconImages(List.of(DesktopIcon.image(16),DesktopIcon.image(32),DesktopIcon.image(48),DesktopIcon.image(256)));
         frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         frame.setMinimumSize(new Dimension(820,520));frame.setSize(1120,760);frame.setLocationRelativeTo(null);
-        frame.addWindowListener(new WindowAdapter(){public void windowClosing(WindowEvent e){save(()->{if(listenInTray&&ensureTray()){frame.setVisible(false);Node.near(false);}else shutdown(true);});}});
+        // In front again: what waits for an answer and was not said yet is asked now (decision 109).
+        frame.addWindowListener(new WindowAdapter(){public void windowActivated(WindowEvent e){askWaiting();}});
+        frame.addWindowListener(new WindowAdapter(){public void windowClosing(WindowEvent e){privately.left();save(()->{if(listenInTray&&ensureTray()){frame.setVisible(false);Node.near(false);}else shutdown(true);});}});
+        // Minimised, or hidden: whatever is private closes, as it does when the phone is put away (decision 111).
+        frame.addWindowStateListener(e->{if((e.getNewState()&Frame.ICONIFIED)!=0)privately.left();});
+        frame.addComponentListener(new ComponentAdapter(){@Override public void componentHidden(ComponentEvent e){if(privately.showing())privately.left();}});
         JPanel shell=new JPanel(new BorderLayout());shell.setBackground(PAPER);
 
         // The bar: what this is on the left; on the right, whether it is connected, then what can be done, the menu
@@ -501,6 +528,9 @@ public final class Desktop {
         JPanel bar=new JPanel(new BorderLayout(16,0));bar.setBackground(DesktopUi.SHELF);barPanel=bar;
         bar.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(0,0,1,0,DesktopUi.LINE),BorderFactory.createEmptyBorder(10,16,10,16)));
         JLabel brand=new JLabel("Mininotes",new ImageIcon(DesktopIcon.image(28)),SwingConstants.LEFT);brand.setIconTextGap(10);brand.setFont(body.deriveFont(Font.BOLD,18f));brand.setForeground(INK);
+        // The logo and the name are the way Home, as a website's are (the owner, 2026-10-06).
+        brand.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));brand.setToolTipText("Home");brand.getAccessibleContext().setAccessibleName("Mininotes, Home");
+        brand.addMouseListener(new MouseAdapter(){public void mouseClicked(MouseEvent e){if(SwingUtilities.isLeftMouseButton(e))goHome();}});
         JPanel left=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0));left.setOpaque(false);left.add(brand);left.add(Box.createHorizontalStrut(12));left.add(version);left.add(Box.createHorizontalStrut(12));left.add(updateButton);
         updateButton.setFocusPainted(false);updateButton.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,12.5f));updateButton.setMargin(new Insets(3,12,3,12));
         updateButton.putClientProperty(com.formdev.flatlaf.FlatClientProperties.STYLE,"arc:8;foreground:#FFFFFF;background:#306348;hoverBackground:#2A5840;pressedBackground:#224A35;borderWidth:0;focusWidth:0");
@@ -554,9 +584,9 @@ public final class Desktop {
                 setFont(page?DesktopUi.BODY:DesktopUi.BODY.deriveFont(Font.BOLD));
                 // Before its name, its face, small: its icon or picture in its colour, as its tile on Home wears it.
                 int colour=said instanceof Item item?item.branch.colour:Tint.NONE;
-                if(said instanceof Item item){NoteStore.Branch line=item.branch;setIcon(DesktopHome.faceIcon(()->line,TREE_FACE,()->tone));setIconTextGap(8);}
-                // And its row washed in it, at the pad's strength, as the phone's tree view does.
-                wash=Tint.known(colour)?DesktopLook.wash(colour,DesktopUi.SHELF,0.16f,0.82f,tone):null;
+                if(said instanceof Item item){NoteStore.Branch line=item.branch;setIcon(DesktopHome.faceIcon(()->line,TREE_FACE,()->usual));setIconTextGap(8);}
+                // And its row washed in it, at its own strength (decision 107), as the phone's tree view does.
+                wash=said instanceof Item item&&Tint.known(colour)?DesktopLook.wash(colour,DesktopUi.SHELF,0.16f,0.82f,toneOf(item.branch)):null;
                 mark=said instanceof Item item&&DesktopMoving.movable(item.branch)?marks.get(item.branch.id):null;
                 setBackgroundNonSelectionColor(new Color(0,0,0,0));return this;
             }
@@ -615,7 +645,7 @@ public final class Desktop {
         JPanel titled=new JPanel(new BorderLayout(10,0));titled.setOpaque(false);titled.setBorder(BorderFactory.createEmptyBorder(0,12,0,0));
         heading.remove(title);titled.add(title);heading.add(titled);
         // Before the title, the note's icon, as its tile on Home wears it (docs/HOME.md, step 4): a click chooses another.
-        noteFace.setIcon(DesktopHome.faceIcon(()->base==null?null:noteLook(),30,()->tone));
+        noteFace.setIcon(DesktopHome.faceIcon(()->base==null?null:noteLook(),30,()->usual));
         noteFace.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
         noteFace.setMargin(new Insets(3,3,3,3));noteFace.setFocusPainted(false);noteFace.setToolTipText("Change its icon");
         noteFace.getAccessibleContext().setAccessibleName("The note's icon: choose another");
@@ -747,7 +777,7 @@ public final class Desktop {
         // Ctrl+Tab puts up the overview and moves along its cards, as Alt+Tab does with windows; letting go of Ctrl
         // opens the one chosen. Taken before the text areas can use it to move focus.
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(e->{
-            if(!frame.isActive())return false;
+            if(!frame.isActive()||privately!=null&&privately.showing())return false;
             if(e.getID()==KeyEvent.KEY_RELEASED&&e.getKeyCode()==KeyEvent.VK_CONTROL&&overview.cycling()){overview.goChosen();return false;}
             if(e.getID()!=KeyEvent.KEY_PRESSED||e.getKeyCode()!=KeyEvent.VK_TAB||!e.isControlDown())return false;
             boolean backward=e.isShiftDown();save(()->overview.cycle(backward));return true;});
@@ -763,7 +793,41 @@ public final class Desktop {
         javax.swing.undo.UndoManager undo=new javax.swing.undo.UndoManager();page.getDocument().addUndoableEditListener(e->{if(!drawing)undo.addEdit(page.remembered(e.getEdit()));});
         page.putClientProperty("undo",undo);bind("control Z",()->{if(page.isEditable()&&undo.canUndo())undo.undo();});bind("control Y",()->{if(page.isEditable()&&undo.canRedo())undo.redo();});
     }    JButton button(String text,Runnable action){return DesktopUi.button(text,action);}
-    private void bind(String key,Runnable action){frame.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(key),key);frame.getRootPane().getActionMap().put(key,new AbstractAction(){public void actionPerformed(ActionEvent e){action.run();}});}
+    private void bind(String key,Runnable action){frame.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(key),key);frame.getRootPane().getActionMap().put(key,new AbstractAction(){public void actionPerformed(ActionEvent e){if(privately!=null&&privately.showing())return;action.run();}});}
+    /** Whether the word at the caret of the page or the title could still become a private code (see PrivateCode). */
+    private boolean codeBeingTyped() {
+        for(javax.swing.text.JTextComponent field:new javax.swing.text.JTextComponent[]{page,title})
+            if(field.isFocusOwner()&&PrivateCode.typing(field.getText(),field.getCaretPosition()))return true;
+        return false;
+    }
+    /** A save that cannot wait: an unfinished private code at the caret taken out first, so it is never written down. */
+    private void dropUnfinishedCode() {
+        for(javax.swing.text.JTextComponent field:new javax.swing.text.JTextComponent[]{page,title}) {
+            int[] code=PrivateCode.unfinished(field.getText(),field.getCaretPosition());
+            if(code==null)continue;
+            try{field.getDocument().remove(code[0],code[1]-code[0]);}catch(javax.swing.text.BadLocationException moved){/* not there now */}
+            if(field==page)((javax.swing.undo.UndoManager)page.getClientProperty("undo")).discardAllEdits();
+        }
+    }
+    /**
+     * The guard at the door, in the page and the title (the owner, 2026-10-06; decision 114): a whole code that got past the
+     * catching, a paste or one an older build sent, taken out with the rest of its line before anything is written, so the
+     * page shows at once what is kept; the caret moved back by what went before it, and nothing for Ctrl+Z to bring back.
+     */
+    private void scrubCodes() {
+        if(base==null)return;
+        for(javax.swing.text.JTextComponent field:new javax.swing.text.JTextComponent[]{page,title}) {
+            List<int[]> codes=PrivateCode.runs(field.getText());
+            if(codes.isEmpty())continue;
+            int caret=PrivateCode.caretAfter(codes,field.getCaretPosition());
+            try{for(int i=codes.size()-1;i>=0;i--)field.getDocument().remove(codes.get(i)[0],codes.get(i)[1]-codes.get(i)[0]);}
+            catch(javax.swing.text.BadLocationException moved){/* not there now */}
+            field.setCaretPosition(Math.min(caret,field.getDocument().getLength()));
+            if(field==page)((javax.swing.undo.UndoManager)page.getClientProperty("undo")).discardAllEdits();
+        }
+    }
+    /** Whether a change to the page is being drawn rather than typed. */
+    boolean drawingPage(){return drawing;}
     private static DocumentListener watch(Runnable action){return new DocumentListener(){public void insertUpdate(DocumentEvent e){action.run();}public void removeUpdate(DocumentEvent e){action.run();}public void changedUpdate(DocumentEvent e){action.run();}};}
     private void edited(){if(drawing||base==null)return;dirty=true;due.remove(base.id);noteSays(NoteLine.SAVING,NoteLine.Tone.GOING,null);
         // Written in, and shared: waiting to go at once, as the phone's mark turns to the arrow.
@@ -778,8 +842,9 @@ public final class Desktop {
         return dirty&&base!=null&&(!page.getText().equals(Objects.toString(base.body,""))||!title.getText().equals(Objects.toString(base.title,"")));
     }
     void save(Runnable next) {
-        if(next!=null)afterSave=next;
+        if(next!=null){afterSave=next;dropUnfinishedCode();}
         autosave.stop();if(saving)return;
+        scrubCodes();
         // Nothing typed that the notebook does not say already: nothing is written, so nothing goes - above all not the
         // page's older text, written over what arrived one revision higher and sent back to the devices that wrote it.
         if(dirty&&!typedHere()){dirty=false;if(NoteLine.SAVING.equals(noteWords.getText()))noteSays(null,null,null);updateStanding();}
@@ -902,7 +967,11 @@ public final class Desktop {
         peopleShown=List.of();DesktopMark.people(rounds,peopleShown,24);
         selected=null;
         // What was said about the last note is not about this one; the same note drawn again keeps it.
-        if(base==null||!base.id.equals(note.id))noteSays(null,null,null);
+        if(base==null||!base.id.equals(note.id)) {
+            noteSays(null,null,null);
+            // A help request, where this note is set to send one when it opens (decision 113): once per opening, not each redraw.
+            helpOnOpened(NoteStore.Branch.Kind.PAGE,note.id);
+        }
         recorder.leaving(note.id);
         page.setEditable(false);title.setEditable(false);
         if(base!=null)carets.put(base.id,page.getCaretPosition());
@@ -1421,33 +1490,60 @@ public final class Desktop {
     /**
      * A place's colour - Favourites, Recent, Temp, the archive, the bin - chosen as a collection's is (the owner, 2026-10-03:
      * "all groups including these technical ones ... should have a choice of colour too"; decision 81). Kept on this PC, as
-     * Home's own colour is: a place is nobody else's.
+     * Home's own colour is: a place is nobody else's. And how strongly it lands, beside it ("tone_" and its id), the
+     * place's own or the usual (decision 107).
      */
     int placeColour(String id){try{return Integer.parseInt(context.getSharedPreferences("settings",0).getString("colour_"+id,String.valueOf(Tint.NONE)));}catch(RuntimeException unread){return Tint.NONE;}}
     void setPlaceColour(String id,int colour) {
         disk.submit(()->{context.getSharedPreferences("settings",0).edit().putString("colour_"+id,String.valueOf(colour)).apply();return null;},
             done->{home.refresh();home.folder.painted();},this::failed);
     }
-    JMenu placeColourMenu(NoteStore.Branch place){return DesktopLook.colours(placeColour(place.id),colour->setPlaceColour(place.id,colour),()->tone,this::useTone);}
-    /** Colour ▸ for one thing, its colour as the tree last read it from the notebook. */
-    private JMenu colourMenu(NoteStore.Branch thing) {
-        NoteStore.Branch known=find(thing.id);
-        int now=known!=null?known.colour:thing.kind==NoteStore.Branch.Kind.PAGE&&base!=null&&base.id.equals(thing.id)?base.colour:thing.colour;
-        return DesktopLook.colours(now,colour->paint(thing,colour),()->tone,this::useTone);
+    int placeTone(String id){return DesktopLook.tone(context,"tone_"+id);}
+    /** A place's strength, kept at once so the band that set it reads it back, and the place drawn again wherever it shows. */
+    void setPlaceTone(String id,int step) {
+        DesktopLook.keepTone(context,"tone_"+id,step);
+        home.refresh();home.folder.painted();
     }
+    JMenu placeColourMenu(NoteStore.Branch place){return DesktopLook.colours(placeColour(place.id),colour->setPlaceColour(place.id,colour),()->Tint.tone(placeTone(place.id),usual),step->setPlaceTone(place.id,step));}
+    /** Colour ▸ for one thing, its colour and its strength as the tree last read them from the notebook. */
+    private JMenu colourMenu(NoteStore.Branch thing) {
+        NoteStore.Branch known=find(thing.id);boolean open=thing.kind==NoteStore.Branch.Kind.PAGE&&base!=null&&base.id.equals(thing.id);
+        int now=known!=null?known.colour:open?base.colour:thing.colour;
+        int[] own={known!=null?known.tone:open?base.tone:thing.tone};
+        return DesktopLook.colours(now,colour->paint(thing,colour),()->Tint.tone(own[0],usual),step->{own[0]=step;tone(thing,step);});
+    }
+    /** The strength a thing's colour lands at: its own where it was given one, the usual where it was not (decision 107). */
+    int toneOf(NoteStore.Branch thing){return Tint.tone(thing==null?Tint.USUAL:thing.tone,usual);}
     /** A colour given to one thing: kept, and the tree, the cards and the page drawn in it at once. */
     void paint(NoteStore.Branch thing,int colour) {
         if(thing.kind==NoteStore.Branch.Kind.PAGE&&base!=null&&base.id.equals(thing.id))base.colour=colour;
         disk.submit(()->{store.paint(thing.kind,thing.id,colour);return null;},done->{
             // Home, the card and the tree are drawn from the notebook, so they are drawn again once it has been read.
-            refresh();disk.submit(()->null,read->washPage(),e->{});
+            refresh();overview.again();if(openList!=null)openList.refresh();disk.submit(()->null,read->washPage(),e->{});
+            lookSent(thing);
         },this::failed);
     }
-    /** How strongly colours land, for the whole pad: everything coloured drawn again at the new strength. */
-    void useTone(int step) {
-        if(step==tone)return;tone=step;int kept=step;
-        tree.repaint();washPage();home.paintRoom();home.repaint();paintApp();
-        disk.submit(()->{DesktopLook.keepTone(context,kept);return null;},done->{},e->{});
+    /**
+     * A thing's colour or strength decided here goes to everybody who has it, as its icon does (the owner, 2026-10-06: "when
+     * sharing everything should travel, then on the other device it can be set individually"; decision 108). Quietly: the
+     * marks say how it went.
+     */
+    private void lookSent(NoteStore.Branch thing) {
+        if(offline)return;
+        network.submit(()->Post.send(context,store,keys,thing.kind,thing.id),done->refresh(),e->{});
+    }
+    /**
+     * How strongly one thing's colour lands, and that thing's only (the owner, 2026-10-06: "the color intensity applies to
+     * the whole app, it should be specific to the elements selected"; decision 107). Its line of the tree, its page and
+     * its face are drawn at it at once, as the hand moves; Home and the cards once the notebook has it. Sent to whoever has
+     * the thing, as its colour is (decision 108).
+     */
+    void tone(NoteStore.Branch thing,int step) {
+        if(base!=null&&base.id.equals(thing.id))base.tone=step;
+        NoteStore.Branch known=find(thing.id);if(known!=null)known.tone=step;
+        thing.tone=step;
+        tree.repaint();washPage();noteFace.repaint();if(home!=null){home.repaint();home.folder.toned(thing.id,step);}
+        disk.submit(()->{store.tone(thing.kind,thing.id,step);return null;},done->{refresh();overview.again();if(openList!=null)openList.refresh();lookSent(thing);},this::failed);
     }
     /**
      * The page washed in the colour of the note that is open, as on the phone. A collection's card is washed in its own
@@ -1457,8 +1553,10 @@ public final class Desktop {
         // The tree is read after every change, a backup's included, so it is asked first; the note itself if it is not there.
         NoteStore.Branch open=base!=null?find(base.id):null;
         int own=open!=null?open.colour:base!=null?base.colour:Tint.NONE;
-        // A note with no colour of its own is in the app's (see paintApp).
-        if(!Tint.known(own))own=homeColour();
+        // At its own strength (decision 107), which the tree read with its colour.
+        int tone=Tint.tone(open!=null?open.tone:base!=null?base.tone:Tint.USUAL,usual);
+        // A note with no colour of its own is in the app's, at the app's strength (see paintApp).
+        if(!Tint.known(own)){own=homeColour();tone=homeTone();}
         Color paper=DesktopLook.wash(own,PAPER,0.12f,0.72f,tone);
         if(editorPanel!=null)editorPanel.setBackground(paper);
         page.setBackground(paper);title.setBackground(paper);if(paperScroll!=null)paperScroll.getViewport().setBackground(paper);
@@ -1527,6 +1625,7 @@ public final class Desktop {
             JMenuItem temporary=new JMenuItem("Temporary…");temporary.addActionListener(a->save(()->temporaryBox(branch)));menu.add(temporary);
             JMenuItem archive=new JMenuItem("Archive");archive.addActionListener(a->save(()->putAway(branch,false)));menu.add(archive);
             JMenuItem bin=new JMenuItem("Move to bin");bin.addActionListener(a->save(()->putAway(branch,true)));menu.add(bin);
+            // The help request's switch moved out of here into the owner's Profile, one clear place to control it (decision 115).
         }
         // Its words, somewhere else: the phone's Send to another app, here the clipboard.
         if(note){menu.addSeparator();item(menu,"Copy the text",()->save(()->onNote(branch,false,this::copyNote)));}
@@ -1862,7 +1961,8 @@ public final class Desktop {
     void copyNote() {
         if(base==null)return;
         String words=(title.getText().isBlank()?"":title.getText()+"\n\n")+page.getText();
-        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(words),null);
+        // Never a private code, nor the rest of its line, on the clipboard for another program (decision 114).
+        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(PrivateCode.scrub(words)),null);
         status.setText("The note is copied. Paste it anywhere.");
     }
 
@@ -1900,7 +2000,7 @@ public final class Desktop {
     private void sizeHere(int which) {
         if(base!=null&&onPage)resize(noteAsThing(),DesktopLook.clamp(which));else setTextSize(which);
     }
-    private NoteStore.Branch noteAsThing(){return new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,base.id,base.book,base.title,"",0,0,false,base.colour);}
+    private NoteStore.Branch noteAsThing(){NoteStore.Branch thing=new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,base.id,base.book,base.title,"",0,0,false,base.colour);thing.tone=base.tone;return thing;}
     /** The open note as its face is drawn: its colour as the page has it, and what it wears as last read. */
     private NoteStore.Branch noteLook(){NoteStore.Branch look=noteAsThing();look.icon=noteIcon;look.image=noteImage;return look;}
     /** Text size ▸ for one note, at the rung it has of its own as the notebook last said. */
@@ -1910,7 +2010,8 @@ public final class Desktop {
      */
     private JMenuItem linesItem(NoteStore.Branch thing) {
         boolean open=base!=null&&base.id.equals(thing.id);
-        JCheckBoxMenuItem item=new JCheckBoxMenuItem("Writing lines",open?base.lines:!plainNow.contains(thing.id));
+        // Set by looking, as a colour is: the menu stays up (decision 107).
+        JCheckBoxMenuItem item=DesktopLook.stays(new JCheckBoxMenuItem("Writing lines",open?base.lines:!plainNow.contains(thing.id)));
         item.addActionListener(e->{
             boolean on=item.isSelected();
             if(base!=null&&base.id.equals(thing.id)){base.lines=on;page.lined=on;page.repaint();}
@@ -2171,6 +2272,17 @@ public final class Desktop {
         disk.submit(()->{context.getSharedPreferences("settings",0).edit().putLong(HOME_COLOUR,colour).apply();return null;},
             done->{if(home!=null)home.paintRoom();paintApp();washPage();},this::failed);
     }
+    /**
+     * Home's own strength, kept beside its colour ("homeTone", as the phone keeps it): the app's, since Home's colour is
+     * the whole app's (decision 102). Never given one, it is the usual, which is what the whole pad had (decision 107).
+     */
+    static final String HOME_TONE="homeTone";
+    int homeTone(){return Tint.tone(DesktopLook.tone(context,HOME_TONE),usual);}
+    /** Kept at once, so the band that set it reads it back; Home, the bar, the side list and an uncoloured page drawn again. */
+    void toneHome(int step) {
+        DesktopLook.keepTone(context,HOME_TONE,step);
+        if(home!=null)home.paintRoom();paintApp();washPage();
+    }
     /** The bar and the side list, kept to be washed in the app's colour (see paintApp). */
     private JPanel barPanel,sidePanel;
     /**
@@ -2179,14 +2291,14 @@ public final class Desktop {
      * it, and the page of a note that has no colour of its own (see washPage).
      */
     void paintApp() {
-        Color shelf=DesktopLook.wash(homeColour(),DesktopUi.SHELF,0.12f,0.72f,tone);
+        Color shelf=DesktopLook.wash(homeColour(),DesktopUi.SHELF,0.12f,0.72f,homeTone());
         if(barPanel!=null)barPanel.setBackground(shelf);
         if(sidePanel!=null)sidePanel.setBackground(shelf);
         tree.setBackground(shelf);if(openList!=null)openList.setBackground(shelf);
         frame.repaint();
     }
-    /** Colour ▸ for Home, with the strength under it, as for any thing. */
-    JMenu homeColourMenu(){return DesktopLook.colours(homeColour(),this::paintHome,()->tone,this::useTone);}
+    /** Colour ▸ for Home, with its own strength under it, as for any thing. */
+    JMenu homeColourMenu(){return DesktopLook.colours(homeColour(),this::paintHome,this::homeTone,this::toneHome);}
 
     /**
      * Home's own rows in ⋯ while Home is in view, as the phone's ⋮ has them (the owner, 2026-10-04: "the Home should be the
@@ -2547,6 +2659,23 @@ public final class Desktop {
         },files->{refresh();for(String one:files)fileToMine(one);sync(true);},this::failed);
     }
     /** Whether what comes on Temp from my other devices is on Home too (decision 98): those already here move with it. */
+    /**
+     * Shrink the pictures already here… (decision 112): looked at first, the status line saying how far it has got; then
+     * asked, with how much it frees, since an original cannot be had back; then done, and said. Closing the box replaces
+     * nothing.
+     */
+    void shrinkHere() {
+        status.setToolTipText(null);status.setText(Shrink.LOOKING);
+        disk.submit(()->store.shrinkLook((done,of)->SwingUtilities.invokeLater(()->status.setText(Shrink.looking(done,of)))),look->{
+            int n=look.count();
+            if(n==0){status.setText(Shrink.UNCHANGED);DesktopUi.tell(frame,Shrink.SWITCH,DesktopUi.note(Shrink.nothing(look.left),380,DesktopUi.INK,DesktopUi.BODY));return;}
+            if(!DesktopUi.confirm(frame,Shrink.asking(n),Shrink.asked(n,look.before,look.after,look.left),Shrink.yes(n),true)) {
+                disk.submit(()->{store.shrinkForget();return null;},done->status.setText(Shrink.UNCHANGED),this::failed);return;
+            }
+            status.setText(Shrink.shrinking(n));
+            disk.submit(()->store.shrinkDone(look),freed->{status.setText(Shrink.shrunk(n,freed));refresh();},this::failed);
+        },this::failed);
+    }
     void setTempOnHome(boolean on){disk.submit(()->{store.setTempOnHome(on);return null;},done->refresh(),this::failed);}
     /** A file given to this owner's other devices, sent now: its bytes go up, and its sleeve once they are (decision 95). */
     void fileToMine(String file){network.submit(()->Post.fileChanged(context,store,keys,file),done->{},e->{});}
@@ -2612,10 +2741,10 @@ public final class Desktop {
         if(Files.exists(target)&&!DesktopUi.confirm(frame,"Replace backup?","A file called "+target.getFileName()+" is already there. Replace it with a new backup?","Replace",true))return;
         status.setText("Writing backup…");disk.submit(()->{
             byte[] key=context.databaseKey();Path lock=context.getFilesDir().toPath().resolve(DesktopLock.KEPT);
-            if(key!=null){DesktopBackup.write(store,target,key,Files.readAllBytes(lock));return true;}
+            if(key!=null){DesktopBackup.write(store,target,key,Files.readAllBytes(lock),privately.slots());return true;}
             // A lock made for this backup alone: its password opens it anywhere.
-            if(chosen.length>0){Vault.Made made=Vault.make(chosen);java.util.Arrays.fill(chosen,' ');DesktopBackup.write(store,target,made.key,made.kept);return true;}
-            DesktopBackup.write(store,target,null,null);return false;
+            if(chosen.length>0){Vault.Made made=Vault.make(chosen);java.util.Arrays.fill(chosen,' ');DesktopBackup.write(store,target,made.key,made.kept,privately.slots());return true;}
+            DesktopBackup.write(store,target,null,null,privately.slots());return false;
         },locked->status.setText(locked?"Backup saved, locked":"Backup saved, not locked"),this::failed);
     }
     void importBackup() {
@@ -2632,7 +2761,7 @@ public final class Desktop {
         if(how<0)return;boolean replacing=how==1;
         if(replacing&&!confirmReplace())return;
         status.setText(replacing?"Restoring from backup…":"Adding notes from backup…");disk.submit(()->{
-            int count=DesktopBackup.add(store,source,lock->opener[0],replacing);
+            int count=DesktopBackup.add(store,source,lock->opener[0],replacing,privately.slots());
             byte[] opened=context.databaseKey();if(opened!=null)DesktopFiles.every(store,opened,true);
             return new Object[]{count,replacing?store.latest():null};
         },done->{int count=(Integer)done[0];
@@ -2681,9 +2810,10 @@ public final class Desktop {
                     if(size>Attachment.LIMIT){refused.add(Given.refusal(name,Given.TOO_BIG));continue;}
                     if(store.weight()+size>Attachment.PLENTY){refused.add(Given.refusal(name,Given.FULL));continue;}
                     String key=UUID.randomUUID().toString();Path dest=store.fileFor(key).toPath();DesktopFiles.keep(context,source,dest);
-                    try{store.keep(new NoteStore.Held(key,id,name,Attachment.kind(Files.probeContentType(source)),size,System.currentTimeMillis()));}
+                    // A picture made smaller, anything else packed, before its row is written (decision 112).
+                    try{NoteStore.Held held=store.settle(new NoteStore.Held(key,id,name,Attachment.kind(Files.probeContentType(source)),size,System.currentTimeMillis()));store.keep(held);only=held.name;}
                     catch(Exception failure){Files.deleteIfExists(dest);throw failure;}
-                    kept++;only=name;
+                    kept++;
                 } catch(Exception unreadable){refused.add(Given.refusal(name,Given.UNREADABLE));}
             }
             return new Object[]{kept,only,refused};
@@ -2707,7 +2837,7 @@ public final class Desktop {
     void attachPicture(String id,String called,BufferedImage picture) {
         status.setToolTipText(null);
         if(isOpen(id)&&!page.isEditable()){status.setText("This note is read only here");return;}
-        String name=Attachment.picture(System.currentTimeMillis());
+        String name=Attachment.picture(System.currentTimeMillis());String[] keptAs={name};
         status.setText("Adding the picture…");
         disk.submit(()->{
             if(Boolean.TRUE.equals(store.readOnlyHere(id)[0]))throw new IllegalStateException("This note is read only here");
@@ -2717,12 +2847,13 @@ public final class Desktop {
             if(whole.length>Attachment.LIMIT)return Given.refusal(name,Given.TOO_BIG);
             if(store.weight()+whole.length>Attachment.PLENTY)return Given.refusal(name,Given.FULL);
             String key=UUID.randomUUID().toString();Path dest=store.fileFor(key).toPath();DesktopFiles.keep(context,whole,dest);
-            try{store.keep(new NoteStore.Held(key,id,name,"image/png",whole.length,System.currentTimeMillis()));}
+            // A PNG or a JPEG, whichever is the smaller, as every picture added is (decision 112).
+            try{NoteStore.Held held=store.settle(new NoteStore.Held(key,id,name,"image/png",whole.length,System.currentTimeMillis()));store.keep(held);keptAs[0]=held.name;}
             catch(Exception failure){Files.deleteIfExists(dest);throw failure;}
             return "";
         },refused->{
             if(!refused.isEmpty()){status.setText(Given.added(0,null,1)+". "+refused);return;}
-            String said=Given.added(1,name,0);
+            String said=Given.added(1,keptAs[0],0);
             // Another note than the one open: which, after "added", so the person knows where it went.
             if(called!=null&&!isOpen(id))said=said+" to “"+called+"”";
             status.setText(said);
@@ -2750,10 +2881,11 @@ public final class Desktop {
                     if(store.weight()+size>Attachment.PLENTY){refused.add(Given.refusal(name,Given.FULL));continue;}
                     NoteStore.Held held=store.opening(NoteStore.Branch.Kind.COLLECTION,into,name,Files.probeContentType(source),size);
                     Path dest=store.fileFor(held.id).toPath();DesktopFiles.keep(context,source,dest);
-                    // The row is written last: until it exists the bytes are nobody's, and get swept up.
-                    try{store.keep(held);}catch(Exception failure){Files.deleteIfExists(dest);throw failure;}
+                    // The row is written last: until it exists the bytes are nobody's, and get swept up. A picture made smaller,
+                    // anything else packed, before it is (decision 112).
+                    try{held=store.settle(held);store.keep(held);}catch(Exception failure){Files.deleteIfExists(dest);throw failure;}
                     if(place!=null)intoPlaceNow(NoteStore.Branch.Kind.FILE,held.id,place);
-                    kept++;only=name;
+                    kept++;only=held.name;
                 } catch(Exception unreadable){refused.add(Given.refusal(name,Given.UNREADABLE));}
             }
             return new Object[]{kept,only,refused};
@@ -2810,8 +2942,10 @@ public final class Desktop {
         },this::failed);
     }
     private void profile() {
-        DesktopProfile.open(this);
+        DesktopProfile.open(this,null,null);
     }
+    /** Profile over a page of People and devices, with ‹ back to it (decision 105). */
+    void profile(Window over,String backTo){DesktopProfile.open(this,over,backTo);}
     /** Something to say that nobody asked for: in the bar, and over the tray while the window is away. */
     void notice(String said){status.setToolTipText(null);status.setText(said);if(!frame.isVisible()&&tray!=null)tray.displayMessage("Mininotes",said,TrayIcon.MessageType.INFO);}
     void failed(Exception error){status.setText(error.getMessage()==null?"That did not finish. Please try again.":error.getMessage());status.setToolTipText(status.getText());}
@@ -2968,7 +3102,15 @@ public final class Desktop {
             v->{status.setText(who+" is off "+what);refresh();},this::failed),this::failed);
     }
     void arrived(Post.Landed landed) {
+        // A help request arrived (decision 113): the tray says it, and a box shows it loud, filled in as the updates come.
+        if(landed.helpRequest!=null){helpAlert(landed);return;}
         if(landed.files){DesktopDrops.heard(this,landed);return;}
+        // Something another person shared with me for the first time (decision 109): the tray says it once for each thing while
+        // the window is away, and the pop-up asks, once for each thing, whenever the window is in front.
+        if(landed.waiting) {
+            if(!frame.isVisible()&&tray!=null&&landed.said!=null&&trayWaiting.add(landed.waits))tray.displayMessage("Mininotes",landed.said,TrayIcon.MessageType.INFO);
+            refresh();askWaiting();return;
+        }
         if(!frame.isVisible()&&tray!=null&&landed.said!=null)tray.displayMessage("Mininotes",landed.said,TrayIcon.MessageType.INFO);
         if(landed.accepted!=null){accepted(landed.accepted);return;}
         // A card renamed one of your devices: an open People and devices is drawn again where it is, or it shows the old names.
@@ -2981,6 +3123,185 @@ public final class Desktop {
         // The open note, written in elsewhere: its page follows, typed words kept (see changedUnderneath).
         changedUnderneath(landed.note);
     }
+
+    // ---- a help request sent silently when a note or folder opens: see Help (decision 113) --------------------------
+
+    /**
+     * The box that sets a help request on (the owner, 2026-10-06, decision 113): what it does, who it goes to, and the few
+     * words. The same words as the phone, but this computer has no location, so it says the request is sent without one. For
+     * an ordinary thing it warns the setting is in the notebook for a forensic look; for a private one, that nothing outside
+     * the space shows it. {@code save} takes the chosen recipients and words; {@code off} turns it off where it was on.
+     */
+    void helpSetup(java.awt.Window owner,boolean privateThing,boolean on,java.util.List<String> to,String words,
+                   java.util.function.BiConsumer<java.util.List<String>,String> save,Runnable off) {
+        disk.submit(()->store.addresses(),all->{
+            java.util.List<NoteStore.Contact> paired=new ArrayList<>();
+            for(NoteStore.Contact one:all)if(one.paired())paired.add(one);
+            JPanel body=DesktopUi.column();
+            DesktopUi.add(body,DesktopUi.note(Help.WHAT));
+            DesktopUi.add(body,DesktopUi.note(Help.PC_PLACE));
+            DesktopUi.add(body,DesktopUi.note(privateThing?Help.PRIVATE_TRACE:Help.ORDINARY_TRACE,360,DesktopUi.WARN,DesktopUi.BODY.deriveFont(13f)));
+            DesktopUi.add(body,DesktopUi.heading(Help.TO));
+            final java.util.Map<String,javax.swing.JCheckBox> picks=new java.util.LinkedHashMap<>();
+            if(paired.isEmpty())DesktopUi.add(body,DesktopUi.note("Nobody is paired yet. Pair someone in People and devices first."));
+            for(NoteStore.Contact one:paired){javax.swing.JCheckBox box=DesktopUi.toggle(one.name,to!=null&&to.contains(one.address));picks.put(one.address,box);DesktopUi.add(body,DesktopUi.switchRow(one.name,box));}
+            DesktopUi.add(body,DesktopUi.heading("Message"));
+            final javax.swing.JTextField message=new javax.swing.JTextField(words==null?"":words,28);
+            DesktopUi.add(body,message);
+            final javax.swing.JDialog[] boxD={null};
+            javax.swing.JButton turnOn=DesktopUi.primary(Help.TURN_ON,()->{
+                java.util.List<String> picked=new ArrayList<>();
+                for(java.util.Map.Entry<String,javax.swing.JCheckBox> e:picks.entrySet())if(e.getValue().isSelected())picked.add(e.getKey());
+                if(picked.isEmpty()){status.setText(Help.NEED_SOMEONE);return;}
+                save.accept(picked,message.getText().trim());boxD[0].dispose();
+            });
+            java.util.List<javax.swing.JComponent> f=new ArrayList<>();
+            if(on&&off!=null)f.add(DesktopUi.button("Turn it off",()->{off.run();boxD[0].dispose();}));
+            f.add(DesktopUi.button("Cancel",()->boxD[0].dispose()));
+            f.add(turnOn);
+            boxD[0]=DesktopUi.sheet(owner,Help.ASK_TITLE,body,DesktopUi.footer(f.toArray(new javax.swing.JComponent[0])),true);
+            boxD[0].getRootPane().setDefaultButton(turnOn);
+            DesktopUi.show(boxD[0],480,680);
+        },this::failed);
+    }
+
+    /** A note or folder set to send a help request has opened: read the setting, and where it is on, send one at once. */
+    void helpOnOpened(final NoteStore.Branch.Kind kind,final String id) {
+        if(id==null||id.isEmpty())return;
+        disk.submit(()->store.helpWhenOpenedOf(kind,id),s->{if(s.on&&!s.to.isEmpty())helpSendNow(s.to,s.words);},e->{});
+    }
+
+    /** One help request sent now, from this computer, which has no GPS, so without a place (decision 113). Off the UI thread. */
+    void helpSendNow(final java.util.List<String> to,final String words) {
+        byte[] incident=new byte[Help.INCIDENT];new java.security.SecureRandom().nextBytes(incident);
+        final Help.Request request=new Help.Request(incident,0,words==null?"":words,false,0,0,0,0,System.currentTimeMillis());
+        network.submit(()->Post.sendHelp(context,store,keys,request,to),done->{},e->{});
+    }
+
+    /** Where a help request shows on the PC (decision 113): the tray says it, and a box, one per opening, filled in as updates come. */
+    private final java.util.Map<String,javax.swing.JDialog> helpBoxes=new java.util.HashMap<>();
+    void helpAlert(Post.Landed landed) {
+        final Help.Request r=landed.helpRequest; if(r==null)return;
+        java.text.DateFormat when=java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT);
+        final String title=Help.title(landed.helpFrom);
+        final String text=Help.body(r.message,r.located,r.lat,r.lon,r.metres,r.located?when.format(new java.util.Date(r.placeAt)):"");
+        status.setText(title);
+        if(tray!=null)tray.displayMessage(title,text,TrayIcon.MessageType.WARNING);
+        String key=java.util.Base64.getEncoder().encodeToString(r.incident);
+        javax.swing.JDialog had=helpBoxes.get(key);
+        if(had!=null&&had.isShowing()) {
+            javax.swing.JTextArea area=(javax.swing.JTextArea)had.getRootPane().getClientProperty("helpText");
+            had.setTitle(title);if(area!=null)area.setText(text);had.toFront();return;
+        }
+        javax.swing.JTextArea area=new javax.swing.JTextArea(text);area.setEditable(false);area.setLineWrap(true);area.setWrapStyleWord(true);
+        area.setFont(DesktopUi.BODY);area.setOpaque(false);area.setBorder(null);
+        JPanel body=DesktopUi.column();DesktopUi.add(body,area);
+        final javax.swing.JDialog[] boxD={null};
+        java.util.List<javax.swing.JComponent> f=new ArrayList<>();
+        if(r.located)f.add(DesktopUi.button("Open the map",()->{try{java.awt.Desktop.getDesktop().browse(java.net.URI.create(Help.web(r.lat,r.lon)));}catch(Exception ignored){}}));
+        f.add(DesktopUi.button("Close",()->boxD[0].dispose()));
+        boxD[0]=DesktopUi.sheet(frame,title,body,DesktopUi.footer(f.toArray(new javax.swing.JComponent[0])),false);
+        boxD[0].getRootPane().putClientProperty("helpText",area);
+        helpBoxes.put(key,boxD[0]);
+        DesktopUi.show(boxD[0],460,560);
+    }
+    // ---- shared with me for the first time: the pop-up, Accept and Refuse (decision 109) -----------------------------
+
+    /** What the tray has said already this run, by the thing each waits under: once, not once a revision. */
+    private final Set<String> trayWaiting=new HashSet<>();
+    /** The pop-up while it is up, and what it says so far: redrawn with the new count, never a box over a box. */
+    JDialog waitingBox;private final List<NoteStore.Branch> waitingShown=new ArrayList<>();
+    private DesktopUi.Text waitingLine,waitingWhat;
+
+    /**
+     * Something another person shared with me for the first time, said once (the owner, 2026-10-06: "I need an alert, a
+     * pop-up at first telling me"; decision 109): who shared what, what it is and the rights they gave them, and See it, which
+     * opens Shared with me, or Later. Several at once are one box, counted. What comes while the box is up redraws it. Only
+     * while the window is in front: away, the tray has said it, and the box comes when the window does.
+     */
+    void askWaiting() {
+        if(closing||!frame.isVisible())return;
+        disk.submit(()->{List<NoteStore.Branch> unsaid=store.waitingUnsaid();List<String> ids=new ArrayList<>();for(NoteStore.Branch one:unsaid)ids.add(one.id);
+            if(!ids.isEmpty())store.waitingSaid(ids);return unsaid;},unsaid->{
+            if(unsaid.isEmpty()||closing)return;
+            if(waitingBox==null||!waitingBox.isDisplayable())waitingShown.clear();
+            for(NoteStore.Branch one:unsaid){boolean known=false;for(NoteStore.Branch shown:waitingShown)if(shown.id.equals(one.id))known=true;if(!known)waitingShown.add(one);}
+            List<String> who=new ArrayList<>();
+            for(NoteStore.Branch one:waitingShown){String from=one.origin.isEmpty()?"Somebody":store.nameFor(one.origin);if(!who.contains(from))who.add(from);}
+            NoteStore.Branch first=waitingShown.get(0);
+            String line=FirstShare.title(who,waitingShown.size(),first.name),what=waitingShown.size()==1
+                ?FirstShare.what(first.kind,levelIn(first.detail))+". It waits for you in Shared with me."
+                :"They wait for you in Shared with me, to accept or refuse.";
+            if(waitingBox!=null&&waitingBox.isDisplayable()){waitingLine.setText(line);waitingWhat.setText(what);waitingBox.pack();return;}
+            JPanel body=DesktopUi.column();
+            waitingLine=DesktopUi.note(line,400,DesktopUi.INK,DesktopUi.BODY.deriveFont(Font.BOLD,16f));waitingWhat=DesktopUi.note(what,400,DesktopUi.QUIET,DesktopUi.BODY);
+            DesktopUi.add(body,waitingLine);DesktopUi.gap(body,6);DesktopUi.add(body,waitingWhat);
+            JButton see=DesktopUi.primary(FirstShare.SEE_IT,()->{waitingBox.dispose();showHome();home.folder.openPlace(DesktopHome.sharedPlace());}),
+                later=DesktopUi.button(FirstShare.LATER,()->waitingBox.dispose());
+            waitingBox=DesktopUi.sheet(frame,"Shared with you",body,DesktopUi.footer(later,see),false);
+            waitingBox.getRootPane().setDefaultButton(see);
+            DesktopUi.show(waitingBox,460,360);
+        },this::failed);
+    }
+    /** The rights a line of Waiting for you names, read back from its words, for the pop-up's line under the name. */
+    private static Sharing.Level levelIn(String detail) {
+        for(Sharing.Level one:Sharing.Level.values())if(one!=Sharing.Level.GONE&&detail!=null&&detail.endsWith(one.words()))return one;
+        return null;
+    }
+
+    /**
+     * Accepted (decision 109): a note or a folder is on Home from now on, in the first free cell; a file is where files shared
+     * with you go (Settings, decision 94). Said while it works and once it is done; then it goes to my other devices as anything
+     * of mine does.
+     */
+    void acceptWaiting(NoteStore.Branch thing) {
+        status.setToolTipText(null);status.setText("Accepting “"+thing.name+"”…");
+        disk.submit(()->{
+            store.acceptShared(thing.kind,thing.id);
+            if(thing.kind!=NoteStore.Branch.Kind.FILE&&thing.kind!=NoteStore.Branch.Kind.WAITING)return "Home";
+            String to=store.sharedWithMe();return to.isEmpty()?"Home":NoteStore.SHARED.equals(to)?NoteStore.SHARED_WITH_ME:store.collectionName(to);
+        },where->{status.setText(FirstShare.accepted(thing.name,where));refresh();queuePending();},this::failed);
+    }
+
+    /**
+     * Refuse, asked in a small box (the owner, 2026-10-06: "refuse could be silent or inform the sender with the option to send
+     * a message back"; decision 109): quietly, or telling them, with a few words if they like. Either way it is deleted here
+     * and nothing more of it comes. Refuse is the box's one button, in the colour of what cannot be taken back.
+     */
+    void refuseWaiting(NoteStore.Branch thing) {
+        JDialog[] box={null};
+        JRadioButton quietly=new JRadioButton(FirstShare.QUIETLY,true),tell=new JRadioButton(FirstShare.TELL);
+        ButtonGroup one=new ButtonGroup();one.add(quietly);one.add(tell);
+        JTextField words=new JTextField(28);words.setEnabled(false);words.setName("words");
+        words.putClientProperty(com.formdev.flatlaf.FlatClientProperties.PLACEHOLDER_TEXT,FirstShare.WORDS_HINT);
+        words.getAccessibleContext().setAccessibleName(FirstShare.WORDS_HINT);
+        words.setDocument(new javax.swing.text.PlainDocument(){@Override public void insertString(int at,String s,javax.swing.text.AttributeSet a)throws javax.swing.text.BadLocationException{
+            if(s!=null&&getLength()+s.length()>Receipt.MOST_WORDS)s=s.substring(0,Math.max(0,Receipt.MOST_WORDS-getLength()));super.insertString(at,s,a);}});
+        JPanel body=DesktopUi.column();
+        for(Object[] choice:new Object[][]{{quietly,FirstShare.QUIETLY_DOES},{tell,FirstShare.TELL_DOES}}) {
+            JRadioButton pick=(JRadioButton)choice[0];pick.setOpaque(false);pick.setFont(DesktopUi.BODY.deriveFont(Font.BOLD));pick.setForeground(DesktopUi.INK);
+            pick.getAccessibleContext().setAccessibleName(pick.getText()+". "+choice[1]);
+            DesktopUi.add(body,pick);
+            DesktopUi.Text does=DesktopUi.note((String)choice[1],360,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f));does.setBorder(BorderFactory.createEmptyBorder(0,26,0,0));
+            does.addMouseListener(new MouseAdapter(){public void mouseClicked(MouseEvent e){pick.doClick();}});
+            DesktopUi.add(body,does);DesktopUi.gap(body,8);
+        }
+        JPanel field=new JPanel(new BorderLayout());field.setOpaque(false);field.setBorder(BorderFactory.createEmptyBorder(0,26,0,0));field.add(words);
+        DesktopUi.add(body,field);
+        java.awt.event.ActionListener flip=e->{words.setEnabled(tell.isSelected());if(tell.isSelected())words.requestFocusInWindow();};
+        quietly.addActionListener(flip);tell.addActionListener(flip);
+        JButton go=DesktopUi.danger(FirstShare.REFUSE,()->{
+            boolean told=tell.isSelected();String said=told?words.getText().trim():"";
+            box[0].dispose();
+            status.setToolTipText(null);status.setText(told?"Refusing, and telling them…":"Refusing…");
+            network.submit(()->Post.refuse(context,store,keys,thing.kind,thing.id,told,said),
+                reached->{status.setText(FirstShare.refusedSaid(told,reached));refresh();},this::failed);
+        });
+        box[0]=DesktopUi.sheet(frame,FirstShare.refuseTitle(thing.name),body,DesktopUi.footer(go),true);
+        box[0].setName("refuse");
+        DesktopUi.show(box[0],460,460);
+    }
+
     /**
      * What Share, Sync now and a code are about: what a menu was opened on; else the note on the screen; else the
      * collection whose card is up. Null on Home with nothing chosen.
@@ -3026,7 +3347,9 @@ public final class Desktop {
                 // The groups it is given to, who has it from each, and what this PC may give (decision 100).
                 store.groupsOn(scope,target.id),store.fromGroups(scope,target.id),store.groups(),store.mayGive(scope,target.id),
                 // And whose Parlons! address is known, for what a person's right-click offers (decision 101).
-                parlonsBook=store.parlonsBook()};
+                parlonsBook=store.parlonsBook(),
+                // And who refused it, with their words (decision 109).
+                store.refusalsOn(target.kind,target.id)};
         },data->{
             @SuppressWarnings("unchecked") List<Sharing.Rule> rules=(List<Sharing.Rule>)data[0];
             boolean owner=(Boolean)data[7],admin=owner||data[1]==Sharing.Level.ADMIN;
@@ -3081,6 +3404,13 @@ public final class Desktop {
                 JPanel line=DesktopUi.row(who,right);people.add(line);
                 // Right-click: the same roles, each with what it lets them do, then their writing colour; Remove last.
                 DesktopMenus.onRightClick(line,e->roleMenu(give==null?List.of():give,rule.level,give==null?null:choose,roundOf(who),called,rule.address).show(e.getComponent(),e.getX(),e.getY()));
+            }
+            // Who refused it when it first came to them, and their words where they wrote any (decision 109): off it, and said so.
+            @SuppressWarnings("unchecked") List<NoteStore.RefusedBy> refusedIt=(List<NoteStore.RefusedBy>)data[15];
+            for(NoteStore.RefusedBy one:refusedIt) {
+                JPanel line=DesktopUi.row(DesktopUi.person(one.who,one.words.isEmpty()?null:"“"+one.words+"”"),
+                    roleShown(FirstShare.REFUSED,"They refused it when it was shared with them, "+shortWhen(one.at)+"."));
+                line.setName("refused "+one.who);people.add(line);
             }
             // Share with opens in this box's place, and going back from it opens this box again, as it stands then.
             JButton add=button("Add someone…",()->{box[0].dispose();DesktopPeople.with(this,target,false,over,target.name,()->share(target,over,backTo));});add.setEnabled(admin);
@@ -3180,6 +3510,22 @@ public final class Desktop {
         DesktopUi.Text said=DesktopUi.quiet(role);said.setToolTipText(does.isEmpty()?null:does);
         said.getAccessibleContext().setAccessibleName(does.isEmpty()?role:role+". "+does);
         return said;
+    }
+    /**
+     * My link and the few words that go with it, on the clipboard, for a message, a mail or a social network (the owner,
+     * 2026-10-06; decision 110). The phone hands them to its share sheet; this PC has the clipboard.
+     */
+    void copyMyLink() {
+        if(offline){status.setText("Offline: there is no address to share.");return;}
+        status.setText("Getting your link…");
+        connectivity.submit(()->{
+            String called=Node.nameHere(context);var addresses=Node.addresses(context);String live=addresses.isEmpty()?"":addresses.get(0);
+            return live.isEmpty()?"":Pairing.invite(called,Pairing.link(keys.line(called,live,"",false,"","")),DOWNLOAD);
+        },words->{
+            if(words.isEmpty()){status.setText("No address yet. Wait until this PC is connected.");return;}
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(words),null);
+            status.setText("Your link is copied, with a few words. Paste it in a message, a mail or a post.");
+        },this::failed);
     }
     void showCode(NoteStore.Branch target) {
         if(offline){status.setText("This session was started offline");return;}
@@ -3388,6 +3734,8 @@ public final class Desktop {
     void shutdown(boolean exit,Runnable after) {
         // A recording going on is kept first: queued on the disk ahead of the notebook closing, and sealed with its key.
         if(recorder!=null)recorder.finish();
+        // Whatever is private closes, and the last batch is written, as for anybody (decision 111).
+        privately.stop();
         closing=true;if(current==this)current=null;
         // A newer version downloaded and waiting takes this one's place as Mininotes goes.
         if(exit)updateOnExit();if(idle!=null)idle.stop();Toolkit.getDefaultToolkit().removeAWTEventListener(using);autosave.stop();syncLater.stop();Object timer=frame.getRootPane().getClientProperty("health");if(timer instanceof javax.swing.Timer health)health.stop();

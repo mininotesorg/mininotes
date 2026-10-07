@@ -441,9 +441,9 @@ final class DesktopHome extends JPanel {
     /** Something just made with + on the page in view: it stands on that page once Home has read it (decision 46). */
     void placeNew(String id){if(!grid.onCentre())placeNext.put(id,new int[]{grid.pageX,grid.pageY});}
 
-    /** Home's room in Home's own colour, at the pad's strength, as the phone's Home is (decision 44). */
+    /** Home's room in Home's own colour, at Home's own strength (decision 107), as the phone's Home is (decision 44). */
     void paintRoom() {
-        Color paper=DesktopLook.wash(pad.homeColour(),DesktopUi.PAPER,0.12f,0.72f,pad.tone);
+        Color paper=DesktopLook.wash(pad.homeColour(),DesktopUi.PAPER,0.12f,0.72f,pad.homeTone());
         setBackground(paper);scroll.getViewport().setBackground(paper);
         repaint();
     }
@@ -485,6 +485,8 @@ final class DesktopHome extends JPanel {
             // What is temporary and whose time has come goes first, so it is never drawn once more (decision 71).
             store().expire(System.currentTimeMillis());
             got.put("archived",store().awayCount(false));got.put("binned",store().awayCount(true));got.put("temp",store().temporaryCount());
+            // And how many things wait for an answer in Shared with me, for the count it wears (decision 109).
+            got.put("asking",store().waitingCount());
             // What a code accepted here is bringing, standing on Home until it comes (decision 73).
             // And what is coming to Home on its own, where Settings shows files shared with you there (decision 94).
             List<NoteStore.Branch> waits=new ArrayList<>(store().waitingOnHome());waits.addAll(store().coming(Things.HOME));
@@ -502,7 +504,7 @@ final class DesktopHome extends JPanel {
             @SuppressWarnings("unchecked") Map<String,Integer> cells=(Map<String,Integer>)got.get("cells");placeCells=cells;
             @SuppressWarnings("unchecked") Map<String,Integer> onPages=(Map<String,Integer>)got.get("pages");placePages=onPages;
             away=(Boolean)got.get("away");archived=(Integer)got.getOrDefault("archived",0);binned=(Integer)got.getOrDefault("binned",0);
-            temporary=(Integer)got.getOrDefault("temp",0);
+            temporary=(Integer)got.getOrDefault("temp",0);asking=(Integer)got.getOrDefault("asking",0);
             @SuppressWarnings("unchecked") List<NoteStore.Branch> coming=(List<NoteStore.Branch>)got.getOrDefault("waiting",List.of());waiting=coming;
             fillDock();fillGrid();folder.fill(path,got);
             drawn=true;
@@ -528,7 +530,7 @@ final class DesktopHome extends JPanel {
         if((!docked.isEmpty()||!beyond.isEmpty())&&pad.onHome(NoteStore.FAVOURITES))lines.add(placed(coloured(favouritesPlace())));
         lines.addAll(homeLines);
         // Recent is the list down the right of the window on the PC (decision 86).
-        for(NoteStore.Branch one:new NoteStore.Branch[]{tempPlace(temporary),sharedPlace(),archivePlace(archived),binPlace(binned)})
+        for(NoteStore.Branch one:new NoteStore.Branch[]{tempPlace(temporary),sharedPlace(asking),archivePlace(archived),binPlace(binned)})
             if(pad.onHome(one.id))lines.add(placed(coloured(one)));
         lines.addAll(waiting);
         grid.fill(lines,homeLines.isEmpty()?"Nothing here yet. Click + to make a note or a folder.":null);
@@ -551,9 +553,10 @@ final class DesktopHome extends JPanel {
             pad.disk.submit(()->{store().placeOnPages(List.of(line),spot);return null;},done->{},e->{});
         }
     }
-    /** A place in the colour chosen for it on this PC (decision 81). */
+    /** A place in the colour chosen for it on this PC (decision 81), at the strength chosen for it (decision 107). */
     private NoteStore.Branch coloured(NoteStore.Branch place) {
-        return new NoteStore.Branch(place.kind,place.id,place.parent,place.name,place.detail,0,0,true,pad.placeColour(place.id));
+        NoteStore.Branch worn=new NoteStore.Branch(place.kind,place.id,place.parent,place.name,place.detail,0,0,true,pad.placeColour(place.id));
+        worn.tone=pad.placeTone(place.id);return worn;
     }
     /** A place with the page and the cell this PC keeps for it. */
     private NoteStore.Branch placed(NoteStore.Branch place) {
@@ -574,9 +577,11 @@ final class DesktopHome extends JPanel {
     static NoteStore.Branch tempPlace(int count){return place(NoteStore.Branch.Kind.TEMP,NoteStore.TEMP,"Temp",count);}
     static NoteStore.Branch recentPlace(){return place(NoteStore.Branch.Kind.RECENT,NoteStore.RECENT,"Recent",0);}
     /** Shared with me: where files shared with you on their own show (decision 94). */
-    static NoteStore.Branch sharedPlace(){return place(NoteStore.Branch.Kind.SHARED,NoteStore.SHARED,NoteStore.SHARED_WITH_ME,0);}
-    /** How many things are temporary, as last read, and what accepted codes are bringing. */
-    private int temporary;private List<NoteStore.Branch> waiting=List.of();
+    static NoteStore.Branch sharedPlace(){return sharedPlace(0);}
+    /** The same, with how many things wait in it for an answer, which it wears as Temp wears its count (decision 109). */
+    static NoteStore.Branch sharedPlace(int waiting){return place(NoteStore.Branch.Kind.SHARED,NoteStore.SHARED,NoteStore.SHARED_WITH_ME,waiting);}
+    /** How many things are temporary, as last read, how many wait for an answer, and what accepted codes are bringing. */
+    private int temporary,asking;private List<NoteStore.Branch> waiting=List.of();
     /** Whether one of the four is kept in Tools rather than on Home (decision 72): yes until it is shown on Home. */
     boolean inTools(String id){return !"false".equals(pad.context.getSharedPreferences("settings",0).getString(id+"InTools","true"));}
     void keepInTools(String id,boolean in){pad.context.getSharedPreferences("settings",0).edit().putString(id+"InTools",String.valueOf(in)).apply();refresh();}
@@ -693,6 +698,16 @@ final class DesktopHome extends JPanel {
      * there are, for where it is: Home's makes them on Home, a card's in that collection.
      */
     JButton plusButton(Supplier<String> where) {
+        JButton plus=round();
+        plus.setToolTipText("New note or folder, or one from another device");plus.getAccessibleContext().setAccessibleName("New");
+        plus.addActionListener(e->{
+            JPopupMenu menu=plusMenu(where.get());
+            Dimension m=menu.getPreferredSize();menu.show(plus,plus.getWidth()-m.width-6,-m.height-2);
+        });
+        return plus;
+    }
+    /** The + as it is drawn, round and with no word, its menu its own: Home's, a card's, and the private screen's (decision 114). */
+    static JButton round() {
         JButton plus=new JButton(){
             @Override protected void paintComponent(Graphics g0) {
                 Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
@@ -707,11 +722,6 @@ final class DesktopHome extends JPanel {
         };
         plus.setContentAreaFilled(false);plus.setBorderPainted(false);plus.setFocusPainted(false);plus.setOpaque(false);
         plus.setPreferredSize(new Dimension(64,64));plus.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        plus.setToolTipText("New note or folder, or one from another device");plus.getAccessibleContext().setAccessibleName("New");
-        plus.addActionListener(e->{
-            JPopupMenu menu=plusMenu(where.get());
-            Dimension m=menu.getPreferredSize();menu.show(plus,plus.getWidth()-m.width-6,-m.height-2);
-        });
         return plus;
     }
 
@@ -1207,7 +1217,7 @@ final class DesktopHome extends JPanel {
             putClientProperty(THING,thing);putClientProperty(MENU,(Supplier<JPopupMenu>)()->menuFor(thing));
             JComponent face=new JComponent(){
                 {setPreferredSize(new Dimension(36,36));}
-                @Override protected void paintComponent(Graphics g0){Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);face(g,thing,0,0,36,pad.tone);g.dispose();}
+                @Override protected void paintComponent(Graphics g0){Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);face(g,thing,0,0,36,pad.usual);g.dispose();}
             };
             JPanel faceHolder=new JPanel(new GridBagLayout());faceHolder.setOpaque(false);faceHolder.add(face);add(faceHolder,BorderLayout.WEST);
             JPanel words=DesktopUi.column();
@@ -1322,7 +1332,12 @@ final class DesktopHome extends JPanel {
         },done->pad.frame.repaint(),e->{});
     }
 
-    static void face(Graphics2D g,NoteStore.Branch b,int x,int y,int side,int tone) {
+    /**
+     * A thing's face. Its colour lands at the thing's own strength where it has one (the owner, 2026-10-06; decision 107);
+     * {@code usual} is the strength for one that has none.
+     */
+    static void face(Graphics2D g,NoteStore.Branch b,int x,int y,int side,int usual) {
+        int tone=Tint.tone(b.tone,usual);
         int arc=Math.max(10,side*18/64);
         // A picture file shows itself, once read (decision 88): the picture filling the round square, a hairline round it.
         java.awt.image.BufferedImage preview=b.kind==NoteStore.Branch.Kind.FILE?PREVIEWS.get(b.id):null;
@@ -1406,15 +1421,15 @@ final class DesktopHome extends JPanel {
 
     /**
      * A thing's face as a Swing icon, for a line of the tree and the bars over a note and a card: drawn as it is read, at
-     * the pad's tone as it is then, so what it wears changes with the thing without a new icon.
+     * its own strength, or the usual one as it is then, so what it wears changes with the thing without a new icon.
      */
-    static Icon faceIcon(java.util.function.Supplier<NoteStore.Branch> thing,int side,java.util.function.IntSupplier tone) {
+    static Icon faceIcon(java.util.function.Supplier<NoteStore.Branch> thing,int side,java.util.function.IntSupplier usual) {
         return new Icon(){
             public int getIconWidth(){return side;}public int getIconHeight(){return side;}
             public void paintIcon(Component c,Graphics g0,int x,int y) {
                 NoteStore.Branch now=thing.get();if(now==null)return;
                 Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
-                face(g,now,x,y,side,tone.getAsInt());g.dispose();
+                face(g,now,x,y,side,usual.getAsInt());g.dispose();
             }
         };
     }
@@ -1433,7 +1448,7 @@ final class DesktopHome extends JPanel {
         if(b.kind==NoteStore.Branch.Kind.TOOLS)return "Open Tools: the archive, the bin, Temp and Recent";
         if(b.kind==NoteStore.Branch.Kind.TEMP)return "Open Temp, "+(b.detail==null||b.detail.isBlank()?"empty":b.detail+" to be gone");
         if(b.kind==NoteStore.Branch.Kind.RECENT)return "Open Recent, what was opened lately";
-        if(b.kind==NoteStore.Branch.Kind.SHARED)return "Open Shared with me, the files people share with you";
+        if(b.kind==NoteStore.Branch.Kind.SHARED)return "Open Shared with me, the files people share with you"+(countIn(b.detail)>0?", "+b.detail+" waiting for you":"");
         if(b.kind==NoteStore.Branch.Kind.WAITING)return b.name+": "+b.detail;
         String open=b.kind==NoteStore.Branch.Kind.FILE?"Open the file "+b.name+(b.detail==null||b.detail.isBlank()?"":", "+b.detail)
             :b.kind==NoteStore.Branch.Kind.FAVOURITES?"Open Favourites, the favourites the dock has no room for"
@@ -1728,7 +1743,7 @@ final class DesktopHome extends JPanel {
             if(over||ring){g.setColor(DesktopUi.mix(DesktopUi.ACCENT,DesktopUi.PAPER,0.91f));g.fillRoundRect(3,2,getWidth()-6,getHeight()-4,16,16);}
             if(ring){g.setColor(DesktopUi.ACCENT);g.setStroke(new BasicStroke(1.6f));g.drawRoundRect(3,2,getWidth()-7,getHeight()-5,16,16);}
             Rectangle f=faceAt();
-            face(g,thing,f.x,f.y,f.width,home.pad.tone);
+            face(g,thing,f.x,f.y,f.width,home.pad.usual);
             // Where a carried thing would go into or onto: this one ringed.
             if(target){g.setColor(DesktopUi.ACCENT);g.setStroke(new BasicStroke(3f));g.drawRoundRect(f.x-4,f.y-4,f.width+7,f.height+7,22,22);}
             int badge=docked()?16:20;
@@ -1749,7 +1764,8 @@ final class DesktopHome extends JPanel {
             }
             // How many things wait in the archive or the bin, on the corner where a thing wears its mark: quiet, since a full
             // bin is not news, and nothing when it is empty.
-            int many=thing.kind==NoteStore.Branch.Kind.ARCHIVE||thing.kind==NoteStore.Branch.Kind.BIN||thing.kind==NoteStore.Branch.Kind.TEMP?countIn(thing.detail):0;
+            int many=thing.kind==NoteStore.Branch.Kind.ARCHIVE||thing.kind==NoteStore.Branch.Kind.BIN||thing.kind==NoteStore.Branch.Kind.TEMP
+                ||thing.kind==NoteStore.Branch.Kind.SHARED?countIn(thing.detail):0;
             if(many>0) {
                 String said=many>99?"99+":String.valueOf(many);
                 g.setFont(DesktopUi.BODY.deriveFont(11.5f));FontMetrics m=g.getFontMetrics();

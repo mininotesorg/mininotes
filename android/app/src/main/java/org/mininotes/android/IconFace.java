@@ -83,11 +83,11 @@ final class IconFace extends Drawable {
             case PICTURE:
                 return new IconFace(Looks.Shows.PICTURE,a.PAPER,edge,edgeMost,a.dp(14),a.dp(40),null,0,0,picture,0,0,0,0,0,0,0);
             case GLYPH:
-                return glyph(a,Tint.over(b.colour,a.PAPER,a.wash(0.14f,0.82f),dark),edge,edgeMost,Looks.glyph(b.icon,known),
+                return glyph(a,Tint.over(b.colour,a.PAPER,a.wash(b.tone,0.14f,0.82f),dark),edge,edgeMost,Looks.glyph(b.icon,known),
                     Looks.ink(b.colour,dark,a.INK));
             default:
-                return new IconFace(Looks.Shows.GRID,Tint.over(b.colour,a.CARD,a.wash(0.22f,0.92f),dark),edge,edgeMost,a.dp(14),
-                    a.dp(40),null,0,0,null,Math.max(0,Math.min(4,a.countIn(b))),Tint.over(b.colour,a.PAPER,a.wash(0.10f,0.7f),dark),
+                return new IconFace(Looks.Shows.GRID,Tint.over(b.colour,a.CARD,a.wash(b.tone,0.22f,0.92f),dark),edge,edgeMost,a.dp(14),
+                    a.dp(40),null,0,0,null,Math.max(0,Math.min(4,a.countIn(b))),Tint.over(b.colour,a.PAPER,a.wash(b.tone,0.10f,0.7f),dark),
                     a.LINE,a.dp(6),a.dp(2),a.dp(3),Math.max(1,a.dp(1)/2f));
         }
     }

@@ -119,6 +119,27 @@ public class DesktopFilesTravelTest {
         assertArrayEquals(new int[]{0,0,0},owner.store.fileCounts(note));
     }
 
+    /**
+     * Packed on both devices (decision 112), and what travels is the file's own bytes: the pieces that go up are made from
+     * them, so a build from before packing fetches and reads exactly what it always did.
+     */
+    @Test public void aPackedFileTravelsAsItsOwnBytesAndIsPackedWhereItLands() throws Exception {
+        StringBuilder words=new StringBuilder();for(int i=0;i<4000;i++)words.append("Synthetic minute ").append(i).append(": bread, tea\n");
+        byte[] minutes=words.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String file=owner.attach(note,minutes,"minutes.txt");
+        NoteStore.Held kept=owner.store.settle(owner.store.file(file));
+        assertEquals(minutes.length,kept.bytes);
+        byte[] lies=Files.readAllBytes(owner.store.fileFor(file).toPath());
+        assertTrue("packed where it was added",Shrink.isPacked(lies));assertTrue(lies.length<minutes.length/2);
+        assertArrayEquals("what goes up is its own bytes",minutes,owner.store.bytesOf(owner.store.file(file)));
+        goesUp(owner,file);
+        writer.hear(listFor(owner,writer,note,1,10,owner.store.enclosed(note)));
+        assertEquals(1,fetches(writer));
+        assertTrue("packed where it lands",Shrink.isPacked(Files.readAllBytes(writer.store.fileFor(file).toPath())));
+        assertEquals(minutes.length,writer.store.file(file).bytes);
+        assertArrayEquals(minutes,writer.store.bytesOf(writer.store.file(file)));
+    }
+
     @Test public void takenOutByWhoeverPutItInAndByNobodyElse() throws Exception {
         String theirs=owner.attach(note,"a list".getBytes(),"list.txt");goesUp(owner,theirs);
         writer.hear(listFor(owner,writer,note,1,10,owner.store.enclosed(note)));

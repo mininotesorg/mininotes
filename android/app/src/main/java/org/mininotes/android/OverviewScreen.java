@@ -171,7 +171,7 @@ final class OverviewScreen {
         String name;
         if(what instanceof NoteStore.Note) {
             NoteStore.Note note=(NoteStore.Note)what;
-            paper.setColor(Tint.over(note.colour,a.PAPER,a.wash(0.12f,0.72f),a.darkPaper()));
+            paper.setColor(Tint.over(note.colour,a.PAPER,a.wash(note.tone,0.12f,0.72f),a.darkPaper()));
             // Its title, or where it has none its first line, which is what it has always been known by; then what follows.
             String body=note.body==null?"":note.body;
             name=note.title==null?"":note.title.trim();

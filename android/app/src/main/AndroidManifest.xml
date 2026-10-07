@@ -44,6 +44,15 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- To say that a note arrived. Asked for once; refusing it changes nothing but that. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Only to send the phone's place with a help request the owner set a note or folder to send (decision 113). Asked
+         for only when the first such alarm is switched on; refusing it sends the request without a place. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- So the help request's updates can read the last known place while Mininotes is not in front, over the hour they
+         run (decision 115). Asked in the owner's Profile during set-up, not when it fires; "Allow all the time", which on
+         Android 11 and later is granted on the app's own settings page. Without it, updates with the screen off may carry
+         no place. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <application android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@style/AppTheme" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true">
@@ -85,5 +94,7 @@
         <receiver android:name=".Installing" android:exported="false" />
         <!-- The phone's own alarm, looking after the node while the phone sleeps. Only this app sets it. -->
         <receiver android:name=".Waking" android:exported="false" />
+        <!-- The alarm that keeps a help request's updates going while the phone sleeps (decision 115). Only this app sets it. -->
+        <receiver android:name=".HelpWaking" android:exported="false" />
     </application>
 </manifest>

@@ -93,6 +93,45 @@ public class ParcelPathTest {
         assertEquals("without the colour before it",1_800_000_000_000L,Parcel.open(Parcel.wrap(going)).until);
     }
 
+    /**
+     * A note's own colour and strength ride last after the path, with when each was decided (the owner, 2026-10-06: "when
+     * sharing everything should travel"; decision 108): read back whole; everything before them is what was sent before, so a
+     * build from before reads its colour and its time and stops at a mark it does not know; never said where never decided.
+     */
+    @Test public void aNotesOwnColourAndStrengthRideLastAfterThePath() throws IOException {
+        Parcel.Sent going=sent(List.of(),PATH);
+        going.ink=2;going.inkAt=7L;going.until=1_800_000_000_000L;
+        byte[] before=Parcel.wrap(going);
+        Parcel.Sent plain=Parcel.open(before);
+        assertFalse("never decided, never said",plain.looks());
+        assertEquals(Tint.NONE,plain.colour);assertEquals(Tint.USUAL,plain.tone);
+        going.colour=5;going.tone=8;going.colourDecided=1_750_000_000_000L;going.toneDecided=1_750_000_000_001L;
+        byte[] looked=Parcel.wrap(going);
+        assertArrayEquals("what came before is unchanged",before,Arrays.copyOf(looked,before.length));
+        assertEquals("a mark, then two numbers and two times",4+4+4+8+8,looked.length-before.length);
+        Parcel.Sent in=Parcel.open(looked);
+        assertEquals(5,in.colour);assertEquals(8,in.tone);
+        assertEquals(1_750_000_000_000L,in.colourDecided);assertEquals(1_750_000_000_001L,in.toneDecided);
+        assertEquals("the colour and the time before it still read",2,in.ink);assertEquals(1_800_000_000_000L,in.until);
+        // The usual travels as the usual; no colour is a colour decided.
+        going.colour=Tint.NONE;going.tone=Tint.USUAL;
+        in=Parcel.open(Parcel.wrap(going));
+        assertEquals(Tint.NONE,in.colour);assertEquals(Tint.USUAL,in.tone);assertTrue(in.looks());
+        // A strength that is no tone arrives as the usual; a colour this build has not got is not taken.
+        going.colour=Tint.count()+3;going.tone=99;
+        in=Parcel.open(Parcel.wrap(going));
+        assertEquals(Tint.USUAL,in.tone);assertEquals(1_750_000_000_001L,in.toneDecided);
+        assertEquals(Tint.NONE,in.colour);assertEquals(0L,in.colourDecided);
+        // Made to fit, it keeps them; cut short, the note still reads and the look is unsaid.
+        going.colour=3;going.tone=1;
+        assertEquals(3,Parcel.open(Parcel.wrap(going,Envelope.MAX_TEXT)).colour);
+        Parcel.Sent cut=Parcel.open(Arrays.copyOf(Parcel.wrap(going),looked.length-5));
+        assertNotNull(cut);assertFalse(cut.looks());assertEquals(2,cut.ink);
+        // A later mark not known here ends the reading after it, and the look stands.
+        byte[] later=Arrays.copyOf(looked,looked.length+8);later[looked.length]='M';later[looked.length+1]='N';later[looked.length+2]='Z';later[looked.length+3]='9';
+        assertEquals(8,Parcel.open(later).tone);
+    }
+
     /** Where there were no texts to say, none are said, so the path still stands behind them. */
     @Test public void withNoTextsHeldBeforeTheyAreSaidAsNone() throws IOException {
         Parcel.Sent in=Parcel.open(Parcel.wrap(sent(null,PATH)));

@@ -34,13 +34,15 @@ import java.util.function.Consumer;
  * the process.
  */
 public final class Listening extends Service {
-    private static final String STAYING="listening", ARRIVED="arrived";
+    private static final String STAYING="listening", ARRIVED="arrived", ALARM="help";
     private static final String STOP="org.mininotes.android.STOP_LISTENING";
     /** Carried by a notification that is about one note, so tapping it opens that note. */
     static final String NOTE="note";
     /** Said on the way into the pad from the notification that files came: the list of them is opened. */
     static final String RECEIVED="received";
-    private static final int ONGOING=1, LANDED=2, ACCEPTED=3, FILES=4;
+    private static final int ONGOING=1, LANDED=2, ACCEPTED=3, FILES=4, WAITING=5;
+    /** What a line was said for already, by the thing it waits under (decision 109): once a run, not once a revision. */
+    private static final java.util.Set<String> SAID_WAITING=java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /** Whoever is on screen, told as things land. Null while nobody is, and then the phone says it instead. */
     private static volatile Consumer<Post.Landed> watcher;
@@ -138,8 +140,18 @@ public final class Listening extends Service {
         if(landed==null)return;
         Consumer<Post.Landed> there=watcher;
         if(there!=null){there.accept(landed);return;}
+        // A help request arrived while nobody was in the pad (decision 113): a loud, high-priority line, HELP from whoever
+        // sent it, with the words, the place, the time and a map link, filled in as the updates come. In front it is the
+        // in-app box instead (MainActivity.heard). Nothing is logged about it.
+        if(landed.helpRequest!=null){sayHelp(app,landed);return;}
         // Somebody saying they have something is for the marks, not for the person.
         if(landed.answered)return;
+        // Something another person shared with me for the first time (the owner, 2026-10-06; decision 109): said in a line once
+        // for each thing, never for each of its revisions, and the pad asks Accept or Refuse when it is next in front.
+        if(landed.waiting) {
+            if(landed.said!=null&&SAID_WAITING.add(landed.waits))say(app,WAITING,landed.said,"Open the pad to accept or refuse it.","");
+            return;
+        }
         // Files sent on their own: that they came, or that somebody wants to send some. Never what they are called.
         if(landed.files) {
             if(landed.said!=null)say(app,FILES,landed.said,landed.asking!=null?"Open the pad to accept or refuse.":"",null,true);
@@ -228,6 +240,30 @@ public final class Listening extends Service {
         if(all!=null)try{all.notify(id,said.build());}catch(RuntimeException refused){/* as above */}
     }
 
+    /**
+     * A help request, said loud (decision 113): "HELP from <name>", the words, the place, the time and a map link. One line
+     * for each opening, named by its incident, so the updates of it fill in the same line rather than piling up. A
+     * high-priority channel, so it is a heads-up the owner of the phone that gets it cannot miss. Nothing is logged.
+     */
+    private static void sayHelp(Context app,Post.Landed landed) {
+        channels(app);
+        Help.Request r=landed.helpRequest;
+        java.text.DateFormat when=java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT);
+        String body=Help.body(r.message,r.located,r.lat,r.lon,r.metres,r.located?when.format(new java.util.Date(r.placeAt)):"");
+        Notification.Builder said=new Notification.Builder(app,ALARM)
+            .setSmallIcon(R.drawable.ic_listening)
+            .setContentTitle(Help.title(landed.helpFrom))
+            .setContentText(body)
+            .setStyle(new Notification.BigTextStyle().bigText(body))
+            .setContentIntent(opening(app,""))
+            .setCategory(Notification.CATEGORY_ALARM)
+            .setAutoCancel(true);
+        NotificationManager all=app.getSystemService(NotificationManager.class);
+        // One id per incident, so an update of the same opening replaces its line rather than making a new one.
+        int id=2_000_000+java.util.Arrays.hashCode(r.incident);
+        if(all!=null)try{all.notify(id,said.build());}catch(RuntimeException refused){/* refused is an answer; it still arrived */}
+    }
+
     private static PendingIntent opening(Context app,String note) {
         Intent open=new Intent(app,MainActivity.class)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -259,7 +295,11 @@ public final class Listening extends Service {
         NotificationChannel arrived=new NotificationChannel(ARRIVED,"A note arrived",
             NotificationManager.IMPORTANCE_LOW);
         arrived.setDescription("Somebody shared a note with you, or wrote in one you share.");
+        NotificationChannel alarm=new NotificationChannel(ALARM,"A help request",
+            NotificationManager.IMPORTANCE_HIGH);
+        alarm.setDescription("Somebody you share with sent a help request from Mininotes.");
         all.createNotificationChannel(staying);
         all.createNotificationChannel(arrived);
+        all.createNotificationChannel(alarm);
     }
 }

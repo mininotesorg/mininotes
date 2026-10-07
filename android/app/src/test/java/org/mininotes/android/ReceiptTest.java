@@ -9,6 +9,14 @@ public class ReceiptTest {
         assertEquals(Receipt.HAVE,Receipt.open(Receipt.wrap(Receipt.HAVE)));
     }
 
+    @Test public void theHelpCapabilityIsItsOwnNumberAndReadsBack() {
+        // decision 113: said and heard as any capability bit is, and distinct from the ones before it.
+        assertEquals(Receipt.HELP,Receipt.open(Receipt.wrap(Receipt.HELP)));
+        assertEquals(30,Receipt.HELP);
+        assertNull(Receipt.leftScope(Receipt.HELP));
+        assertNull(Receipt.removedScope(Receipt.HELP));
+    }
+
     @Test public void somethingALaterBuildSaysIsStillAnAnswer() {
         // Read as a number rather than refused: what to do about one it does not know is the caller's.
         assertEquals(12,Receipt.open(Receipt.wrap(12)));
@@ -144,6 +152,51 @@ public class ReceiptTest {
         assertNull(Receipt.leftScope(Receipt.REMOVED_FILE));assertNull(Receipt.removedScope(Receipt.LEFT_FILE));
         assertNull(Receipt.leftScope(Receipt.LOOSE));assertNull(Receipt.removedScope(Receipt.LOOSE));
         assertNull(Parcel.open(Receipt.wrap(Receipt.LOOSE)));assertNull(Sleeve.open(Receipt.wrap(Receipt.LOOSE)));
+    }
+
+    /**
+     * A refusal (decision 109): "this build reads one", a five-byte word of its own; and the refusal itself, the five bytes, the
+     * number a leaving of that thing is said by, and then the words. Longer than an answer, so a build that only knows answers
+     * reads no answer in it - which is why it is only ever sealed for a device that said it reads one.
+     */
+    @Test public void aRefusalCarriesWhatWasRefusedAndAFewWords() {
+        assertEquals(28,Receipt.REFUSALS);assertEquals(29,Receipt.REFUSED);
+        assertEquals(Receipt.REFUSALS,Receipt.open(Receipt.wrap(Receipt.REFUSALS)));
+        byte[] said=Receipt.refusal(Receipt.LEFT_PAGE,"  Thanks, I have one ☕  ");
+        assertEquals(0,Receipt.open(said));
+        assertArrayEquals(new byte[]{'M','N','R','1',(byte)Receipt.REFUSED,(byte)Receipt.LEFT_PAGE},java.util.Arrays.copyOf(said,6));
+        Receipt.Refused read=Receipt.refused(said);
+        assertEquals(Sharing.Scope.PAGE,read.scope);assertEquals("Thanks, I have one ☕",read.words);
+        assertEquals(Sharing.Scope.COLLECTION,Receipt.refused(Receipt.refusal(Receipt.LEFT_COLLECTION,"")).scope);
+        assertEquals("",Receipt.refused(Receipt.refusal(Receipt.LEFT_FILE,null)).words);
+        assertEquals(Sharing.Scope.FILE,Receipt.refused(Receipt.refusal(Receipt.LEFT_FILE,null)).scope);
+        // A few words, not a letter.
+        assertEquals(Receipt.MOST_WORDS,Receipt.refused(Receipt.refusal(Receipt.LEFT_PAGE,"x".repeat(1000))).words.length());
+        // Not a refusal: an answer, a leaving, nonsense, or one naming nothing that can be left.
+        assertNull(Receipt.refused(Receipt.wrap(Receipt.LEFT_PAGE)));assertNull(Receipt.refused(Receipt.wrap(Receipt.REFUSED)));
+        assertNull(Receipt.refused(null));assertNull(Receipt.refused(Receipt.refusal(Receipt.REMOVED_PAGE,"no")));
+        assertNull(Parcel.open(said));assertNull(Sleeve.open(said));assertNull(Carton.open(said));
+    }
+
+    /** The words both apps say about something shared with me for the first time (decision 109), one place for both. */
+    @Test public void whatIsSaidAboutSomethingSharedWithMeForTheFirstTime() {
+        assertEquals("Ana shared “Saturday market” with you",FirstShare.title(java.util.List.of("Ana"),1,"Saturday market"));
+        assertEquals("Ana and Ben shared 3 things with you",FirstShare.title(java.util.List.of("Ana","Ben"),3,"Saturday market"));
+        assertEquals("Ana, Ben and Cy shared 4 things with you",FirstShare.title(java.util.List.of("Ana","Ben","Cy"),4,"x"));
+        assertEquals("Ana shared 2 things with you",FirstShare.title(java.util.List.of("Ana"),2,"x"));
+        assertEquals("A folder · Can write",FirstShare.what(NoteStore.Branch.Kind.COLLECTION,Sharing.Level.WRITE));
+        assertEquals("A note · Can read",FirstShare.what(NoteStore.Branch.Kind.PAGE,Sharing.Level.READ));
+        assertEquals("A file",FirstShare.what(NoteStore.Branch.Kind.WAITING,null));
+        assertEquals("from Ana · Admin",FirstShare.from("Ana",Sharing.Level.ADMIN));
+        assertEquals("Refuse “Saturday market”?",FirstShare.refuseTitle("Saturday market"));
+        assertEquals("“Saturday market” is on Home now",FirstShare.accepted("Saturday market","Home"));
+        assertEquals("“plan.png” is in Shared with me now",FirstShare.accepted("plan.png","Shared with me"));
+        assertEquals("Parisa refused “Saturday market”",FirstShare.notice("Parisa","Saturday market",""));
+        assertEquals("Parisa refused “Saturday market”\n“No thanks”",FirstShare.notice("Parisa","Saturday market"," No thanks "));
+        // No long dash and no spaced hyphen in anything said (the owner's rule of 2026-10-03).
+        for(String said:new String[]{FirstShare.WAITING,FirstShare.QUIETLY_DOES,FirstShare.TELL_DOES,FirstShare.WORDS_HINT,
+                FirstShare.refusedSaid(true,1),FirstShare.refusedSaid(true,0),FirstShare.refusedSaid(false,0)})
+            assertFalse(said,said.contains("—")||said.contains(" - ")||said.contains("–"));
     }
 
     @Test public void nothingAndNonsenseAreNotAnswers() {

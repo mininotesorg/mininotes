@@ -149,6 +149,8 @@ public class DesktopLooksTest {
         pc.store.addShare(new Sharing.Rule(Sharing.Scope.PAGE,id,PHONE,true));
         pc.hear(note(phone,pc,id,1,"Synthetic soup",List.of(),"",null));
         assertEquals("Synthetic soup",pc.store.get(id).body);assertEquals("",pc.store.iconOf(NoteStore.Branch.Kind.PAGE,id));
+        // Shared with the PC by somebody else, it waited for an answer: accepted (decision 109).
+        pc.store.acceptShared(NoteStore.Branch.Kind.PAGE,id);
         phone.store.acknowledged(PC,id,1,true);
         assertTrue(phone.store.owed(NoteStore.Branch.Kind.PAGE,id).isEmpty());
 
@@ -209,6 +211,8 @@ public class DesktopLooksTest {
         pc.hear(note(phone,pc,two,1,"Synthetic beans",List.of(new Parcel.Step("their-garden","Garden","flower",0,1)),"",null));
         assertEquals(garden,pc.store.above(two).get(0));
         assertEquals("flower",pc.store.iconOf(NoteStore.Branch.Kind.COLLECTION,garden));
+        // Shared with the PC by somebody else, it waited for an answer: accepted, it is on Home (decision 109).
+        pc.store.acceptShared(NoteStore.Branch.Kind.COLLECTION,garden);
         assertEquals("flower",line(pc.store.contents(Things.HOME),garden).icon);
         // A note from a build before trees names the collection in its old fields, says no icon, and takes none off.
         byte[] old=Parcel.wrap(new Parcel.Sent("","","their-garden","Garden","Peas","Synthetic peas",true),Envelope.MAX_TEXT);

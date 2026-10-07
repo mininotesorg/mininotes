@@ -41,6 +41,13 @@ final class Pad extends EditText {
         rule.setColor(colour);rule.setStrokeWidth(1f);
         drop=(int)(getResources().getDisplayMetrics().density*4);
         setBackground(null);
+        // The keyboard is told not to learn from what is written in a note, any note (the owner, 2026-10-06; decision 111):
+        // what is typed is not offered back as a suggestion, nor kept by the keyboard.
+        // Also: the keyboard never takes the note over. In landscape most keyboards go fullscreen, putting their own
+        // one-field editor over the whole note (the owner, 2026-10-07: "the keyboard takes over the text"); NO_EXTRACT_UI
+        // and NO_FULLSCREEN keep the note itself in view, the keyboard below it, and the line being written scrolled to.
+        setImeOptions(getImeOptions()|android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+            |android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI|android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN);
         coasting=new OverScroller(c);
         // Before anybody else's watcher: whoever reads the page after a keystroke reads runs that already fit it.
         addTextChangedListener(new TextWatcher() {
@@ -321,7 +328,11 @@ final class Pad extends EditText {
             int from=Math.max(0,Math.min(getSelectionStart(),getSelectionEnd())), to=Math.max(getSelectionStart(),getSelectionEnd());
             ClipboardManager clip=(ClipboardManager)getContext().getSystemService(Context.CLIPBOARD_SERVICE);
             if(to>from&&clip!=null) {
-                clip.setPrimaryClip(ClipData.newPlainText(null,getText().subSequence(from,to).toString()));
+                // From an ordinary page, never a private code with it, nor the rest of its line (decision 114).
+                String words=getText().subSequence(from,to).toString();if(copiedPrivately==null)words=PrivateCode.scrub(words);
+                // From a private page: marked sensitive, and said, so it can be taken off the clipboard when it closes.
+                clip.setPrimaryClip(copiedPrivately!=null?PrivateScreen.sensitive(words):ClipData.newPlainText(null,words));
+                if(copiedPrivately!=null)copiedPrivately.accept(words);
                 if(id==android.R.id.cut)getText().delete(from,to);
                 setSelection(id==android.R.id.cut?from:to);
                 return true;
@@ -329,6 +340,9 @@ final class Pad extends EditText {
         }
         return super.onTextContextMenuItem(id);
     }
+
+    /** Set on a private page (decision 111): told what was copied from it. */
+    java.util.function.Consumer<String> copiedPrivately;
 
     /** The rules follow the paper: a darker page needs a rule the writing can still be read against. */
     void rules(int colour){rule.setColor(colour);}

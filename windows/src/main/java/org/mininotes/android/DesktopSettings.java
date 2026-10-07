@@ -187,6 +187,16 @@ final class DesktopSettings {
         DesktopUi.add(body,DesktopUi.card(null,window));
         DesktopUi.gap(body,DesktopUi.L);
 
+        // Pictures made smaller on their way in, and those already here (the owner, 2026-10-06; decision 112).
+        DesktopUi.add(body,DesktopUi.heading("Pictures and files"));DesktopUi.gap(body,DesktopUi.S);
+        JCheckBox shrinkOn=DesktopUi.toggle(Shrink.SWITCH,app.store.shrinkPictures());
+        shrinkOn.addActionListener(e->app.store.setShrinkPictures(shrinkOn.isSelected()));
+        JPanel pictures=DesktopUi.column();pictures.add(DesktopUi.switchRow(Shrink.SWITCH,shrinkOn));
+        DesktopUi.add(pictures,DesktopUi.note(Shrink.SWITCH_UNDER,380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
+        DesktopUi.gap(pictures,DesktopUi.S);DesktopUi.add(pictures,DesktopUi.actions(DesktopUi.button(Shrink.ALREADY,()->{box[0].dispose();app.shrinkHere();})));
+        DesktopUi.add(body,DesktopUi.card(null,pictures));
+        DesktopUi.gap(body,DesktopUi.L);
+
         // Who wrote what: whether it shows, and the colour your own writing takes. Other people's are theirs.
         DesktopUi.add(body,DesktopUi.heading("Writing colours"));DesktopUi.gap(body,DesktopUi.S);
         JCheckBox whoWrote=DesktopUi.toggle("Show who wrote what",app.whoWrote);

@@ -130,7 +130,8 @@ final class DesktopDrops {
                     long size=Files.size(one);
                     NoteStore.Held held=pad.store.opening(NoteStore.Branch.Kind.PAGE,"",one.getFileName().toString(),Files.probeContentType(one),size);
                     DesktopFiles.keep(pad.context,one,pad.store.fileFor(held.id).toPath());
-                    kept.add(held);
+                    // Sent as it is kept: a picture made smaller, anything else packed here and sent as it is (decision 112).
+                    kept.add(pad.store.settle(held));
                 }
                 return pad.store.sendFiles(to.address,to.name,kept);
             } catch(Exception failure) {

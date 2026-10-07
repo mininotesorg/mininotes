@@ -153,8 +153,7 @@ final class PeopleBox {
         boolean first=box==null;
         if(first) {
             scroll=a.scrolling(body);
-            final AlertDialog made=a.new Box().setTitle(title).setView(scroll)
-                .setNeutralButton("Add a device",null).setPositiveButton("Share with someone",null).create();
+            final AlertDialog made=a.new Box().setTitle(title).setView(scroll).create();
             box=made;
             // The phone's Back goes back one level, as ‹ does; from the first level it closes the box, as it always did.
             box.setOnKeyListener((d,code,event)->{
@@ -164,14 +163,7 @@ final class PeopleBox {
             // A box says it has gone a moment after it went: one opened again meanwhile is not this one's to close.
             box.setOnDismissListener(d->{if(box==made){open=false;levels.clear();}});
             box.show();
-            // What the foot offers opens over this box, which is still here when that is closed.
-            box.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->a.myAddress());
-            box.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->a.typeAddress(null,null,null));
         } else {box.setTitle(title);scroll.removeAllViews();scroll.addView(body);}
-        // The foot is the list's: a page has what is done to it on the page.
-        int foot=levels.size()>1?View.GONE:View.VISIBLE;
-        if(box.getButton(AlertDialog.BUTTON_NEUTRAL)!=null)box.getButton(AlertDialog.BUTTON_NEUTRAL).setVisibility(foot);
-        if(box.getButton(AlertDialog.BUTTON_POSITIVE)!=null)box.getButton(AlertDialog.BUTTON_POSITIVE).setVisibility(foot);
         laid=at;
         final int place=at.scroll;final ScrollView pane=scroll;
         pane.post(()->pane.scrollTo(0,place));
@@ -299,18 +291,17 @@ final class PeopleBox {
         return one;
     }
 
-    /** People: this device, my devices, then everybody else with the groups each is in under their name, changed there. */
+    /**
+     * People, then my devices, then this one: in the order the page is called by, each part built the same way, its lines
+     * and then the one thing to do in it, a + and its words, at the same place in both (the owner, 2026-10-05: "My devices
+     * and People sections should be structured the same way, with the buttons located at the same place, the text too ...
+     * since we say People and devices, people section should be first"; decision 105). Everybody else has the groups each
+     * is in under their name, changed there.
+     */
     private void peopleView(LinearLayout body,final Read r) {
         final String here=a.thisDevice();
-        body.addView(a.part("This device"));
-        body.addView(entry(here,r.here.isEmpty()?"":r.here.get(0),()->go(new Level(SELF,"",here)),null));
-        body.addView(a.part(Groups.MY_DEVICES));
         int mine=0,others=0;
-        for(NoteStore.Contact one:r.contacts)if(one.mine){mine++;body.addView(device(one,r));}
-        // Each part says what to do when it is empty, and My devices always offers to connect another.
-        if(mine==0)body.addView(a.under("No other device yet. Connect my other device to keep the same notes on both."));
-        body.addView(a.tapRow("Connect my other device…",()->a.shareSheet(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,"Everything")));
-        body.addView(a.part("People"));
+        body.addView(adds("People","Connect with someone",null));
         for(final NoteStore.Contact one:r.contacts) {
             if(one.mine)continue;
             others++;body.addView(device(one,r));
@@ -325,9 +316,32 @@ final class PeopleBox {
             }
             body.addView(chips,new LinearLayout.LayoutParams(-1,-2));
         }
-        if(others==0)body.addView(a.under(r.contacts.isEmpty()?"No devices paired yet. Scan another device's code, or show them yours."
-            :"Nobody else yet. Share a note or a folder to add somebody."));
-        body.addView(a.toDo("Add someone","+",()->a.typeAddress(null,null,null)));
+        // Each part says what to do when it is empty.
+        if(others==0)body.addView(a.under("Nobody else yet. Tap + to connect with someone, or share a note or a folder with them."));
+        body.addView(adds(Groups.MY_DEVICES,"Add a device",()->a.shareSheet(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,"Everything")));
+        for(NoteStore.Contact one:r.contacts)if(one.mine){mine++;body.addView(device(one,r));}
+        if(mine==0)body.addView(a.under("No other device yet. Tap + to connect another device of yours and keep the same notes on both."));
+        // This device is the one Profile is about: its line goes there, where its name, its code and how it connects are,
+        // over this box, which is still here when Profile is left (the owner: "it should bring to the profile page ... and
+        // from the profile page, we should be able to go back to people and devices").
+        body.addView(a.part("This device"));
+        // With its round, as every line above has one: the same line, about this phone.
+        body.addView(a.person(entry(here,"Your name, your code and how this phone connects",a::profile,null),here,null));
+    }
+
+    /**
+     * A part's name with a + at its right that adds to it: the one sign for adding, at the one place, in both parts (the
+     * owner, 2026-10-06: "just put a + on the right side of both My devices and People so that people will understand that
+     * this is to add elements"; decision 106). It was a row under each part's lines and two buttons at the foot of the box.
+     */
+    private View adds(String part,String does,final Runnable go) {
+        LinearLayout line=new LinearLayout(a);line.setGravity(Gravity.BOTTOM);
+        line.addView(a.part(part),new LinearLayout.LayoutParams(0,-2,1));
+        // By People, the ways to connect, theirs and mine, from the + itself (decision 110); by My devices, the code.
+        TextView plus=a.tap("+",does,Math.round(MainActivity.READING*1.25f),a.INK,v->{if(go!=null)go.run();else a.connectWithSomeone(v);});
+        plus.setMinWidth(a.dp(48));plus.setGravity(Gravity.CENTER);
+        line.addView(plus);
+        return line;
     }
 
     /** One device or person in the list: their round in their colour, their name, how they are reached, and › to their page. */

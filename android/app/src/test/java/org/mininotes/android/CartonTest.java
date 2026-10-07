@@ -45,6 +45,32 @@ public class CartonTest {
         assertEquals(555L,in.filesAsOf);
     }
 
+    /**
+     * Its strength and when its colour and its strength were decided ride after the files (decision 108), where a build from
+     * before stops reading: what was sent before is unchanged, byte for byte, and reads as it did; never said where never
+     * decided; a damaged look leaves the collection whole.
+     */
+    @Test public void itsStrengthAndWhenItsLookWasDecidedRideAfterTheFiles() throws IOException {
+        Carton.Sent going=carton(List.of());
+        byte[] before=Carton.wrap(going);
+        Carton.Sent plain=Carton.open(before);
+        assertFalse(plain.looks());assertEquals(Tint.USUAL,plain.tone);
+        going.tone=7;going.colourDecided=1_750_000_000_000L;going.toneDecided=1_750_000_000_002L;
+        byte[] looked=Carton.wrap(going);
+        assertArrayEquals("what came before is unchanged",before,Arrays.copyOf(looked,before.length));
+        Carton.Sent in=Carton.open(looked);
+        assertEquals(4,in.tint);assertEquals(7,in.tone);
+        assertEquals(1_750_000_000_000L,in.colourDecided);assertEquals(1_750_000_000_002L,in.toneDecided);
+        assertEquals("the files still read",0,in.files.size());
+        // The usual as the usual, and kept when the carton is made to fit.
+        going.tone=Tint.USUAL;
+        assertEquals(Tint.USUAL,Carton.open(Carton.wrap(going,Envelope.MAX_TEXT)).tone);
+        assertEquals(1_750_000_000_002L,Carton.open(Carton.wrap(going,Envelope.MAX_TEXT)).toneDecided);
+        // Cut inside the look: the collection arrives, its look unsaid.
+        Carton.Sent cut=Carton.open(Arrays.copyOf(looked,looked.length-4));
+        assertNotNull(cut);assertFalse(cut.looks());assertEquals("Mondays",cut.name);
+    }
+
     /** No list of files and an empty one are different things, and stay so. */
     @Test public void noListAndAnEmptyListStayApart() throws IOException {
         assertNull(Carton.open(Carton.wrap(carton(null))).files);

@@ -368,6 +368,31 @@ public class SchemaMigrationsTest {
         String upper=step.toUpperCase(java.util.Locale.ROOT);
         assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
     }
+    @Test public void everyNoteAndFolderStartsAtTheUsualStrength() {
+        // Decision 107: how strongly its colour lands is each thing's own. No tone of its own (-1) for every note and every
+        // folder there is, so the upgrade changes nobody's look; additive, both tables, on an upgrade and on a new notebook.
+        assertTrue(SchemaMigrations.VERSION>=44);
+        for(List<String> statements:List.of(SchemaMigrations.upgrade(43,44),SchemaMigrations.create())) {
+            String sql=String.join("\n",statements);
+            assertTrue("notes.tone",sql.contains("ALTER TABLE notes ADD COLUMN tone INTEGER NOT NULL DEFAULT -1"));
+            assertTrue("things.tone",sql.contains("ALTER TABLE things ADD COLUMN tone INTEGER NOT NULL DEFAULT -1"));
+        }
+        assertEquals(2,SchemaMigrations.upgrade(43,44).size());
+        assertEquals(Tint.USUAL,-1);
+    }
+
+    @Test public void everyLookStartsNeverDecided() {
+        // Decision 108: when a thing's colour and its strength were last decided, for the later decision to win where they
+        // travel. Never (0) for every note and folder there is, so nothing that arrives undecided changes a look; additive.
+        assertTrue(SchemaMigrations.VERSION>=45);
+        for(List<String> statements:List.of(SchemaMigrations.upgrade(44,45),SchemaMigrations.create())) {
+            String sql=String.join(" ",statements);
+            for(String table:new String[]{"notes","things"})for(String column:new String[]{"toneDecided","colourDecided"})
+                assertTrue(table+"."+column,sql.contains("ALTER TABLE "+table+" ADD COLUMN "+column+" INTEGER NOT NULL DEFAULT 0"));
+        }
+        assertEquals(4,SchemaMigrations.upgrade(44,45).size());
+    }
+
     @Test public void nobodyHasAParlonsAddressYet() {
         // Decision 101: a person's Parlons! address and when it was decided, on their card: empty and never decided for
         // everybody already here, so the first address chosen on any device of the owner's stands.
@@ -416,6 +441,22 @@ public class SchemaMigrationsTest {
             for(String table:new String[]{"things","notes","files"})
                 assertTrue(table,sql.contains("ALTER TABLE "+table+" ADD COLUMN cell INTEGER NOT NULL DEFAULT "+Layout.NONE));
         // Columns only: every grid is drawn as it was until something on it is moved.
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+
+    @Test public void everythingAlreadyHereCountsAsAcceptedAndNobodyRefusedAnythingYet() {
+        // Decision 109: what another person shares with me first waits for an answer, but what is here at the upgrade is all
+        // accepted, so the upgrade asks nothing; and on the sender's side, nobody has refused anything.
+        assertTrue(SchemaMigrations.VERSION>=46);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(45,46));
+        for(String sql:new String[]{fresh,step}) {
+            for(String table:new String[]{"notes","things","files","incoming"})
+                assertTrue(table,sql.contains("ALTER TABLE "+table+" ADD COLUMN accepted INTEGER NOT NULL DEFAULT 1"));
+            assertTrue("refusals",sql.contains("CREATE TABLE IF NOT EXISTS refusals(address TEXT NOT NULL,target TEXT NOT NULL,kind TEXT NOT NULL,"
+                +"name TEXT NOT NULL DEFAULT '',words TEXT NOT NULL DEFAULT '',at INTEGER NOT NULL,PRIMARY KEY(address,target))"));
+        }
+        // Columns and a table only: nothing already here is changed, so nothing already here waits.
         String upper=step.toUpperCase(java.util.Locale.ROOT);
         assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
     }

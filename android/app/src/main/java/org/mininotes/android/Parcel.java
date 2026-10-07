@@ -135,6 +135,16 @@ final class Parcel {
          * time, 0 for not temporary any more, -1 where the sender says nothing. After the path, behind a mark of its own.
          */
         long until=-1L;
+        /**
+         * The note's own colour and how strongly it lands, and when each was last decided (the owner, 2026-10-06: "when
+         * sharing everything should travel, then on the other device it can be set individually"; decision 108). Said only
+         * where one was ever decided (a time past 0); the usual strength travels as the usual, {@link Tint#USUAL}. After the
+         * path, behind a mark of its own, after the colour and the time above, so a build from before reads those and
+         * stops here. Set after the parcel is made, as the ink is.
+         */
+        int colour=Tint.NONE,tone=Tint.USUAL;long colourDecided=0L,toneDecided=0L;
+        /** Whether the look above was said at all. */
+        boolean looks(){return colourDecided>0||toneDecided>0;}
         Sent(String collection,String collectionName,String book,String bookName,
              String title,String body,boolean writes,java.util.List<Member> members,
              String scope,String target,boolean answer,long basedOn) {
@@ -227,6 +237,8 @@ final class Parcel {
     private static final int INK_MARK=0x4d4e4931;       // "MNI1"
     /** Before when the note is to be gone, after the path: see {@link Sent#until}. */
     private static final int UNTIL_MARK=0x4d4e5431;     // "MNT1"
+    /** Before the note's own colour and strength, after the path: see {@link Sent#colour}. */
+    static final int LOOK_MARK=0x4d4e4c31;      // "MNL1"
     /** Room for an icon's name in the set, and for a picture: a square thumbnail of at most 32 KB (decision 4). */
     static final int ICON_MOST=64, IMAGE_MOST=32*1024;
 
@@ -241,8 +253,10 @@ final class Parcel {
         put(out,sent.collectionName,NAME_MOST);
         put(out,sent.book,ID_MOST);
         put(out,sent.bookName,NAME_MOST);
-        put(out,sent.title,NAME_MOST);
-        put(out,sent.body,TEXT_MOST);
+        // The guard at the door (the owner, 2026-10-06; decision 114): no private code, nor the rest of its line, is ever
+        // sealed for another device, whatever the note handed in says.
+        put(out,PrivateCode.scrub(sent.title),NAME_MOST);
+        put(out,PrivateCode.scrub(sent.body),TEXT_MOST);
         // Everything after this point is what a build before memberships never wrote. One that never saw
         // it reads the six fields above and stops, which is exactly what it did before.
         put(out,sent.scope,ID_MOST);
@@ -305,6 +319,8 @@ final class Parcel {
                 writePath(out,sent.path,sent.icon,sent.image);
                 if(sent.inkAt>0){out.writeInt(INK_MARK);out.writeInt(sent.ink);out.writeLong(sent.inkAt);}
                 if(sent.until>=0){out.writeInt(UNTIL_MARK);out.writeLong(sent.until);}
+                // Last: a build from before stops at a mark it does not know, and has read everything above by then.
+                if(sent.looks()){out.writeInt(LOOK_MARK);out.writeInt(sent.colour);out.writeInt(sent.tone);out.writeLong(sent.colourDecided);out.writeLong(sent.toneDecided);}
             }
         }
         out.flush();
@@ -339,6 +355,7 @@ final class Parcel {
             sent.members,sent.scope,sent.target,sent.answer,sent.basedOn,sent.carries,files,sent.filesAsOf,
             files==null?null:sent.history,files==null?null:sent.path,sent.icon,sent.image);
         lighter.ink=sent.ink;lighter.inkAt=sent.inkAt;lighter.until=sent.until;
+        lighter.colour=sent.colour;lighter.tone=sent.tone;lighter.colourDecided=sent.colourDecided;lighter.toneDecided=sent.toneDecided;
         return lighter;
     }
 
@@ -358,7 +375,8 @@ final class Parcel {
             boolean writes=in.readBoolean();
             String collection=get(in,ID_MOST), collectionName=get(in,NAME_MOST);
             String book=get(in,ID_MOST), bookName=get(in,NAME_MOST);
-            String title=get(in,NAME_MOST), body=get(in,TEXT_MOST);
+            // And none taken in from one (decision 114): a build from before the guard may still send one.
+            String title=PrivateCode.scrub(get(in,NAME_MOST)), body=PrivateCode.scrub(get(in,TEXT_MOST));
             // A note sent by a build that knew nothing of memberships simply ends here.
             if(in.available()<=0)return new Sent(collection,collectionName,book,bookName,title,body,writes);
             String scope=get(in,ID_MOST), target=get(in,ID_MOST);
@@ -487,7 +505,8 @@ final class Parcel {
     }
 
     /**
-     * What follows the path, each behind its mark, in any order: the sender's colour, and when the note is to be gone. A
+     * What follows the path, each behind its mark, in any order: the sender's colour, when the note is to be gone, and the
+     * note's own colour and strength. A
      * mark not known here ends the reading, and what was read stands; what does not read whole is left unsaid.
      */
     private static void tail(DataInputStream in,Sent into) {
@@ -502,6 +521,13 @@ final class Parcel {
                     if(in.available()<8)return;
                     long until=in.readLong();
                     if(until>=0)into.until=until;
+                } else if(mark==LOOK_MARK) {
+                    if(in.available()<24)return;
+                    int colour=in.readInt(),tone=in.readInt();long colourAt=in.readLong(),toneAt=in.readLong();
+                    // Each half taken where it is a decision: no colour is one; a colour this build has not got is not taken,
+                    // and a strength that is no tone is the usual.
+                    if(colourAt>0&&(colour==Tint.NONE||Tint.known(colour))){into.colour=colour;into.colourDecided=colourAt;}
+                    if(toneAt>0){into.tone=Tint.toned(tone)?tone:Tint.USUAL;into.toneDecided=toneAt;}
                 } else return;
             }
         } catch(IOException damaged){/* unsaid */}

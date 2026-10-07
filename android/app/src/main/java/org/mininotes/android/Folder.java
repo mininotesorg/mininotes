@@ -120,7 +120,7 @@ final class Folder {
     void close() {
         if(scrim!=null&&scrim.getParent()!=null)((ViewGroup)scrim.getParent()).removeView(scrim);
         if(home.homePlus!=null)home.homePlus.setVisibility(View.VISIBLE);
-        scrim=null;card=null;head=null;scroll=null;grid=null;laid=null;plus=null;shown="";thing=null;aside=false;
+        scrim=null;card=null;head=null;scroll=null;grid=null;laid=null;plus=null;shown="";thing=null;aside=false;waits=null;
         while(a.trail.size()>1)a.trail.remove(a.trail.size()-1);
         home.refresh();
     }
@@ -149,6 +149,8 @@ final class Folder {
         // went back to the top of Recent over the note opened from it); the places are not things.
         if(fresh&&now.kind==NoteStore.Branch.Kind.COLLECTION){home.overview.remember(Overview.Kind.COLLECTION,now.id);
             final String opened=now.id;a.background.submit(()->{a.store.touch(NoteStore.Branch.Kind.COLLECTION,opened);return null;},done->{},e->{});}
+        // A help request, where this folder is set to send one when it opens (decision 113): once per opening, not each redraw.
+        if(fresh&&now.kind==NoteStore.Branch.Kind.COLLECTION)a.helpOnOpened(NoteStore.Branch.Kind.COLLECTION,now.id);
         if(a.dragging!=null)home.refreshCard();else home.refresh();
     }
 
@@ -172,6 +174,9 @@ final class Folder {
         body.setPadding(a.dp(6),a.dp(4),a.dp(6),0);
         head=new LinearLayout(a);head.setGravity(Gravity.CENTER_VERTICAL);
         body.addView(head,new LinearLayout.LayoutParams(-1,-2));
+        // Under the bar, in Shared with me only: what waits for an answer, above what was shared and accepted (decision 109).
+        waits=a.column();waits.setVisibility(View.GONE);
+        body.addView(waits,new LinearLayout.LayoutParams(-1,-2));
         FrameLayout inside=new FrameLayout(a);
         scroll=new ScrollView(a);scroll.setClipToPadding(false);scroll.setVerticalScrollBarEnabled(false);
         grid=new GridLayout(a);grid.setColumnCount(home.columns(width()));
@@ -200,7 +205,7 @@ final class Folder {
             if(body.getLayoutParams().height!=want){body.getLayoutParams().height=want;body.post(body::requestLayout);}
         });
         card=body;
-        paint(Tint.NONE);
+        paint(Tint.NONE,Tint.USUAL);
         home.desk.addView(scrim,new FrameLayout.LayoutParams(-1,-1));
         if(home.homePlus!=null)home.homePlus.setVisibility(View.GONE);
     }
@@ -219,17 +224,23 @@ final class Folder {
         return Math.max(a.dp(260),Math.round(desk*CARD_TALL));
     }
 
+    /** The colour the card is in now and how strongly it lands, the collection's own or the place's (decision 107). */
+    private int tintShown=Tint.NONE,toneShown=Tint.USUAL;
+
     /** The card in its collection's colour, washed as a room is, so the card is the collection you are standing in. */
-    private void paint(int tint) {
+    private void paint(int tint,int tone) {
+        tintShown=tint;toneShown=tone;
         if(card==null)return;
         GradientDrawable paper=new GradientDrawable();
-        paper.setColor(Tint.over(tint,a.PAPER,a.wash(0.12f,0.72f),a.darkPaper()));
+        paper.setColor(Tint.over(tint,a.PAPER,a.wash(tone,0.12f,0.72f),a.darkPaper()));
         paper.setCornerRadius(a.dp(24));paper.setStroke(Math.max(1,a.dp(1)),a.LINE);
         card.setBackground(paper);
     }
 
     /** A colour chosen for the collection while its menu is over the card: the card takes it at once. */
-    void painted(String id,int tint){if(isOpen()&&id.equals(shown))paint(tint);}
+    void painted(String id,int tint){if(isOpen()&&id.equals(shown))paint(tint,toneShown);}
+    /** And a strength chosen for it: the card takes that at once too (decision 107). */
+    void toned(String id,int tone){if(isOpen()&&id.equals(shown))paint(tintShown,tone);}
 
     /** Home's grid darker while a thing carried out of the card would come up a level there. */
     void lit(boolean on){if(scrim!=null&&!aside)scrim.setBackgroundColor(on?DIMMER:DIM);}
@@ -269,7 +280,9 @@ final class Folder {
         // Shared with me: the files shown there, kept on Home, and what is still coming to it (decision 94).
         if(end.kind==NoteStore.Branch.Kind.SHARED) {
             List<NoteStore.Branch> shown=new java.util.ArrayList<>(a.store.contents(NoteStore.SHARED));shown.addAll(a.store.coming(NoteStore.SHARED));
-            got.put("card",shown);return;
+            got.put("card",shown);
+            // And first, what waits for an answer (decision 109).
+            got.put("waitingFor",a.store.waitingForYou());return;
         }
         if(end.kind==NoteStore.Branch.Kind.ARCHIVE||end.kind==NoteStore.Branch.Kind.BIN) {
             List<NoteStore.Branch> waiting=a.store.heldIn(end.kind==NoteStore.Branch.Kind.BIN);
@@ -286,6 +299,7 @@ final class Folder {
         got.put("card",a.store.contents(end.id));
         got.put("name",a.store.collectionName(end.id));
         got.put("tint",a.store.colourOf(NoteStore.Branch.Kind.COLLECTION,end.id));
+        got.put("tone",a.store.toneOf(NoteStore.Branch.Kind.COLLECTION,end.id));
         got.put("parent",in==null||in.isEmpty()?Things.HOME:in);
         got.put("parentName",in==null||in.isEmpty()?"Home":a.store.collectionName(in));
         // Its look, for its face before its name (docs/HOME.md, step 4).
@@ -313,18 +327,22 @@ final class Folder {
         if(lines==null)lines=new java.util.ArrayList<>();
         NoteStore.Branch face=null;
         // A place's card in the colour chosen for it (decision 81).
-        if(place){thing=null;parent=Things.HOME;parentName="Home";paint(a.placeColour(end.id));}
+        if(place){thing=null;parent=Things.HOME;parentName="Home";paint(a.placeColour(end.id),a.placeTone(end.id));}
         else {
             parent=(String)got.get("parent");parentName=(String)got.get("parentName");
-            int tint=(Integer)got.get("tint");
+            int tint=(Integer)got.get("tint"),tone=(Integer)got.get("tone");
             thing=new NoteStore.Branch(NoteStore.Branch.Kind.COLLECTION,end.id,NoteStore.home(parent)?Sharing.EVERYTHING:parent,
                 (String)got.get("name"),"",0,0,true,tint);
-            paint(tint);
+            thing.tone=tone;
+            paint(tint,tone);
             // Its face as Home draws it: its picture, its icon, or the mini-grid of as much as it holds.
             face=new NoteStore.Branch(NoteStore.Branch.Kind.COLLECTION,end.id,thing.parent,thing.name,String.valueOf(lines.size()),0,0,true,tint);
-            face.icon=got.get("icon")==null?"":(String)got.get("icon");face.image=(byte[])got.get("image");
+            face.icon=got.get("icon")==null?"":(String)got.get("icon");face.image=(byte[])got.get("image");face.tone=tone;
         }
         bar(end,place,face);
+        @SuppressWarnings("unchecked") List<NoteStore.Branch> asking=end.kind==NoteStore.Branch.Kind.SHARED&&got.get("waitingFor")!=null
+            ?(List<NoteStore.Branch>)got.get("waitingFor"):java.util.Collections.<NoteStore.Branch>emptyList();
+        waiting(asking);
         final int kept=scroll.getScrollY();
         final boolean same=end.id.equals(shown);
         shown=end.id;
@@ -332,9 +350,74 @@ final class Folder {
         // Temp and Recent list things as Favourites does: tapped, each opens where it really is.
         HomeScreen.Where where=end.kind==NoteStore.Branch.Kind.FAVOURITES||end.kind==NoteStore.Branch.Kind.TEMP||end.kind==NoteStore.Branch.Kind.RECENT
             ||end.kind==NoteStore.Branch.Kind.SHARED?HomeScreen.Where.FAVOURITES:place?HomeScreen.Where.AWAY:HomeScreen.Where.CARD;
-        laid=home.lay(grid,lines,java.util.Collections.emptyList(),width(),where,scroll.getHeight(),nothingYet(end.kind));
+        // Nothing accepted yet, but something waiting above: nothing more to say under it.
+        laid=home.lay(grid,lines,java.util.Collections.emptyList(),width(),where,scroll.getHeight(),asking.isEmpty()?nothingYet(end.kind):null);
         // Drawn again because something changed: still where it was scrolled to. Opened on another collection: its top.
         scroll.post(()->{if(scroll!=null)scroll.scrollTo(0,same?kept:0);});
+    }
+
+    /** Shared with me's first part, under the bar: what waits for an answer, a line each (decision 109). Empty, not shown. */
+    LinearLayout waits;
+    /** The lines in it as last drawn. */
+    List<NoteStore.Branch> asking=java.util.Collections.emptyList();
+
+    /**
+     * Waiting for you (the owner, 2026-10-06: "it should go in Shared with me, and there I should have an accept or refuse";
+     * decision 109): its heading, then each thing that waits, its icon, its name, who it is from and the rights they gave,
+     * and under them Refuse and Accept side by side, Accept the primary one. Past three lines it scrolls, so the files under
+     * it stay in sight. Not drawn where nothing waits.
+     */
+    private void waiting(List<NoteStore.Branch> lines) {
+        asking=lines;
+        if(waits==null)return;
+        waits.removeAllViews();
+        if(lines.isEmpty()){waits.setVisibility(View.GONE);return;}
+        LinearLayout list=a.column();
+        for(final NoteStore.Branch one:lines) {
+            LinearLayout line=new LinearLayout(a);line.setGravity(Gravity.CENTER_VERTICAL);line.setPadding(0,a.dp(6),0,0);
+            View face=IconFace.view(a,one,a.dp(36));face.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            LinearLayout.LayoutParams faceAt=new LinearLayout.LayoutParams(a.dp(36),a.dp(36));faceAt.setMargins(0,0,a.dp(12),0);
+            line.addView(face,faceAt);
+            LinearLayout words=a.column();
+            TextView name=a.line(one.name==null||one.name.trim().isEmpty()?"Untitled":one.name,MainActivity.READING,a.INK);
+            words.addView(name);words.addView(a.label(one.detail,MainActivity.QUIET,a.MUTED));
+            line.addView(words,new LinearLayout.LayoutParams(0,-2,1));
+            list.addView(line,new LinearLayout.LayoutParams(-1,-2));
+            // The two buttons under the words, at the right: Refuse in the colour of what cannot be taken back, Accept filled.
+            LinearLayout buttons=new LinearLayout(a);buttons.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);buttons.setPadding(0,a.dp(4),0,a.dp(6));
+            buttons.addView(pill(FirstShare.REFUSE,one.name,false,()->a.refuseWaiting(one)));
+            View accept=pill(FirstShare.ACCEPT,one.name,true,()->a.acceptWaiting(one));
+            LinearLayout.LayoutParams gap=new LinearLayout.LayoutParams(-2,-2);gap.setMargins(a.dp(10),0,0,0);
+            buttons.addView(accept,gap);
+            list.addView(buttons,new LinearLayout.LayoutParams(-1,-2));
+        }
+        TextView heading=a.label(FirstShare.WAITING,MainActivity.READING,a.INK);heading.setTypeface(heading.getTypeface(),android.graphics.Typeface.BOLD);
+        heading.setPadding(a.dp(10),a.dp(2),a.dp(10),a.dp(2));
+        waits.addView(heading,new LinearLayout.LayoutParams(-1,-2));
+        ScrollView rows=new ScrollView(a);rows.setVerticalScrollBarEnabled(false);rows.setPadding(a.dp(10),0,a.dp(10),0);
+        rows.addView(list,new FrameLayout.LayoutParams(-1,-2));
+        // As tall as its lines, up to three of them and a little; past that it scrolls.
+        list.measure(View.MeasureSpec.makeMeasureSpec(width(),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));
+        waits.addView(rows,new LinearLayout.LayoutParams(-1,Math.min(list.getMeasuredHeight(),a.dp(WAITS_TALL))));
+        View under=new View(a);under.setBackgroundColor(a.LINE);
+        LinearLayout.LayoutParams rule=new LinearLayout.LayoutParams(-1,Math.max(1,a.dp(1)));rule.setMargins(a.dp(10),a.dp(4),a.dp(10),a.dp(4));
+        waits.addView(under,rule);
+        waits.setVisibility(View.VISIBLE);
+    }
+    /** How tall Waiting for you may grow before it scrolls, in dp. */
+    private static final int WAITS_TALL=250;
+
+    /** A small button on a line of Waiting for you: filled in the accent for Accept, outlined in the warning colour for Refuse. */
+    private View pill(String said,String about,boolean primary,Runnable does) {
+        TextView button=a.label(said,MainActivity.QUIET,primary?a.PAPER:a.WARN);
+        button.setGravity(Gravity.CENTER);button.setMinHeight(a.dp(40));button.setMinWidth(a.dp(88));
+        button.setPadding(a.dp(16),a.dp(8),a.dp(16),a.dp(8));
+        GradientDrawable shape=new GradientDrawable();shape.setCornerRadius(a.dp(10));
+        if(primary)shape.setColor(a.ACCENT);else{shape.setColor(a.CARD);shape.setStroke(Math.max(1,a.dp(1)),MainActivity.mix(a.WARN,a.PAPER,0.55f));}
+        button.setBackground(shape);
+        button.setContentDescription(said+" "+(about==null?"":about));
+        button.setOnClickListener(v->does.run());
+        return button;
     }
 
     /** What an empty card says: what to do, or where things come from. */

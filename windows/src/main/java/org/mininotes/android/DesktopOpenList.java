@@ -74,7 +74,7 @@ final class DesktopOpenList extends JPanel {
         };
         row.setOpaque(false);row.setBorder(BorderFactory.createEmptyBorder(5,8,5,4));
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE,40));row.setAlignmentX(0f);
-        JLabel face=new JLabel(DesktopHome.faceIcon(()->look,22,()->pad.tone));
+        JLabel face=new JLabel(DesktopHome.faceIcon(()->look,22,()->pad.usual));
         JLabel name=new JLabel(DesktopHome.named(look));name.setFont(DesktopUi.BODY.deriveFont(front?Font.BOLD:Font.PLAIN,13f));name.setForeground(DesktopUi.INK);
         row.add(face,BorderLayout.WEST);row.add(name);
         row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));

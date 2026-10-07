@@ -101,13 +101,15 @@ final class DesktopFiles {
     /** Windows will not take some characters a phone's file name can hold - a recording's 14:05 among them - so a copy written out swaps them. */
     static String onDisk(String name){return Attachment.named(name).replace(':','.').replaceAll("[\\\\/*?\"<>|]","_");}
 
-    /** A kept file's own bytes, written out: opened on the way if it is sealed. */
+    /** A kept file's own bytes, written out: opened on the way if it is sealed, unpacked if it is packed (decision 112). */
     static void copyOut(Context context,Path kept,OutputStream out) throws IOException {
-        if(!sealed(kept)){Files.copy(kept,out);return;}
+        Shrink.Unpacking plain=Shrink.unpacking(out);
+        if(!sealed(kept)){Files.copy(kept,plain);plain.finish();return;}
         byte[] key=context.databaseKey();
         if(key==null)throw new IOException("This attachment is locked, and the notebook is not open.");
-        try(InputStream in=new BufferedInputStream(Files.newInputStream(kept))){Sealed.open(key,in,out);}
+        try(InputStream in=new BufferedInputStream(Files.newInputStream(kept))){Sealed.open(key,in,plain);}
         catch(Vault.Refused refused){throw new IOException("This attachment could not be opened: "+refused.getMessage());}
+        plain.finish();
     }
 
     /** Every attachment, and every file received on its own, sealed (lock on) or opened (lock off), each replaced whole, never left half done. */

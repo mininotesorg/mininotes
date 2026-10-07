@@ -221,6 +221,69 @@ final class Receipt {
      */
     static final int PARLONS=27;
 
+    /**
+     * "This build reads a refusal" (decision 109): somebody refusing what was shared with them, with a few words if they
+     * wrote any. A refusal is never sealed for a device that has not said this: it is longer than an answer, and a build from
+     * before takes anything it does not know for a note written the oldest way. Said to every paired device that has shown
+     * it knows what an answer is, and heard, as {@link #LOOSE} is; read by a build from before as a later build's answer,
+     * which is to say not at all. The envelope names nothing.
+     */
+    static final int REFUSALS=28;
+
+    /**
+     * "I refused this", from somebody something was shared with for the first time, who said so (the owner, 2026-10-06:
+     * "refuse could be silent or inform the sender with the option to send a message back"; decision 109). Which thing rides
+     * in the envelope as it does for a leaving, and when it was refused where a revision does; inside, after these five
+     * bytes, the number a leaving of that thing is said by ({@link #left}) and then the words, UTF-8, at most
+     * {@link #MOST_WORDS} characters, none at all where nothing was written. Heard as a leaving and more: the person is taken
+     * off as {@link #LEFT_PAGE} takes them off, and the refusal and its words are kept for the owner to see. Only ever said
+     * to a device that has said {@link #REFUSALS}; one that has not hears {@link #LEFT_PAGE} and the others, and sees what an
+     * Unfollow shows it.
+     */
+    static final int REFUSED=29;
+    /** The most a refusal's words can be, in characters: a few words, not a letter. */
+    static final int MOST_WORDS=280;
+
+    /** A refusal as it goes: five bytes, the leaving's number, then the words (see {@link #REFUSED}). */
+    static byte[] refusal(int left,String words) {
+        String said=words==null?"":words.trim();
+        if(said.length()>MOST_WORDS)said=said.substring(0,MOST_WORDS);
+        byte[] text=said.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] out=new byte[MAGIC.length+2+text.length];
+        System.arraycopy(MAGIC,0,out,0,MAGIC.length);
+        out[MAGIC.length]=(byte)REFUSED;out[MAGIC.length+1]=(byte)left;
+        System.arraycopy(text,0,out,MAGIC.length+2,text.length);
+        return out;
+    }
+
+    /** What a refusal says: what was refused, as a leaving names it, and the words. */
+    static final class Refused {
+        final Sharing.Scope scope; final String words;
+        Refused(Sharing.Scope scope,String words){this.scope=scope;this.words=words;}
+    }
+
+    /** A refusal read, or null where these bytes are not one, or name nothing that can be left. */
+    static Refused refused(byte[] said) {
+        if(said==null||said.length<MAGIC.length+2)return null;
+        for(int at=0;at<MAGIC.length;at++)if(said[at]!=MAGIC[at])return null;
+        if((said[MAGIC.length]&0xff)!=REFUSED)return null;
+        Sharing.Scope scope=leftScope(said[MAGIC.length+1]&0xff);
+        if(scope==null)return null;
+        String words=new String(said,MAGIC.length+2,said.length-MAGIC.length-2,java.nio.charset.StandardCharsets.UTF_8).trim();
+        return new Refused(scope,words.length()>MOST_WORDS?words.substring(0,MOST_WORDS):words);
+    }
+
+    /**
+     * "This build reads a help request" (the owner, 2026-10-06: "could we even make it that if one note is open, it sends a
+     * help request to a contact with the phone location, all this of course fully secretly?"; decision 113). A help request
+     * (see {@link Help}) is never sealed for a device that has not said this: a build from before takes anything it does not
+     * know for a note written the oldest way, and would write a cry for help over somebody's words, silently. Said to every
+     * paired device that has shown it knows what an answer is, and heard, as {@link #REFUSALS} is; read by a build from before
+     * as a later build's answer, which is to say not at all. The envelope names nothing. The request itself rides as a card
+     * of its own ({@code MNH1}), read before a note is, as a Parlons! address is.
+     */
+    static final int HELP=30;
+
     private Receipt(){}
 
     /** The inside of an answer. */

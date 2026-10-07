@@ -839,10 +839,14 @@ final class HomeScreen {
             got.put("beyond",a.store.favouritesAll());
             got.put("dock",a.store.dock());
             got.put("colour",a.libraryColour());
+            // And how strongly it lands, Home's own (decision 107).
+            got.put("tone",a.homeTone());
             // How many things wait in the archive and the bin, for the count on each (decision 41).
             // What is temporary and whose time has come goes first, so it is never drawn once more (decision 71).
             a.store.expire(System.currentTimeMillis());
             got.put("archived",a.store.awayCount(false));got.put("binned",a.store.awayCount(true));got.put("temp",a.store.temporaryCount());
+            // And how many things wait for an answer in Shared with me, for the count it wears (decision 109).
+            got.put("asking",a.store.waitingCount());
             // What a code accepted here is bringing, standing on Home until it comes (decision 73).
             got.put("waiting",a.store.waitingOnHome());
             // And what is coming to Home on its own, where Settings shows files shared with you there (decision 94).
@@ -852,14 +856,14 @@ final class HomeScreen {
         },got->{
             if(read!=reads||!showing())return;
             if(naming()){stale=true;return;}
-            a.levelColour=(Integer)got.get("colour");a.repaint();
+            a.levelColour=(Integer)got.get("colour");a.levelTone=(Integer)got.get("tone");a.repaint();
             @SuppressWarnings("unchecked") List<NoteStore.Branch> lines=(List<NoteStore.Branch>)got.get("home");
             @SuppressWarnings("unchecked") List<NoteStore.Branch> beyond=(List<NoteStore.Branch>)got.get("beyond");
             @SuppressWarnings("unchecked") List<NoteStore.Branch> docked=(List<NoteStore.Branch>)got.get("dock");
             List<NoteStore.Branch> places=new ArrayList<>();
             // Home's places, each on Home unless switched off in Home's menu (decision 78); Favourites while there is one.
             if(!beyond.isEmpty()&&a.onHome(NoteStore.FAVOURITES))places.add(favourites());
-            for(NoteStore.Branch one:new NoteStore.Branch[]{recent(),temp((Integer)got.get("temp")),shared(),
+            for(NoteStore.Branch one:new NoteStore.Branch[]{recent(),temp((Integer)got.get("temp")),shared((Integer)got.get("asking")),
                     archive((Integer)got.get("archived")),bin((Integer)got.get("binned"))})if(a.onHome(one.id))places.add(one);
             @SuppressWarnings("unchecked") List<NoteStore.Branch> waiting=(List<NoteStore.Branch>)got.get("waiting");
             if(waiting!=null)places.addAll(waiting);
@@ -1348,18 +1352,20 @@ final class HomeScreen {
      */
     View placeFace(NoteStore.Branch place,int face) {
         // In the colour chosen for it, washed and edged as a collection's square is (decision 81).
-        int colour=a.placeColour(place.id);
-        if(place.kind==NoteStore.Branch.Kind.FAVOURITES)return starFace(face,colour);
+        int colour=a.placeColour(place.id),tone=a.placeTone(place.id);
+        if(place.kind==NoteStore.Branch.Kind.FAVOURITES)return starFace(face,colour,tone);
         FrameLayout over=new FrameLayout(a);
         View square=new View(a);
         // What is on its way is not a place, and keeps the one edge a thing has.
-        square.setBackground(placeSquare(colour,place.kind!=NoteStore.Branch.Kind.WAITING));
+        square.setBackground(placeSquare(colour,tone,place.kind!=NoteStore.Branch.Kind.WAITING));
         over.addView(square,new FrameLayout.LayoutParams(face,face));
         View glyph=new View(a);
         glyph.setBackground(IconFace.bare(a,placeIcon(place.kind),Looks.ink(colour,a.darkPaper(),a.INK),0));
         over.addView(glyph,new FrameLayout.LayoutParams(face,face));
-        // How many wait in the archive, the bin and Temp; nothing counted on the others, whose words are not a count.
-        boolean counted=place.kind==NoteStore.Branch.Kind.ARCHIVE||place.kind==NoteStore.Branch.Kind.BIN||place.kind==NoteStore.Branch.Kind.TEMP;
+        // How many wait in the archive, the bin and Temp, and for an answer in Shared with me (decision 109); nothing counted on
+        // the others, whose words are not a count.
+        boolean counted=place.kind==NoteStore.Branch.Kind.ARCHIVE||place.kind==NoteStore.Branch.Kind.BIN||place.kind==NoteStore.Branch.Kind.TEMP
+            ||place.kind==NoteStore.Branch.Kind.SHARED;
         int count=counted?a.countIn(place):0;
         if(count>0) {
             TextView many=a.label(count>99?"99+":String.valueOf(count),MainActivity.QUIET,a.INK);
@@ -1380,10 +1386,11 @@ final class HomeScreen {
     /**
      * A place's square: the card's grey with none chosen, else washed in its colour and edged in it, as a folder's; and in
      * its own frame (decision 94, the owner: "let them all have something that differentiates them"), a thin ring inside
-     * the edge, in the edge's colour, so a place is told from a folder of the owner's at a glance.
+     * the edge, in the edge's colour, so a place is told from a folder of the owner's at a glance. Its colour lands at
+     * the place's own strength (decision 107).
      */
-    private android.graphics.drawable.Drawable placeSquare(int colour,boolean place) {
-        android.graphics.drawable.Drawable edge=a.edged(Tint.known(colour)?Tint.over(colour,a.CARD,a.wash(0.22f,0.92f),a.darkPaper()):a.CARD,colour,false);
+    private android.graphics.drawable.Drawable placeSquare(int colour,int tone,boolean place) {
+        android.graphics.drawable.Drawable edge=a.edged(Tint.known(colour)?Tint.over(colour,a.CARD,a.wash(tone,0.22f,0.92f),a.darkPaper()):a.CARD,colour,false);
         if(!place)return edge;
         GradientDrawable ring=new GradientDrawable();ring.setColor(0);ring.setCornerRadius(a.dp(10));
         ring.setStroke(Math.max(1,a.dp(1)),Tint.known(colour)?Tint.of(colour,a.darkPaper()):a.LINE);
@@ -1397,10 +1404,10 @@ final class HomeScreen {
     static final String ARCHIVE_ICON="archive",BIN_ICON="trash";
 
     /** A star on an outlined square: the Favourites collection's face, here and in the dock. */
-    View starFace(int face){return starFace(face,Tint.NONE);}
-    View starFace(int face,int colour) {
+    View starFace(int face){return starFace(face,Tint.NONE,Tint.USUAL);}
+    View starFace(int face,int colour,int tone) {
         LinearLayout box=a.column();box.setGravity(Gravity.CENTER);
-        box.setBackground(placeSquare(colour,true));
+        box.setBackground(placeSquare(colour,tone,true));
         TextView star=a.label("★",MainActivity.QUIET,Looks.ink(colour,a.darkPaper(),a.INK));
         star.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,face*0.42f);
         star.setIncludeFontPadding(false);star.setGravity(Gravity.CENTER);
@@ -1435,7 +1442,9 @@ final class HomeScreen {
     /** Recent: what was opened lately (decision 72). */
     static NoteStore.Branch recent(){return place(NoteStore.Branch.Kind.RECENT,NoteStore.RECENT,"Recent",0);}
     /** Shared with me: where files shared with you on their own show (decision 94). */
-    static NoteStore.Branch shared(){return place(NoteStore.Branch.Kind.SHARED,NoteStore.SHARED,NoteStore.SHARED_WITH_ME,0);}
+    static NoteStore.Branch shared(){return shared(0);}
+    /** The same, with how many things wait in it for an answer, which it wears as Temp wears its count (decision 109). */
+    static NoteStore.Branch shared(int waiting){return place(NoteStore.Branch.Kind.SHARED,NoteStore.SHARED,NoteStore.SHARED_WITH_ME,waiting);}
     static NoteStore.Branch archive(int count){return place(NoteStore.Branch.Kind.ARCHIVE,NoteStore.ARCHIVE,"Archive",count);}
     /** The bin, as Home shows it, with how many things are in it. */
     static NoteStore.Branch bin(int count){return place(NoteStore.Branch.Kind.BIN,NoteStore.BIN,"Bin",count);}
@@ -1452,7 +1461,7 @@ final class HomeScreen {
             case TOOLS: return "Open Tools: the archive, the bin, Temp and Recent";
             case TEMP: return "Open Temp, "+(branch.detail.isEmpty()?"empty":branch.detail+" to be gone");
             case RECENT: return "Open Recent, what was opened lately";
-            case SHARED: return "Open Shared with me, the files people share with you";
+            case SHARED: return "Open Shared with me, the files people share with you"+(branch.detail.isEmpty()?"":", "+branch.detail+" waiting for you");
             case OPEN: return "What is open, "+(branch.detail.isEmpty()?"nothing":branch.detail);
             case WAITING: return branch.name+": "+branch.detail;
             default:
@@ -1750,6 +1759,9 @@ final class HomeScreen {
         if(note==null||note.id==null)return;
         if((note.title==null||note.title.trim().isEmpty())&&(note.body==null||note.body.trim().isEmpty()))return;
         overview.remember(Overview.Kind.NOTE,note.id);
+        // A help request, where this note is set to send one when it opens (decision 113): once per opening, here where a
+        // real note opens, not a blank page.
+        a.helpOnOpened(NoteStore.Branch.Kind.PAGE,note.id);
     }
 
     /** Something put away or deleted: no card opens what is not there. */
@@ -1774,6 +1786,8 @@ final class HomeScreen {
 
     /** A colour chosen for a collection while its menu is over its pop-up: the pop-up takes it at once, as the page does. */
     void painted(String id,int colour){folder.painted(id,colour);}
+    /** And a strength chosen for it there: the pop-up takes that at once too (decision 107). */
+    void toned(String id,int tone){folder.toned(id,tone);}
 
     // ---- carrying ---------------------------------------------------------------------------------------------------
 

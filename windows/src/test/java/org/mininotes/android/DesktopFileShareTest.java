@@ -113,6 +113,9 @@ public class DesktopFileShareTest {
         assertEquals("its sleeve is owed to B",1,a.store.sleevesOwed(file,false).stream().filter(w->w.address.equals(B_AT)).count());
         b.hear(a.sleeve(b,file));
         assertEquals("waited for, then fetched",1,fetches(b));
+        // Shared with B on its own by somebody else, it waited for B's answer, and B accepts it (decision 109).
+        assertTrue(b.store.waits(NoteStore.Branch.Kind.FILE,file));
+        b.store.acceptShared(NoteStore.Branch.Kind.FILE,file);
         return file;
     }
 
@@ -268,6 +271,9 @@ public class DesktopFileShareTest {
         d.hear(a.sleeve(d,file));
         assertEquals(1,fetches(d));
         assertArrayEquals(second,d.bytes(file));
+        // Shared with D by somebody else, it waits for D's answer (decision 109); accepted, it is in Shared with me.
+        assertTrue(d.store.contents(NoteStore.SHARED).isEmpty());
+        d.store.acceptShared(NoteStore.Branch.Kind.FILE,file);
         assertEquals(1,d.store.contents(NoteStore.SHARED).size());
     }
 
@@ -481,6 +487,9 @@ public class DesktopFileShareTest {
         assertFalse(uploading(a,file));
         // At B: announced, and coming, in Shared with me, until its bytes are kept.
         b.hear(a.sleeve(b,file));
+        // From somebody else, it waits for B's answer while it comes, and only then is drawn as coming (decision 109).
+        assertTrue(b.store.coming(NoteStore.SHARED).isEmpty());
+        b.store.acceptShared(NoteStore.Branch.Kind.WAITING,NoteStore.COMING+file);
         List<NoteStore.Branch> coming=b.store.coming(NoteStore.SHARED);
         assertEquals(1,coming.size());assertEquals("plan.png",coming.get(0).name);
         assertEquals(NoteStore.Branch.Kind.WAITING,coming.get(0).kind);assertTrue(coming.get(0).id.startsWith(NoteStore.COMING));

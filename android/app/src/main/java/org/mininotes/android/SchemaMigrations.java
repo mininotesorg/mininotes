@@ -12,7 +12,7 @@ import java.util.List;
  * types, so the version rules are unit tested without a device.
  */
 final class SchemaMigrations {
-    static final int VERSION=43;
+    static final int VERSION=47;
 
     /** Every pad starts with one collection holding one book, so writing never begins with a decision. */
     static final String FIRST_COLLECTION="collection-first", FIRST_BOOK="book-first";
@@ -687,6 +687,65 @@ final class SchemaMigrations {
         "ALTER TABLE addresses ADD COLUMN parlonsDecided INTEGER NOT NULL DEFAULT 0",
     };
 
+    /**
+     * How strongly a thing's colour lands, the thing's own (the owner, 2026-10-06: "the color intensity applies to the
+     * whole app, it should be specific to the elements selected"; decision 107): which tone of {@link Tint#TONES}, beside
+     * its colour, or -1 for the usual one, which is what every note and every folder there is starts with, so nothing
+     * changes its look. Kept on this device as a note's size is: never sent, and put back only by a restore of this pad.
+     */
+    private static final String[] TONES={
+        "ALTER TABLE notes ADD COLUMN tone INTEGER NOT NULL DEFAULT -1",
+        "ALTER TABLE things ADD COLUMN tone INTEGER NOT NULL DEFAULT -1",
+    };
+
+    /**
+     * When a thing's colour and when its strength were last decided, anywhere (the owner, 2026-10-06: "when sharing everything
+     * should travel, then on the other device it can be set individually"; decision 108): both travel with the thing, and on
+     * arrival the later decision wins, so a device that sets its own afterwards keeps it. 0 for never decided, which is every
+     * note and every folder there is: nothing that arrives without a decision changes anybody's look.
+     */
+    private static final String[] LOOK_DECIDED={
+        "ALTER TABLE notes ADD COLUMN toneDecided INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE things ADD COLUMN toneDecided INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE notes ADD COLUMN colourDecided INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE things ADD COLUMN colourDecided INTEGER NOT NULL DEFAULT 0",
+    };
+
+    /**
+     * Something another person shares with me for the first time waits for my answer (the owner, 2026-10-06: "When someone
+     * shares something with me, I need an alert, a pop-up at first telling me, and it should go in Shared with me, and there I
+     * should have an accept or refuse"; decision 109). Whether a note, a folder, a file or a file still coming was accepted
+     * here: 1 for every row there is, so the upgrade asks nothing, and 0 only for what arrives new from somebody else and lands
+     * on Home. And, on the sender's side, who refused what they shared, with the few words they sent, if any, and whether the
+     * owner has seen it said.
+     */
+    private static final String[] ACCEPTED={
+        "ALTER TABLE notes ADD COLUMN accepted INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE things ADD COLUMN accepted INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE files ADD COLUMN accepted INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE incoming ADD COLUMN accepted INTEGER NOT NULL DEFAULT 1",
+        "CREATE TABLE IF NOT EXISTS refusals(address TEXT NOT NULL,target TEXT NOT NULL,kind TEXT NOT NULL,name TEXT NOT NULL DEFAULT '',"
+        +"words TEXT NOT NULL DEFAULT '',at INTEGER NOT NULL,PRIMARY KEY(address,target))",
+    };
+
+    /**
+     * A note or folder set to send a help request the moment it opens (the owner, 2026-10-06: "could we even make it that if
+     * one note is open, it sends a help request to a contact with the phone location, all this of course fully secretly?";
+     * decision 113). For an ordinary note or folder the setting lives here, in the notebook: whether it is on (0 for every
+     * note and every folder there is, so nothing sends by the upgrade), the addresses it goes to, newline between, and the
+     * few words the owner wrote. Kept on this device only, as a thing's strength is: never sent, so a forensic look at the
+     * phone's data can find it. A private note or folder keeps the same inside the vault instead, where nothing outside shows
+     * it (decision 111); never here.
+     */
+    private static final String[] HELP={
+        "ALTER TABLE notes ADD COLUMN helpOnOpen INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE things ADD COLUMN helpOnOpen INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE notes ADD COLUMN helpTo TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE things ADD COLUMN helpTo TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE notes ADD COLUMN helpWords TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE things ADD COLUMN helpWords TEXT NOT NULL DEFAULT ''",
+    };
+
     /** STEPS[i] upgrades a database at version i+1 to version i+2. */
     private static final String[][] STEPS={
         {VIEW_INDEX},
@@ -773,6 +832,14 @@ final class SchemaMigrations {
         GROUPS,
         // 42 -> 43: a person's Parlons! address, and when it was decided.
         PARLONS,
+        // 43 -> 44: how strongly its colour lands, for each note and each folder.
+        TONES,
+        // 44 -> 45: when a thing's colour and its strength were last decided, which travel with them.
+        LOOK_DECIDED,
+        // 45 -> 46: what somebody else shares with me first waits for my answer; who refused what I shared.
+        ACCEPTED,
+        // 46 -> 47: a note or folder set to send a help request when it opens, to whom, and with what words (decision 113).
+        HELP,
     };
 
     /** The one collection and the one book a pad cannot be without, for a restore that carries neither. */
@@ -824,6 +891,10 @@ final class SchemaMigrations {
         Collections.addAll(statements,TEMP_FILES);
         Collections.addAll(statements,GROUPS);
         Collections.addAll(statements,PARLONS);
+        Collections.addAll(statements,TONES);
+        Collections.addAll(statements,LOOK_DECIDED);
+        Collections.addAll(statements,ACCEPTED);
+        Collections.addAll(statements,HELP);
         return statements;
     }
 

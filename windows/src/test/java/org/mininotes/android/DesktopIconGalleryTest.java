@@ -163,7 +163,7 @@ public class DesktopIconGalleryTest {
         var image=new java.awt.image.BufferedImage(across*scale,(kinds.size()*120+20)*scale,java.awt.image.BufferedImage.TYPE_INT_RGB);
         Graphics2D g=image.createGraphics();g.scale(scale,scale);g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
         g.setColor(Desktop.PAPER);g.fillRect(0,0,across,kinds.size()*120+20);
-        for(int row=0;row<kinds.size();row++){int x=20;for(int s:sides){DesktopHome.face(g,kinds.get(row),x,20+row*120+(104-s)/2,s,pad.tone);x+=s+w;}}
+        for(int row=0;row<kinds.size();row++){int x=20;for(int s:sides){DesktopHome.face(g,kinds.get(row),x,20+row*120+(104-s)/2,s,pad.usual);x+=s+w;}}
         g.dispose();javax.imageio.ImageIO.write(image,"png",SHOTS.resolve("i00-faces-drawn.png").toFile());
     }
 

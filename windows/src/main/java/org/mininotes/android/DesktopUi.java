@@ -63,6 +63,8 @@ final class DesktopUi {
         UIManager.put("Component.borderColor",LINE);UIManager.put("Component.disabledBorderColor",LINE);
         UIManager.put("ScrollBar.width",10);UIManager.put("ScrollBar.thumbArc",999);UIManager.put("ScrollBar.thumbInsets",new Insets(2,2,2,2));
         UIManager.put("ScrollBar.track",PAPER);UIManager.put("ScrollBar.showButtons",false);
+        // Not seen until the pointer is on it (see DesktopScroll).
+        UIManager.put("ScrollBarUI",DesktopScroll.class.getName());UIManager.put(DesktopScroll.class.getName(),DesktopScroll.class);
         UIManager.put("Tree.rowHeight",30);UIManager.put("Tree.paintLines",false);UIManager.put("Tree.selectionArc",8);
         UIManager.put("Tree.selectionInsets",new Insets(0,4,0,4));UIManager.put("Tree.background",SHELF);
         UIManager.put("List.selectionArc",8);UIManager.put("List.selectionInsets",new Insets(0,4,0,4));

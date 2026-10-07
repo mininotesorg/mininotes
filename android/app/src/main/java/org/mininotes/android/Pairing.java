@@ -209,6 +209,18 @@ final class Pairing {
      * as a space, and a slash, two of which together look like a mistake to be corrected. A key with one
      * character changed is not a slightly wrong key.
      */
+    /**
+     * The few words that go with my link when it is shared (decision 110): who it is from, what to do with it, and where
+     * to get the app for somebody who has none. The link itself opens Mininotes where it is installed; where it is not
+     * clickable (some social networks), it is pasted in + by People, Paste their link.
+     */
+    static String invite(String name,String link,String download) {
+        String who=name==null||name.trim().isEmpty()?"me":name.trim();
+        return "Connect with "+who+" on Mininotes, the private notepad for the people close to you."+"\n\n"
+            +"Open this link on a device with Mininotes, or copy it and in Mininotes tap + by People, then Paste their link:"+"\n"
+            +link+(download==null||download.isEmpty()?"":"\n\nNo Mininotes yet? Get it here: "+download);
+    }
+
     static String link(String line) {
         StringBuilder out=new StringBuilder(LINK);
         for(byte one:(line==null?"":line.trim()).getBytes(StandardCharsets.UTF_8)) {

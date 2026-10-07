@@ -420,7 +420,7 @@ final class DesktopIconPicker {
                 if(lit){g.setColor(DesktopUi.mix(DesktopUi.ACCENT,DesktopUi.PAPER,0.88f));g.fillRoundRect(x+3,y+3,CELL-6,CELL-6,12,12);}
                 if(wears(name)){g.setColor(DesktopUi.INK);g.setStroke(new BasicStroke(1.6f));g.drawRoundRect(x+2,y+2,CELL-5,CELL-5,14,14);}
                 if(keyboard&&at==chosen&&!readOnly){g.setColor(DesktopUi.ACCENT);g.setStroke(new BasicStroke(1.6f));g.drawRoundRect(x+3,y+3,CELL-7,CELL-7,12,12);}
-                if(DEFAULT.equals(name))DesktopHome.face(g,plain(),x+(CELL-FACE)/2,y+(CELL-FACE)/2,FACE,pad.tone);
+                if(DEFAULT.equals(name))DesktopHome.face(g,plain(),x+(CELL-FACE)/2,y+(CELL-FACE)/2,FACE,pad.usual);
                 else DesktopIcons.draw(g,name,x+(CELL-GLYPH)/2f,y+(CELL-GLYPH)/2f,GLYPH,ink);
             }
             g.dispose();

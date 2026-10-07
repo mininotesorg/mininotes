@@ -17,7 +17,8 @@ final class Tint {
     /**
      * How strongly a colour lands on the paper: pastel at one end, the colour itself at the other. The hue
      * says which colour a thing is, the tone says how loudly — two questions, because one answer cannot be
-     * both. Kept for the whole pad rather than per thing: it is a matter of taste, not of which note this is.
+     * both. Each thing's own since 0.3.004 (the owner, 2026-10-06: "the color intensity applies to the whole app, it
+     * should be specific to the elements selected"; decision 107); before, one setting for the whole pad.
      */
     /**
      * How much of a colour reaches the paper, as multiples of each surface's own base weight. The first six
@@ -30,6 +31,16 @@ final class Tint {
      * rungs below for anyone who would rather have a hint of one.
      */
     static final int FIRST_TONE=3;
+
+    /**
+     * No tone of its own: the thing is washed at the usual one, which is the one setting the pad had before each thing
+     * had its own (decision 107), kept as it was on the day of the upgrade so nothing changed its look.
+     */
+    static final int USUAL=-1;
+    /** Whether a stored number is a tone, so an unknown one is simply the usual. */
+    static boolean toned(int tone){return tone>=0&&tone<TONES.length;}
+    /** The tone a thing is washed at: its own where it has one, the usual where it has none. */
+    static int tone(int own,int usual){return toned(own)?own:toned(usual)?usual:FIRST_TONE;}
 
     /** A wash at the tone in use, never so strong that what is written on it stops reading. */
     static float weigh(float base,int tone,float most) {
