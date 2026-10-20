@@ -150,9 +150,10 @@ public class DesktopFirstShareTest {
         assertEquals("Synthetic Saturday market, with eggs",pc.store.get(id).body);
         assertTrue(pc.store.waitingUnsaid().isEmpty());
         showsNowhere(pc.store,Set.of(id),"eggs");
-        // Accepted: on Home, found, and waiting no more.
+        // Accepted: in Shared with me, found, and waiting no more (decision 122).
         pc.store.acceptShared(PAGE,id);
-        assertTrue(ids(pc.store.contents(Things.HOME)).contains(id));
+        assertTrue(ids(pc.store.contents(NoteStore.SHARED)).contains(id));
+        assertFalse(ids(pc.store.contents(Things.HOME)).contains(id));
         assertTrue(ids(pc.store.lookingEverywhere("eggs")).contains(id));
         assertTrue(ids(pc.store.recent(0)).contains(id));
         assertTrue(pc.store.waitingForYou().isEmpty());assertEquals(0,pc.store.waitingCount());
@@ -181,7 +182,8 @@ public class DesktopFirstShareTest {
         pc.store.addShare(new Sharing.Rule(Sharing.Scope.PAGE,hers,TABLET,true));
         pc.hear(Envelope.seal(page(hers),n.revision+1,1,Parcel.wrap(passed,Envelope.MAX_TEXT),tablet.keys.signing(),pc.keys.agreement().getPublic()));
         assertFalse("one of mine said yes to it",pc.store.waits(PAGE,hers));
-        assertTrue(ids(pc.store.contents(Things.HOME)).contains(hers));
+        assertTrue("still in Shared with me, where it arrived",ids(pc.store.contents(NoteStore.SHARED)).contains(hers));
+        assertFalse(ids(pc.store.contents(Things.HOME)).contains(hers));
     }
 
     @Test public void everyListLeavesOutWhatWaitsAndAcceptingShowsItWhole() throws Exception {
@@ -215,14 +217,16 @@ public class DesktopFirstShareTest {
         showsNowhere(pc.store,hidden,"sourdough");
         assertEquals(4,pc.store.waitingCount());
         assertEquals(Set.of(marketHere,saturday,here,NoteStore.COMING+coming),ids(pc.store.waitingForYou()));
-        // Accepted, one by one: the folder shows with all it holds; the note on Home; the files in Shared with me.
+        // Accepted, one by one: the folder shows in Shared with me with all it holds; the note there too; the files there.
         pc.store.acceptShared(COLLECTION,marketHere);
-        assertTrue(ids(pc.store.contents(Things.HOME)).contains(marketHere));
+        assertTrue(ids(pc.store.contents(NoteStore.SHARED)).contains(marketHere));
+        assertFalse(ids(pc.store.contents(Things.HOME)).contains(marketHere));
         assertEquals(Set.of(bread,stallsHere),ids(pc.store.contents(marketHere)));
         assertTrue(ids(pc.store.lookingEverywhere("sourdough")).containsAll(Set.of(bread,cheese)));
         assertFalse(ids(pc.store.lookingEverywhere("sourdough")).contains(saturday));
         pc.store.acceptShared(PAGE,saturday);
-        assertTrue(ids(pc.store.contents(Things.HOME)).contains(saturday));
+        assertTrue(ids(pc.store.contents(NoteStore.SHARED)).contains(saturday));
+        assertFalse(ids(pc.store.contents(Things.HOME)).contains(saturday));
         pc.store.acceptShared(FILE,here);pc.store.acceptShared(NoteStore.Branch.Kind.WAITING,NoteStore.COMING+coming);
         assertTrue(ids(pc.store.contents(NoteStore.SHARED)).contains(here));
         assertTrue(ids(pc.store.coming(NoteStore.SHARED)).contains(NoteStore.COMING+coming));

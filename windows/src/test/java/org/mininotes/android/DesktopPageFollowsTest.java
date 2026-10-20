@@ -98,13 +98,19 @@ public class DesktopPageFollowsTest {
         start();
         String tooLong="\n"+"x".repeat(24_001);
         SwingUtilities.invokeAndWait(()->{try{pad.page.getDocument().insertString(pad.page.getDocument().getLength(),tooLong,null);}catch(Exception e){throw new RuntimeException(e);}});
-        await(()->onEdt(()->pad.noteWords.getText().startsWith("Not saved")));
+        await(()->DesktopRecovery.get(pad.store,"n")!=null);
+        assertEquals(OLD+tooLong,DesktopRecovery.get(pad.store,"n").body());
         landQuietly(NEW);told();
         await(()->onEdt(()->pad.page.getText().startsWith("good?\nwhat about now?")));settle();
         assertFalse("the old line is not back on the page",onEdt(pad.page::getText).contains("still not?"));
         assertTrue("and the typing is still there",onEdt(pad.page::getText).endsWith(tooLong));
         assertEquals("nothing of it written",NEW,pad.store.get("n").body);
-        assertTrue("still unsaved, and said so",onEdt(pad::typedHere));
+        await(()->DesktopRecovery.get(pad.store,"n").body().equals(NEW+tooLong));settle();
+        var draft=DesktopRecovery.get(pad.store,"n");assertEquals(NEW,draft.base().body);assertEquals(75,draft.base().revision);
+        assertEquals("invalid local writing never becomes a shared revision",75,pad.store.get("n").revision);
+        assertEquals(DesktopRecovery.KEPT,onEdt(()->pad.noteWords.getText()));
+        SwingUtilities.invokeAndWait(pad::goHome);await(()->!pad.onPage());settle();
+        assertEquals("navigation preserves both arrival and complete local writing",NEW+tooLong,DesktopRecovery.get(pad.store,"n").body());
     }
 
     /** A save asked for on a page showing old text nobody typed - the tab closing, Ctrl+S - writes nothing. */

@@ -117,8 +117,33 @@ final class Merge {
         }
         while(a<first.size())out.add(first.get(a++));
         while(b<second.size())out.add(second.get(b++));
+        return typedOn(out);
+    }
+
+    /**
+     * A line that is only the start of another line beside it, left out: that line caught while it was being typed on
+     * one device, and the same line typed on further, both kept as if two people had written two things (the owner,
+     * 2026-10-19, a note full of "it says submitted but", "it says submitted but it leave", "it says submitted but it
+     * leaves the user guessing…": "it seems I face situations where the text is duplicated"; decision 215). Only where
+     * the two sides wrote over the same lines, only a line of some length, and the same whichever phone works it out:
+     * the longer one stays.
+     */
+    static List<String> typedOn(List<String> lines) {
+        List<String> out=new ArrayList<>();
+        for(int at=0;at<lines.size();at++) {
+            String one=lines.get(at).stripTrailing();boolean earlier=false;
+            if(one.strip().length()>=TYPED_MOST_SHORT)
+                for(int other=0;other<lines.size()&&!earlier;other++) {
+                    String two=lines.get(other).stripTrailing();
+                    // The same line twice is one line; a line that goes on further makes this one its earlier state.
+                    earlier=other!=at&&(two.length()>one.length()&&two.startsWith(one)||two.equals(one)&&other<at);
+                }
+            if(!earlier)out.add(lines.get(at));
+        }
         return out;
     }
+    /** Shorter than this, a line is kept whatever: "-", "ok" or a date can well be written twice on purpose. */
+    static final int TYPED_MOST_SHORT=12;
 
     /** Whether a change belongs to the stretch being gathered: overlapping it, or starting where it does. */
     private static boolean within(Change c,int at,int to) {

@@ -139,6 +139,19 @@ final class DesktopUpdate {
             .redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(ProcessBuilder.Redirect.DISCARD).start();
     }
 
+    /** This Mininotes started again once it has closed: the same hidden way an update starts it (decision 160). */
+    static Process startAfterExit(Path exe) throws IOException {
+        String script=String.join("\r\n",
+            "try{Wait-Process -Id "+ProcessHandle.current().pid()+" -Timeout 120 -ErrorAction SilentlyContinue}catch{}",
+            "Start-Sleep -Milliseconds 800",
+            "Start-Process -FilePath '"+ps(exe)+"'","");
+        Path file=Files.createTempFile("mininotes-restart-",".ps1");
+        Files.writeString(file,"\ufeff"+script,StandardCharsets.UTF_8);
+        String shell=Path.of(System.getenv().getOrDefault("SystemRoot","C:\\Windows"),"System32","WindowsPowerShell","v1.0","powershell.exe").toString();
+        return new ProcessBuilder(shell,"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",file.toString())
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+    }
+
     /** A path inside single quotes in PowerShell: a quote is written twice. */
     private static String ps(Path path){return path.toAbsolutePath().toString().replace("'","''");}
 

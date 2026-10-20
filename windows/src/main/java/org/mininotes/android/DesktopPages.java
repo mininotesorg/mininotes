@@ -67,9 +67,9 @@ final class DesktopPages extends JComponent {
     }
 
     /** Up, over Home. */
-    void up(){if(home.folder.isOpen())home.folder.close();setVisible(true);repaint();SwingUtilities.invokeLater(this::requestFocusInWindow);}
+    void up(){if(home.folder.isOpen())home.folder.close();home.motion.stop();setVisible(true);home.showFoot();home.desk.revalidate();repaint();SwingUtilities.invokeLater(this::requestFocusInWindow);}
     /** Put away, and the page chosen - or the one that was in view - is what is seen. */
-    void away(){setVisible(false);home.grid.requestFocusInWindow();}
+    void away(){setVisible(false);home.showFoot();home.desk.revalidate();home.grid.requestFocusInWindow();}
 
     @Override protected void paintComponent(Graphics g0) {
         Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);

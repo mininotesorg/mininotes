@@ -36,6 +36,8 @@ final class DesktopMark implements Icon {
     static Map<String,SyncMark> read(NoteStore store) {
         Map<String,SyncMark> marks=new HashMap<>();
         walk(store,store.inside(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING).holds,marks,new HashSet<>());
+        // And Temp's, for its card: the worst of what is in it that reaches anybody (the owner, 2026-10-14).
+        marks.put(NoteStore.TEMP,store.markOf(NoteStore.Branch.Kind.TEMP,NoteStore.TEMP));
         return marks;
     }
 
@@ -166,11 +168,21 @@ final class DesktopMark implements Icon {
                 Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
                 if(!who.linked()){paintNotLinked(g,who.name(),x,y,side);g.dispose();return;}
                 int colour=ink==null?Tint.NONE:ink.applyAsInt(who);
-                if(Tint.known(colour)) {
+                // Their picture where they have one (decision 158).
+                java.awt.image.BufferedImage face=DesktopFaces.of(who.address());
+                if(face!=null)DesktopFaces.paintRound(g,face,x,y,side);
+                else if(Tint.known(colour)) {
                     Color fill=new Color(Tint.over(colour,DesktopUi.CARD.getRGB(),0.22f,false));
                     DesktopUi.paintAvatar(g,who.name(),x,y,side,fill,new Color(Writers.ink(colour,fill.getRGB())));
                 }
                 else DesktopUi.paintAvatar(g,who.name(),x,y,side);
+                // Ringed in their writing colour, full strength, picture or not: whose the coloured words are, at a glance (the
+                // owner, 2026-10-15: "in a shared note, the people icons at the top should indicate clearly their writing color").
+                if(Tint.known(colour)) {
+                    float w=Math.max(2.2f,side*0.11f);
+                    g.setColor(new Color(Tint.of(colour,false),true));g.setStroke(new BasicStroke(w));
+                    g.draw(new Ellipse2D.Float(x+w/2f,y+w/2f,side-w,side-w));
+                }
                 // The dot, ringed in paper so it reads over the round and over a washed page alike.
                 float dot=Math.max(7f,side*0.36f),at=side+2-dot;
                 g.setColor(DesktopUi.PAPER);g.fill(new Ellipse2D.Float(x+at-1.5f,y+at-1.5f,dot+3f,dot+3f));
@@ -250,7 +262,78 @@ final class DesktopMark implements Icon {
     static void people(JPanel line,List<SyncStatus.Person> who,int side,java.util.function.Consumer<SyncStatus.Person> notLinked,
                        java.util.function.BiConsumer<SyncStatus.Person,Component> linked,java.util.function.ToIntFunction<SyncStatus.Person> ink) {
         line.removeAll();
-        for(SyncStatus.Person one:who)line.add(person(one,side,notLinked,linked,ink));
+        // A few rounds, those that need a look first, and the rest in one +N that lists everybody (see SyncStatus.roundsShown).
+        List<SyncStatus.Person> drawn=SyncStatus.roundsShown(who,SyncStatus.PC_ROUNDS);
+        for(SyncStatus.Person one:drawn)line.add(person(one,side,notLinked,linked,ink));
+        if(drawn.size()<who.size())line.add(more(who,who.size()-drawn.size(),side,notLinked,linked,ink));
         line.revalidate();line.repaint();
+    }
+
+    /** The +N round after the few drawn: a click lists everybody the note reaches, each line that person's round. */
+    private static JComponent more(List<SyncStatus.Person> who,int hidden,int side,java.util.function.Consumer<SyncStatus.Person> notLinked,
+                                   java.util.function.BiConsumer<SyncStatus.Person,Component> linked,java.util.function.ToIntFunction<SyncStatus.Person> ink) {
+        String said="+"+hidden;
+        JLabel round=new JLabel(new Icon(){
+            public int getIconWidth(){return side+2;}
+            public int getIconHeight(){return side+2;}
+            public void paintIcon(Component c,Graphics g0,int x,int y) {
+                Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+                g.setColor(DesktopUi.mix(DesktopUi.CARD,DesktopUi.INK,0.12f));g.fill(new Ellipse2D.Float(x,y,side,side));
+                g.setColor(DesktopUi.INK);g.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,side*(said.length()>2?0.34f:0.40f)));FontMetrics m=g.getFontMetrics();
+                g.drawString(said,x+(side-m.stringWidth(said))/2f,y+(side-m.getHeight())/2f+m.getAscent());
+                g.dispose();
+            }
+        });
+        round.setBorder(BorderFactory.createEmptyBorder(0,0,0,4));
+        round.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        String everybody=Say.t("Everybody it reaches: {0}",String.valueOf(who.size()));
+        round.setToolTipText(everybody);round.getAccessibleContext().setAccessibleName(everybody);
+        round.addMouseListener(new java.awt.event.MouseAdapter(){
+            @Override public void mouseClicked(java.awt.event.MouseEvent e){
+                if(SwingUtilities.isLeftMouseButton(e))everybody(who,side,notLinked,linked,ink,everybody).show(round,0,round.getHeight()+4);
+            }
+        });
+        return round;
+    }
+
+    /** Everybody the note reaches, one line each: their round, name and where they stand, those that need a look first. */
+    static JPopupMenu everybody(List<SyncStatus.Person> who,int side,java.util.function.Consumer<SyncStatus.Person> notLinked,
+                                java.util.function.BiConsumer<SyncStatus.Person,Component> linked,java.util.function.ToIntFunction<SyncStatus.Person> ink,String heading) {
+        JPopupMenu box=new JPopupMenu();box.setBackground(DesktopUi.CARD);
+        JPanel all=DesktopUi.column();all.setBorder(BorderFactory.createEmptyBorder(8,0,8,0));
+        JLabel head=new JLabel(heading.toUpperCase(java.util.Locale.ROOT));head.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,11f));head.setForeground(DesktopUi.QUIET);
+        head.setBorder(BorderFactory.createEmptyBorder(2,14,6,14));DesktopUi.add(all,head);
+        for(SyncStatus.Person one:SyncStatus.lookFirst(who)) {
+            JPanel row=new JPanel(new BorderLayout(10,0));row.setOpaque(true);row.setBackground(DesktopUi.CARD);
+            row.setBorder(BorderFactory.createEmptyBorder(4,12,4,16));
+            JComponent round=person(one,side,null,null,ink);
+            for(java.awt.event.MouseListener l:round.getMouseListeners())round.removeMouseListener(l);
+            row.add(round,BorderLayout.WEST);
+            JPanel words=DesktopUi.column();
+            DesktopUi.add(words,DesktopUi.body(one.called()));
+            DesktopUi.add(words,DesktopUi.note(one.linked()?one.standing():one.notLinked(Post.here()),300,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12f)));
+            row.add(words,BorderLayout.CENTER);
+            row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            row.getAccessibleContext().setAccessibleName(one.linked()?one.called()+": "+one.standing():one.notLinked(Post.here()));
+            row.addMouseListener(new java.awt.event.MouseAdapter(){
+                @Override public void mouseEntered(java.awt.event.MouseEvent e){row.setBackground(DesktopUi.mix(DesktopUi.CARD,DesktopUi.INK,0.06f));}
+                @Override public void mouseExited(java.awt.event.MouseEvent e){row.setBackground(DesktopUi.CARD);}
+                @Override public void mouseClicked(java.awt.event.MouseEvent e){
+                    Component near=box.getInvoker();box.setVisible(false);
+                    if(!one.linked()&&notLinked!=null)notLinked.accept(one);
+                    else if(one.linked()&&linked!=null)linked.accept(one,near);
+                    else if(near!=null)told(one,near).show(near,0,near.getHeight()+4);
+                }
+            });
+            DesktopUi.add(all,row);
+        }
+        JScrollPane scroll=new JScrollPane(all,ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setBorder(BorderFactory.createEmptyBorder());scroll.getVerticalScrollBar().setUnitIncrement(16);
+        Dimension want=all.getPreferredSize();int bar=want.height>420?scroll.getVerticalScrollBar().getPreferredSize().width:0;
+        scroll.setPreferredSize(new Dimension(Math.max(want.width+bar+4,280),Math.min(want.height+2,420)));
+        box.add(scroll);
+        box.getAccessibleContext().setAccessibleName(heading);
+        return box;
     }
 }

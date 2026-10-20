@@ -56,6 +56,7 @@ final class HomeScreen {
     private GridLayout grid;
     /** The search bar, shown on Home or not (decision 47). */
     private View searchView;
+    private View dockView;
     /** Home's page in view, across and down from the main one (decision 45); kept while the app is open. */
     int pageX,pageY;
     /** The dots saying which page is in view. */
@@ -67,6 +68,16 @@ final class HomeScreen {
      * it the same way, as many holders, one for each page there is.
      */
     private FrameLayout pager,world,here;
+    private final Map<List<Integer>,Laid> pageLayouts=new HashMap<>();
+    private float baseX,baseY;
+    private int fittedWidth,fittedHeight;
+    private float restoreAcross,restoreDown;
+    private boolean restoreViewport;
+    private android.widget.OverScroller momentum;
+    private boolean scrolling;
+    private boolean panning;
+    private String landedId;
+    private final Runnable scrollFrame=()->advanceScroll();
     private final List<View> others=new ArrayList<>();
     /** Each page's holder by {x, y}, the page in view's among them; and, while a page is carried, the empty places it can go. */
     private final Map<List<Integer>,View> holders=new HashMap<>();
@@ -87,6 +98,8 @@ final class HomeScreen {
     private GridLayout carriedFrom;
     /** The mark in the bar, asked again whenever Home is, since a pop-up's own mark takes over the one the app keeps. */
     private View homeMark;
+    /** "new" at the top of Home, with how many: shown while anything is new. */
+    private TextView newMark;
     /**
      * Home's own + : hidden while a pop-up is open, whose own + is the one - two at once, one of them bright over the
      * dimmed grid behind the card, made the next step a choice between two things that look alike.
@@ -123,6 +136,9 @@ final class HomeScreen {
     static boolean takes(NoteStore.Branch.Kind kind,boolean away) {
         return kind==NoteStore.Branch.Kind.LIBRARY||kind==NoteStore.Branch.Kind.COLLECTION||kind==NoteStore.Branch.Kind.BOOK
             ||kind==NoteStore.Branch.Kind.FAVOURITES||kind==NoteStore.Branch.Kind.DROPS
+            // Temp, Recent and Shared with me are cards on Home too: back from a note opened in one is that card again, not
+            // an empty page named after it (the owner, 2026-10-11).
+            ||kind==NoteStore.Branch.Kind.TEMP||kind==NoteStore.Branch.Kind.RECENT||kind==NoteStore.Branch.Kind.SHARED
             ||away&&(kind==NoteStore.Branch.Kind.ARCHIVE||kind==NoteStore.Branch.Kind.BIN);
     }
 
@@ -141,6 +157,9 @@ final class HomeScreen {
      * if it ends in one: that is how the way back from a note, a restart, and a thing moved somewhere all reopen it.
      */
     void draw() {
+        if(fittedWidth>0&&fittedHeight>0){restoreAcross=shiftX/fittedWidth;restoreDown=shiftY/fittedHeight;restoreViewport=true;}
+        fittedWidth=0;fittedHeight=0;
+        stopScroll();panning=false;
         a.tiles=null;a.rows=null;a.desktop=false;a.scroller=null;
         // The drop box is on Home now: a trail remembered by a build from before, that stood in it, stands on Home.
         for(int at=1;at<a.trail.size();at++)if(a.trail.get(at).kind==NoteStore.Branch.Kind.DROPS){while(a.trail.size()>at)a.trail.remove(a.trail.size()-1);break;}
@@ -148,20 +167,20 @@ final class HomeScreen {
         // A fresh screen has nothing carried on it: a carry that never heard its end must not hold Home still for ever.
         a.dragging=null;a.lifted=null;
         a.root.addView(bar());
+        // Under the bar, a contact in trouble, said while there is one (decision 188).
+        a.root.addView(a.troubleStrip(),new LinearLayout.LayoutParams(-1,-2));
         desk=new FrameLayout(a);
-        // Home is pages the size of the screen, in every direction, not one grid that scrolls (decision 45): the pager hears
-        // the swipes and the pinches, and moves and scales the world of pages under the finger.
+        // One surface owns scrolling and momentum; pages have no independent scroll inside them.
         final Turner turner=new Turner();
         pager=new FrameLayout(a){
             @Override public boolean onInterceptTouchEvent(android.view.MotionEvent e){return turner.intercept(e);}
             @android.annotation.SuppressLint("ClickableViewAccessibility")
             @Override public boolean onTouchEvent(android.view.MotionEvent e){turner.touch(e);return true;}
             // The pages round the one in view are drawn once the pager has a size: before, there is nowhere to put them.
-            @Override protected void onSizeChanged(int w,int h,int ow,int oh){super.onSizeChanged(w,h,ow,oh);if(w>0&&h>0)post(()->buildPages());}
+            @Override protected void onSizeChanged(int w,int h,int ow,int oh){super.onSizeChanged(w,h,ow,oh);if(w>0&&h>0)post(()->{refitNow();buildPages();});}
         };
-        // Neither clips: the pages beside the one in view lie outside the world's own bounds, and a view is cut to its bounds
-        // when its parent clips its children - so the pager must not either, or a swipe shows nothing coming in.
-        pager.setClipChildren(false);
+        // The world has real bounds spanning all pages. Only the viewport clips it.
+        pager.setClipChildren(true);
         world=new FrameLayout(a);world.setClipChildren(false);world.setClipToPadding(false);
         // The page in view outlined in the accent, zoomed out, so it is plain where you are among them.
         GradientDrawable seen=frame();seen.setStroke(Math.max(1,a.dp(3)),a.ACCENT);
@@ -169,13 +188,17 @@ final class HomeScreen {
         world.addView(here,new FrameLayout.LayoutParams(-1,-1));
         pager.addView(world,new FrameLayout.LayoutParams(-1,-1));
         zoomed=false;scaleNow=1f;shiftX=0;shiftY=0;others.clear();
-        gridScroll=new ScrollView(a);
+        // The surface owns Home's scrolling. A second scroll inside a page would compete with its gestures.
+        gridScroll=new ScrollView(a){
+            @Override public boolean performClick(){return super.performClick();}
+            @Override public boolean onInterceptTouchEvent(android.view.MotionEvent event){return false;}
+            @Override public boolean onTouchEvent(android.view.MotionEvent event){return false;}
+        };
         gridScroll.setClipToPadding(false);gridScroll.setVerticalScrollBarEnabled(false);
         grid=new GridLayout(a);grid.setColumnCount(columns(a.getResources().getDisplayMetrics().widthPixels));
-        // Room under the last row for the + and no more (56 and its 16 under it), so a page holds every row that fits: with
-        // 96 the Graphene's pages had three rows over an empty band a row and a half tall, which looked like a fourth row
-        // and turned the page when a thing was carried into it (the owner, 2026-10-02).
-        grid.setPadding(a.dp(8),a.dp(6),a.dp(8),a.dp(76));
+        // A few pixels at the edge only. A tall band under the last line was not a cell, so nothing could be let go
+        // between one page and the next (decision 129). The + floats over the corner.
+        grid.setPadding(a.dp(8),0,a.dp(8),0);
         gridScroll.addView(grid,new FrameLayout.LayoutParams(-1,-2));
         here.addView(gridScroll,new FrameLayout.LayoutParams(-1,-1));
         desk.addView(pager,new FrameLayout.LayoutParams(-1,-1));
@@ -183,7 +206,9 @@ final class HomeScreen {
         // Explorer drops: a note's icon, the note; a collection's, the collection; anywhere else Home, in the empty cell.
         gridScroll.setOnDragListener((v,event)->filesOn(v,event,grid,()->homeLaid,()->Things.HOME));
         // Laid out again once the grid is measured, or its names change size, so its rows fill what is seen of it.
-        gridScroll.addOnLayoutChangeListener((v,l,t,r,b,wl,wt,wr,wb)->refit(gridScroll,homeLaid,()->{if(homeLaid!=null&&showing())fill(homeLaid.lines,homeLaid.places);}));
+        // Not while a finger is down on an icon: laying the grid out again takes that icon away, and the hold never becomes
+        // a drag (decision 130). The finger lifting asks again, once, in case the room did change.
+        gridScroll.addOnLayoutChangeListener((v,l,t,r,b,wl,wt,wr,wb)->{if(a.pressing||a.heldTile!=null)return;refitNow();});
         homePlus=plus(()->Things.HOME);
         desk.addView(homePlus,plusPlace());
         dots=new PageDots();
@@ -192,7 +217,8 @@ final class HomeScreen {
         a.root.addView(desk,new LinearLayout.LayoutParams(-1,0,1));
         searchView=searchBar();
         a.root.addView(searchView,searchPlace());
-        a.root.addView(dock.build(),new LinearLayout.LayoutParams(-1,-2));
+        dockView=dock.build();
+        a.root.addView(dockView,new LinearLayout.LayoutParams(-1,-2));
         showFoot();
         // One listener for everything carried on Home, so a thing can go from the grid or a pop-up to the dock and back.
         a.root.setOnDragListener(this::dragged);
@@ -205,15 +231,28 @@ final class HomeScreen {
      * either way: it is the way to what is open.
      */
     void showFoot() {
-        // On the main page only (decision 47); on the others their room is kept, so every page is one size.
-        boolean centre=onCentre();
-        if(searchView!=null)searchView.setVisibility(!a.showSearch?View.GONE:centre?View.VISIBLE:View.INVISIBLE);
-        dock.showRow(!a.showDock?View.GONE:centre?View.VISIBLE:View.INVISIBLE);
+        // Hidden controls leave their room to the grid, including touch and drop targets.
+        boolean centre=!zoomed&&onCentre();
+        if(searchView!=null)searchView.setVisibility(a.showSearch&&centre?View.VISIBLE:View.GONE);
+        if(dockView!=null)dockView.setVisibility(centre?View.VISIBLE:View.GONE);
+        dock.showRow(a.showDock?View.VISIBLE:View.GONE);
+    }
+
+    /** Stable page geometry uses all the room below the bar, including room a visible foot occupies. */
+    private int homeRoom() {
+        if(a.root==null||a.root.getHeight()<=0)return pager==null?1:Math.max(1,pager.getHeight());
+        int bar=a.root.getChildCount()==0?0:a.root.getChildAt(0).getMeasuredHeight();
+        return Math.max(1,a.root.getHeight()-a.root.getPaddingTop()-a.root.getPaddingBottom()-bar);
     }
 
     // ---- pages (docs/HOME.md, decisions 45-50) ------------------------------------------------------------------------
 
-    boolean onCentre(){return pageX==0&&pageY==0;}
+    boolean onCentre(){return seenPageX()==0&&seenPageY()==0;}
+    /** The page under the middle of the screen. Favourites and the search follow it, including while a scroll rests between pages. */
+    private int seenPageX(){return zoomed||pager==null||pager.getWidth()<=0?pageX:(int)Math.round(pageX-shiftX/strideX());}
+    private int seenPageY(){return zoomed||pager==null||pager.getHeight()<=0?pageY:(int)Math.round(pageY-shiftY/strideY());}
+    private float strideX(){return pager==null?1f:Math.max(1,pager.getWidth());}
+    private float strideY(){return homeLaid==null?pager==null?1f:Math.max(1,pager.getHeight()):Math.max(1,homeLaid.rows*homeLaid.height);}
 
     /** How many pages there are: the main one, and each that something stands on. */
     int pageCount(){return homeLaid==null||homeLaid.spots==null?1:Layout.active(homeLaid.spots).size();}
@@ -230,7 +269,7 @@ final class HomeScreen {
 
     /** The page that way, where there is one, sliding in under the finger's way; else a short nudge says there is none. */
     void turn(int dx,int dy) {
-        int[] to=homeLaid==null||homeLaid.spots==null?null:Layout.next(Layout.active(homeLaid.spots),pageX,pageY,dx,dy);
+        int[] to=homeLaid==null||homeLaid.spots==null?null:Layout.next(Layout.active(homeLaid.spots),seenPageX(),seenPageY(),dx,dy);
         if(to==null){nudge(dx,dy);return;}
         go(to[0],to[1]);
     }
@@ -241,10 +280,65 @@ final class HomeScreen {
         move(1f,-dx*back,-dy*back,90,()->move(1f,0,0,140,null));
     }
 
-    /** Where a page lies in the world, from the page in view: a page and a gap away for each page across or down. */
+    /** Where a page lies in the world, from the page whose grid is drawn: edge to edge, with no empty band between (decision 126). */
     private float[] offset(int x,int y) {
-        float gap=a.dp(18);
-        return new float[]{(x-pageX)*(pager.getWidth()+gap),(y-pageY)*(pager.getHeight()+gap)};
+        return new float[]{(x-pageX)*strideX(),(y-pageY)*strideY()};
+    }
+
+    /** The pages something stands on, the one in view always inside, and one past them while a thing is carried there. */
+    private boolean beyond;private int beyondX,beyondY;
+    private int[] pageBounds() {
+        int minX=pageX,maxX=pageX,minY=pageY,maxY=pageY;
+        if(homeLaid!=null&&homeLaid.spots!=null) {
+            int[] s=Layout.span(homeLaid.spots);
+            minX=Math.min(minX,s[0]);maxX=Math.max(maxX,s[1]);minY=Math.min(minY,s[2]);maxY=Math.max(maxY,s[3]);
+        }
+        if(beyond){minX=Math.min(minX,beyondX);maxX=Math.max(maxX,beyondX);minY=Math.min(minY,beyondY);maxY=Math.max(maxY,beyondY);}
+        return new int[]{minX,maxX,minY,maxY};
+    }
+
+    /**
+     * The scroll kept where the finger let go, between pages as well as on one, and never past the last page. When it has
+     * crossed a whole page, that page's grid is the one drawn and the fraction left over stays, so the move does not jump.
+     */
+    private void rest() {
+        if(pager==null)return;
+        float[] b=scrollLimits();
+        show(1f,Math.max(b[0],Math.min(b[1],shiftX)),Math.max(b[2],Math.min(b[3],shiftY)));
+        showFoot();
+        if(stale&&!a.pressing&&a.dragging==null&&!panning)refresh();
+    }
+
+    /** Translation bounds include the last page's final partial row, so every icon clears the foot. */
+    private float[] scrollLimits() {
+        int[] b=pageBounds();
+        float extra=Math.max(0,strideY()-(pager==null?strideY():pager.getHeight()));
+        return new float[]{-(b[1]-pageX)*strideX(),-(b[0]-pageX)*strideX(),
+            -(b[3]-pageY)*strideY()-extra,-(b[2]-pageY)*strideY()};
+    }
+
+    private void stopScroll() {
+        scrolling=false;
+        if(momentum!=null)momentum.abortAnimation();
+        if(pager!=null)pager.removeCallbacks(scrollFrame);
+    }
+
+    private void fling(float vx,float vy) {
+        stopScroll();rest();
+        if(pager==null)return;
+        if(momentum==null)momentum=new android.widget.OverScroller(a);
+        float[] b=scrollLimits();
+        momentum.fling(Math.round(shiftX),Math.round(shiftY),Math.round(vx),Math.round(vy),
+            Math.round(b[0]),Math.round(b[1]),Math.round(b[2]),Math.round(b[3]));
+        scrolling=true;pager.postOnAnimation(scrollFrame);
+    }
+
+    private void advanceScroll() {
+        if(!scrolling||pager==null||!pager.isAttachedToWindow())return;
+        if(momentum.computeScrollOffset()) {
+            show(1f,momentum.getCurrX(),momentum.getCurrY());showFoot();
+            pager.postOnAnimation(scrollFrame);
+        } else {scrolling=false;rest();}
     }
 
     /** That page slid into view, the others moving with it, and then it is the page in view. */
@@ -262,8 +356,7 @@ final class HomeScreen {
         if(x==pageX&&y==pageY)return;
         settle(x,y);
         if(pager!=null&&(dx!=0||dy!=0)) {
-            float gap=a.dp(18);
-            place(1f,dx*(pager.getWidth()+gap),dy*(pager.getHeight()+gap));
+            place(1f,dx*strideX(),dy*strideY());
             move(1f,0,0,220,null);
         }
     }
@@ -298,11 +391,11 @@ final class HomeScreen {
         int minX=pageX,maxX=pageX,minY=pageY,maxY=pageY;
         if(homeLaid!=null&&homeLaid.spots!=null)for(List<Integer> one:Layout.active(homeLaid.spots)){
             minX=Math.min(minX,one.get(0));maxX=Math.max(maxX,one.get(0));minY=Math.min(minY,one.get(1));maxY=Math.max(maxY,one.get(1));}
-        float w=pager.getWidth(),h=pager.getHeight(),gap=a.dp(18);
-        float wide=(maxX-minX+2)*w+(maxX-minX+1)*gap,high=(maxY-minY+2)*h+(maxY-minY+1)*gap;
-        float scale=Math.min(SMALL,Math.min(w*0.96f/wide,h*0.96f/high));
+        float w=strideX(),h=strideY();
+        float wide=(maxX-minX+2)*w,high=(maxY-minY+2)*h;
+        float scale=Math.min(SMALL,Math.min(pager.getWidth()*0.96f/wide,pager.getHeight()*0.96f/high));
         // The middle of them all where the middle of the screen is.
-        float midX=((minX+maxX)/2f-pageX)*(w+gap),midY=((minY+maxY)/2f-pageY)*(h+gap);
+        float midX=((minX+maxX)/2f-pageX)*w,midY=((minY+maxY)/2f-pageY)*h;
         return new float[]{scale,-scale*midX,-scale*midY};
     }
 
@@ -323,6 +416,7 @@ final class HomeScreen {
 
     /** The world at a scale and moved so, at once: the frames, the dots and the + as fit that scale. */
     private void place(float scale,float x,float y) {
+        stopScroll();
         if(moving!=null){moving.cancel();moving=null;}
         show(scale,x,y);
     }
@@ -330,8 +424,9 @@ final class HomeScreen {
     private void show(float scale,float x,float y) {
         scaleNow=scale;shiftX=x;shiftY=y;
         if(world==null)return;
-        world.setPivotX(pager.getWidth()/2f);world.setPivotY(pager.getHeight()/2f);
-        world.setScaleX(scale);world.setScaleY(scale);world.setTranslationX(x);world.setTranslationY(y);
+        if(scale>=0.999f&&!zoomed)ensureVisiblePages();
+        world.setPivotX(baseX+pager.getWidth()/2f);world.setPivotY(baseY+pager.getHeight()/2f);
+        world.setScaleX(scale);world.setScaleY(scale);world.setTranslationX(x-baseX);world.setTranslationY(y-baseY);
         // The frames come as the pages shrink, and the room round them darkens a little, as a phone's own home screen does.
         float framed=Math.max(0f,Math.min(1f,(1f-scale)/(1f-SMALL)));
         int alpha=Math.round(framed*255);
@@ -341,10 +436,12 @@ final class HomeScreen {
         pager.setBackgroundColor(Math.round(framed*0.22f*255)<<24);
         if(dots!=null){dots.setVisibility(scale<0.999f?View.INVISIBLE:View.VISIBLE);dots.invalidate();}
         if(homePlus!=null&&!folder.isOpen())homePlus.setVisibility(scale<0.999f?View.GONE:View.VISIBLE);
+        showFoot();
     }
 
     /** The world moved there and scaled so, over a moment, and then what follows. */
     private void move(float scale,float x,float y,long millis,Runnable then) {
+        stopScroll();
         if(moving!=null){moving.cancel();moving=null;}
         final float fromS=scaleNow,fromX=shiftX,fromY=shiftY;
         android.animation.ValueAnimator go=android.animation.ValueAnimator.ofFloat(0f,1f);
@@ -377,32 +474,113 @@ final class HomeScreen {
     private void buildPages() {
         if(world==null||homeLaid==null||homeLaid.spots==null)return;
         for(View one:others)world.removeView(one);
-        others.clear();holders.clear();
+        others.clear();holders.clear();pageLayouts.clear();
         holders.put(java.util.Arrays.asList(pageX,pageY),here);
         if(pager.getWidth()<=0)return;
-        Map<String,NoteStore.Branch> byId=new HashMap<>();
-        for(NoteStore.Branch one:homeLaid.lines)byId.put(one.id,one);
-        for(NoteStore.Branch one:homeLaid.places)byId.put(one.id,one);
-        int cell=homeLaid.width,high=homeLaid.height;
-        for(List<Integer> page:Layout.active(homeLaid.spots)) {
+        int[] bounds=pageBounds();int width=Math.round(strideX()),height=Math.round(strideY());
+        if(restoreViewport) {
+            shiftX=restoreAcross*width;shiftY=restoreDown*height;restoreViewport=false;
+        } else if(fittedWidth>0&&fittedHeight>0&&(width!=fittedWidth||height!=fittedHeight)) {
+            stopScroll();
+            if(moving!=null){moving.cancel();moving=null;}
+            shiftX=shiftX*width/fittedWidth;shiftY=shiftY*height/fittedHeight;
+        }
+        fittedWidth=width;fittedHeight=height;
+        baseX=(pageX-bounds[0])*width;baseY=(pageY-bounds[2])*height;
+        world.setLayoutParams(new FrameLayout.LayoutParams((bounds[1]-bounds[0]+1)*width,(bounds[3]-bounds[2]+1)*height));
+        FrameLayout.LayoutParams main=new FrameLayout.LayoutParams(width,height);
+        main.leftMargin=(int)baseX;main.topMargin=(int)baseY;here.setLayoutParams(main);
+        homeLaid.canvas=grid;homeLaid.pageX=pageX;homeLaid.pageY=pageY;
+        pageLayouts.put(List.of(pageX,pageY),homeLaid);
+        Set<List<Integer>> pages=Layout.active(homeLaid.spots);
+        if(beyond)pages.add(List.of(beyondX,beyondY));
+        for(List<Integer> page:pages) {
             if(page.get(0)==pageX&&page.get(1)==pageY)continue;
             FrameLayout holder=new FrameLayout(a);holder.setBackground(frame());
-            holder.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-            for(Map.Entry<String,Layout.Spot> one:homeLaid.spots.entrySet()) {
-                Layout.Spot at=one.getValue();NoteStore.Branch thing=byId.get(one.getKey());
-                if(at==null||thing==null||!at.on(page.get(0),page.get(1)))continue;
-                View icon=Grid.place(thing.kind)?placeIcon(thing,cell):icon(thing,cell,Where.HOME);
-                icon.setMinimumHeight(high);
-                FrameLayout.LayoutParams spot=new FrameLayout.LayoutParams(cell,high);
-                spot.leftMargin=grid.getPaddingLeft()+at.column()*cell;spot.topMargin=grid.getPaddingTop()+at.row()*high;
-                holder.addView(icon,spot);
-            }
-            float[] where=offset(page.get(0),page.get(1));
-            holder.setTranslationX(where[0]);holder.setTranslationY(where[1]);
-            world.addView(holder,new FrameLayout.LayoutParams(-1,-1));
+            GridLayout cells=new GridLayout(a);cells.setColumnCount(homeLaid.columns);cells.setPadding(grid.getPaddingLeft(),0,grid.getPaddingRight(),0);
+            Laid laid=neighbor(cells,page.get(0),page.get(1));
+            holder.addView(cells,new FrameLayout.LayoutParams(width,height));
+            pageLayouts.put(page,laid);
+            cells.setOnDragListener((v,event)->filesOn(v,event,cells,()->laid,()->Things.HOME));
+            FrameLayout.LayoutParams spot=new FrameLayout.LayoutParams(width,height);
+            spot.leftMargin=(page.get(0)-bounds[0])*width;spot.topMargin=(page.get(1)-bounds[2])*height;
+            world.addView(holder,spot);
             others.add(holder);holders.put(page,holder);
         }
         show(scaleNow,shiftX,shiftY);
+        showFoot();
+    }
+
+    /** Keep page coordinates and the fraction scrolled, independent of the next screen's pixels. */
+    void keepViewport(android.os.Bundle state) {
+        state.putInt("homeX",pageX);state.putInt("homeY",pageY);
+        state.putFloat("homeAcross",fittedWidth>0?shiftX/fittedWidth:restoreAcross);
+        state.putFloat("homeDown",fittedHeight>0?shiftY/fittedHeight:restoreDown);
+    }
+
+    void restoreViewport(android.os.Bundle state) {
+        pageX=state.getInt("homeX");pageY=state.getInt("homeY");
+        restoreAcross=state.getFloat("homeAcross");restoreDown=state.getFloat("homeDown");restoreViewport=true;
+    }
+
+    /** Every visible page is a real grid. No page has to be rebuilt just to tap or pick up its icons. */
+    private Laid neighbor(GridLayout cells,int px,int py) {
+        Map<String,int[]> drawn=new java.util.LinkedHashMap<>();
+        for(Map.Entry<String,Layout.Spot> one:homeLaid.spots.entrySet())if(one.getValue().on(px,py))
+            drawn.put(one.getKey(),new int[]{one.getValue().row(),one.getValue().column()});
+        Laid laid=new Laid(drawn,homeLaid.lines,homeLaid.places,Where.HOME,homeLaid.columns,homeLaid.rows,
+            homeLaid.width,homeLaid.height,homeLaid.seen,homeLaid.natural);
+        laid.spots=homeLaid.spots;laid.canvas=cells;laid.pageX=px;laid.pageY=py;
+        Map<String,NoteStore.Branch> byId=new HashMap<>();
+        for(NoteStore.Branch one:laid.lines)byId.put(one.id,one);
+        for(NoteStore.Branch one:laid.places)byId.put(one.id,one);
+        for(int row=0;row<laid.rows;row++)for(int col=0;col<laid.columns;col++) {
+            String id=Layout.at(drawn,row,col);View view;
+            if(id==null) {
+                view=new View(a);view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                view.setOnLongClickListener(v->{roomHeld(v,Where.HOME);return true;});
+                laid.spaces.put(Layout.cell(row,col),view);
+            } else {
+                NoteStore.Branch one=byId.get(id);
+                view=Grid.place(one.kind)?placeIcon(one,laid.width):icon(one,laid.width,Where.HOME);
+                if(a.dragging!=null&&id.equals(a.dragging.id))view.setVisibility(View.INVISIBLE);
+                laid.things.put(id,one);laid.icons.put(id,view);
+            }
+            GridLayout.LayoutParams spot=new GridLayout.LayoutParams(GridLayout.spec(row),GridLayout.spec(col));
+            spot.width=laid.width;spot.height=laid.height;view.setMinimumHeight(laid.height);cells.addView(view,spot);
+        }
+        return laid;
+    }
+
+    /** Blank room between occupied pages is a usable grid too. Create only the pages entering the viewport. */
+    private void ensureVisiblePages() {
+        if(homeLaid==null||homeLaid.spots==null||pager==null||pager.getWidth()<=0)return;
+        int[] bounds=pageBounds();
+        int left=pageX+(int)Math.floor(-shiftX/strideX()),top=pageY+(int)Math.floor(-shiftY/strideY());
+        for(int px=left;px<=left+1;px++)for(int py=top;py<=top+1;py++) {
+            List<Integer> key=List.of(px,py);
+            if(px<bounds[0]||px>bounds[1]||py<bounds[2]||py>bounds[3]||pageLayouts.containsKey(key))continue;
+            FrameLayout holder=new FrameLayout(a);holder.setBackground(frame());
+            GridLayout cells=new GridLayout(a);cells.setColumnCount(homeLaid.columns);cells.setPadding(grid.getPaddingLeft(),0,grid.getPaddingRight(),0);
+            Laid laid=neighbor(cells,px,py);pageLayouts.put(key,laid);
+            holder.addView(cells,new FrameLayout.LayoutParams(Math.round(strideX()),Math.round(strideY())));
+            cells.setOnDragListener((v,event)->filesOn(v,event,cells,()->laid,()->Things.HOME));
+            FrameLayout.LayoutParams spot=new FrameLayout.LayoutParams(Math.round(strideX()),Math.round(strideY()));
+            spot.leftMargin=Math.round(baseX+(px-pageX)*strideX());spot.topMargin=Math.round(baseY+(py-pageY)*strideY());
+            world.addView(holder,spot);others.add(holder);holders.put(key,holder);
+        }
+    }
+
+    private Laid homeAt(float x,float y) {
+        for(Laid laid:pageLayouts.values())if(cellAt(laid.canvas,laid,x,y)!=null)return laid;
+        return null;
+    }
+
+    private boolean homeGrid(GridLayout cells) {
+        if(cells==grid)return true;
+        if(cells!=null&&cells==carriedFrom&&Things.HOME.equals(outOf))return true;
+        for(Laid laid:pageLayouts.values())if(laid.canvas==cells)return true;
+        return false;
     }
 
     // ---- a whole page carried, zoomed out (the owner's ask: "grab and move the pages") ---------------------------------
@@ -417,9 +595,9 @@ final class HomeScreen {
 
     /** Which place - a page, or an empty place a page can go - is under a point of the pager, zoomed out as it is; or null. */
     private List<Integer> placeAt(float x,float y) {
-        float cx=pager.getWidth()/2f,cy=pager.getHeight()/2f,gap=a.dp(18);
+        float cx=pager.getWidth()/2f,cy=pager.getHeight()/2f;
         float wx=cx+(x-cx-shiftX)/scaleNow,wy=cy+(y-cy-shiftY)/scaleNow;
-        int px=pageX+(int)Math.floor((wx+gap/2f)/(pager.getWidth()+gap)),py=pageY+(int)Math.floor((wy+gap/2f)/(pager.getHeight()+gap));
+        int px=pageX+(int)Math.floor(wx/strideX()),py=pageY+(int)Math.floor(wy/strideY());
         List<Integer> at=java.util.Arrays.asList(px,py);
         return placesFor().contains(at)?at:null;
     }
@@ -441,8 +619,9 @@ final class HomeScreen {
             dashed.setStroke(Math.max(1,a.dp(2)),MainActivity.mix(a.INK,a.PAPER,0.5f),a.dp(10),a.dp(8));
             empty.setBackground(dashed);
             float[] at=offset(one.get(0),one.get(1));
-            empty.setTranslationX(at[0]);empty.setTranslationY(at[1]);
-            world.addView(empty,0,new FrameLayout.LayoutParams(-1,-1));
+            FrameLayout.LayoutParams spot=new FrameLayout.LayoutParams(Math.round(strideX()),Math.round(strideY()));
+            spot.leftMargin=Math.round(baseX+at[0]);spot.topMargin=Math.round(baseY+at[1]);
+            world.addView(empty,0,spot);
             places.put(one,empty);
         }
         if(gridScroll!=null)gridScroll.announceForAccessibility("Picked up "+said(q[0],q[1]).toLowerCase(java.util.Locale.ROOT)+". Let go on another place.");
@@ -451,8 +630,7 @@ final class HomeScreen {
     /** The carried page under the finger, and the place it would go lit. */
     private void dragPage(float dx,float dy,float x,float y) {
         if(carriedHolder==null)return;
-        float[] base=offset(carriedPage[0],carriedPage[1]);
-        carriedHolder.setTranslationX(base[0]+dx/scaleNow);carriedHolder.setTranslationY(base[1]+dy/scaleNow);
+        carriedHolder.setTranslationX(dx/scaleNow);carriedHolder.setTranslationY(dy/scaleNow);
         List<Integer> under=placeAt(x,y);
         if(java.util.Objects.equals(under,litPlace))return;
         light(litPlace,false);litPlace=under;light(under,true);
@@ -480,8 +658,7 @@ final class HomeScreen {
         for(View one:places.values())world.removeView(one);
         places.clear();
         holder.setElevation(0);holder.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(120);
-        float[] base=offset(from[0],from[1]);
-        if(to==null||to.get(0)==from[0]&&to.get(1)==from[1]){holder.animate().translationX(base[0]).translationY(base[1]).setDuration(160);return;}
+        if(to==null||to.get(0)==from[0]&&to.get(1)==from[1]){holder.animate().translationX(0).translationY(0).setDuration(160);return;}
         final Map<String,Layout.Spot> spots=Layout.movePage(homeLaid.spots,from[0],from[1],to.get(0),to.get(1));
         // The lines take their new places at once, so Home is drawn with them before the notebook has been written.
         for(NoteStore.Branch line:homeLaid.lines){Layout.Spot at=spots.get(line.id);if(at!=null){line.cell=at.cell();line.page=at.page();}}
@@ -506,7 +683,7 @@ final class HomeScreen {
         if(homeLaid==null||homeLaid.spots==null)return null;
         for(List<Integer> page:Layout.active(homeLaid.spots)) {
             float[] at=offset(page.get(0),page.get(1));
-            if(wx>=at[0]&&wx<at[0]+pager.getWidth()&&wy>=at[1]&&wy<at[1]+pager.getHeight())return new int[]{page.get(0),page.get(1)};
+            if(wx>=at[0]&&wx<at[0]+strideX()&&wy>=at[1]&&wy<at[1]+strideY())return new int[]{page.get(0),page.get(1)};
         }
         return null;
     }
@@ -534,7 +711,7 @@ final class HomeScreen {
     private static String count(int n){int m=Math.abs(n);return m==1?"one":m==2?"two":m==3?"three":String.valueOf(m);}
 
     /** Something just made with + on the page in view: it stands on that page once Home has read it (decision 46). */
-    void placeNew(String id){if(!onCentre())placeNext.put(id,new int[]{pageX,pageY});}
+    void placeNew(String id){if(!onCentre())placeNext.put(id,new int[]{seenPageX(),seenPageY()});}
 
     /** Those made with + on another page than the main one, put there now they are read: the first free cell of that page. */
     private void placeMade() {
@@ -557,18 +734,15 @@ final class HomeScreen {
 
     /** For an empty cell of the page in view let go in: every icon of Home pinned where it stands, that one in its new cell. */
     private Map<String,Layout.Spot> homeMove(Laid in,String id,int row,int column) {
-        return in.spots==null?null:Layout.moveTo(in.spots,id,new Layout.Spot(pageX,pageY,row,column));
+        return in.spots==null?null:Layout.moveTo(in.spots,id,new Layout.Spot(in.pageX,in.pageY,row,column));
     }
 
     /** Whether a point of the pager is over an icon of the page in view: a double tap there opens it, not the main page. */
     private boolean overIcon(float x,float y) {
-        if(homeLaid==null)return false;
-        for(View one:homeLaid.icons.values()) {
-            if(one.getParent()==null)continue;
-            float left=one.getLeft()+grid.getLeft(),top=one.getTop()+grid.getTop()-gridScroll.getScrollY();
-            if(x>=left&&x<left+one.getWidth()&&y>=top&&y<top+one.getHeight())return true;
-        }
-        return false;
+        Rect room=rect(pager);Laid laid=homeAt(x+room.left,y+room.top);
+        if(laid==null)return false;
+        int[] at=cellAt(laid.canvas,laid,x+room.left,y+room.top);
+        return at!=null&&Layout.at(laid.drawn,at[0],at[1])!=null;
     }
 
     /**
@@ -580,14 +754,23 @@ final class HomeScreen {
      * empty room goes back to the main page.
      */
     private final class Turner {
-        private float downX,downY,fromX,fromY,startScale;private boolean swiping,scaling,across;
+        private float downX,downY,fromX,fromY,startScale;private boolean swiping,scaling,downOnIcon;
+        private int axis;
+        private boolean centring;
+        private long downAt;
+        private long heardTime=-1;
+        private int heardAction=-1,heardPointers;
+        private float heardX,heardY;
         private final int slop=ViewConfiguration.get(a).getScaledTouchSlop();
         private android.view.VelocityTracker speed;
         /** Zoomed out, a finger held still on a page picks the page up. */
         private final Runnable holdPage=()->{if(zoomed&&!swiping&&!scaling)liftPage(downX,downY);};
         private final android.view.GestureDetector taps=new android.view.GestureDetector(a,new android.view.GestureDetector.SimpleOnGestureListener(){
             @Override public boolean onDoubleTap(android.view.MotionEvent e) {
-                if(!zoomed&&!overIcon(e.getX(),e.getY())&&!onCentre())go(0,0);
+                if(!overIcon(e.getX(),e.getY())&&a.heldTile==null&&a.dragging==null) {
+                    centring=true;zoomed=false;allSeen=false;panning=false;
+                    pager.removeCallbacks(holdPage);go(0,0);return true;
+                }
                 return false;
             }
         });
@@ -599,6 +782,7 @@ final class HomeScreen {
         private final android.view.ScaleGestureDetector pinch=new android.view.ScaleGestureDetector(a,new android.view.ScaleGestureDetector.SimpleOnScaleGestureListener(){
             float total=1f,heldX,heldY;
             @Override public boolean onScaleBegin(android.view.ScaleGestureDetector d) {
+                stopScroll();
                 if(moving!=null){moving.cancel();moving=null;}
                 pager.removeCallbacks(holdPage);
                 total=1f;scaling=true;swiping=false;startScale=scaleNow;
@@ -624,28 +808,43 @@ final class HomeScreen {
             }
         });
         boolean intercept(android.view.MotionEvent e) {
-            follow(e);taps.onTouchEvent(e);pinch.onTouchEvent(e);
+            if(e.getActionMasked()==android.view.MotionEvent.ACTION_DOWN)centring=false;
+            else hear(e);
+            if(centring)return true;
             switch(e.getActionMasked()) {
                 case android.view.MotionEvent.ACTION_DOWN:
+                    stopScroll();
+                    if(moving!=null){moving.cancel();moving=null;}
                     downX=e.getX();downY=e.getY();fromX=shiftX;fromY=shiftY;swiping=false;scaling=false;
+                    axis=HomeMotion.NONE;
+                    downOnIcon=!zoomed&&overIcon(e.getX(),e.getY());downAt=e.getEventTime();
+                    // Let a double tap start its return after cancelling the previous motion.
+                    hear(e);
                     // Zoomed out, the pages are pictures: every touch is the pager's.
-                    return zoomed;
+                    // The same press that stops momentum can still hold an icon for its menu or drag.
+                    return zoomed||centring;
                 // Two fingers are a pinch, not anything for the icons under them.
                 case android.view.MotionEvent.ACTION_POINTER_DOWN: return true;
                 case android.view.MotionEvent.ACTION_MOVE:
                     if(zoomed||scaling||e.getPointerCount()>1)return true;
-                    if(a.heldTile!=null||a.dragging!=null)return false;
                     float dx=e.getX()-downX,dy=e.getY()-downY;
-                    if(Math.max(Math.abs(dx),Math.abs(dy))>slop*2){swiping=true;across=Math.abs(dx)>=Math.abs(dy);return true;}
+                    float moved=Math.max(Math.abs(dx),Math.abs(dy));
+                    // A press on an icon stays with the icon. A clear slide before the hold still moves the pages (decision 130).
+                    if(Layout.pageTakes(downOnIcon,a.heldTile!=null,a.dragging!=null,moved,slop,e.getEventTime()-downAt,ViewConfiguration.getLongPressTimeout())){
+                        if(!swiping)axis=HomeMotion.axis(dx,dy);
+                        swiping=true;panning=true;return true;
+                    }
                     return false;
                 default: return false;
             }
         }
         void touch(android.view.MotionEvent e) {
-            follow(e);taps.onTouchEvent(e);pinch.onTouchEvent(e);
+            hear(e);
+            if(centring)return;
             switch(e.getActionMasked()) {
                 case android.view.MotionEvent.ACTION_DOWN:
                     downX=e.getX();downY=e.getY();fromX=shiftX;fromY=shiftY;swiping=false;scaling=false;
+                    axis=HomeMotion.NONE;
                     if(zoomed)pager.postDelayed(holdPage,ViewConfiguration.getLongPressTimeout());
                     break;
                 case android.view.MotionEvent.ACTION_POINTER_DOWN: pager.removeCallbacks(holdPage);break;
@@ -654,17 +853,18 @@ final class HomeScreen {
                     if(scaling||e.getPointerCount()>1)break;
                     float dx=e.getX()-downX,dy=e.getY()-downY;
                     if(Math.max(Math.abs(dx),Math.abs(dy))>slop*2)pager.removeCallbacks(holdPage);
-                    if(!swiping&&Math.max(Math.abs(dx),Math.abs(dy))>slop*2){swiping=true;across=Math.abs(dx)>=Math.abs(dy);}
+                    if(!swiping&&Math.max(Math.abs(dx),Math.abs(dy))>slop*2){swiping=true;panning=true;axis=HomeMotion.axis(dx,dy);}
                     if(!swiping)break;
                     if(zoomed){place(scaleNow,fromX+dx,fromY+dy);break;}
-                    // One page at a time, along the way it was started; where there is no page that way, it only gives.
-                    int wx=across?(dx<0?1:-1):0,wy=across?0:(dy<0?1:-1);
-                    boolean there=homeLaid!=null&&homeLaid.spots!=null&&Layout.next(Layout.active(homeLaid.spots),pageX,pageY,wx,wy)!=null;
-                    float give=there?1f:0.25f;
-                    place(1f,across?dx*give:0,across?0:dy*give);
+                    float[] limits=scrollLimits();
+                    // One direction per swipe; two fingers in the overview still move freely.
+                    place(1f,Math.max(limits[0],Math.min(limits[1],fromX+(axis==HomeMotion.HORIZONTAL?dx:0))),
+                        Math.max(limits[2],Math.min(limits[3],fromY+(axis==HomeMotion.VERTICAL?dy:0))));
+                    showFoot();
                     break;
                 }
                 case android.view.MotionEvent.ACTION_UP: {
+                    panning=false;
                     pager.removeCallbacks(holdPage);
                     if(carriedHolder!=null){dropPage(e.getX(),e.getY());break;}
                     if(scaling){scaling=false;break;}
@@ -680,17 +880,22 @@ final class HomeScreen {
                     }
                     if(!swiping)break;
                     swiping=false;
-                    float far=across?dx:dy,fast=across?vx:vy,size=across?pager.getWidth():pager.getHeight();
-                    boolean taken=Math.abs(far)>size*0.22f||Math.abs(fast)>a.dp(600)&&Math.signum(fast)==Math.signum(far);
-                    int wx=across?(far<0?1:-1):0,wy=across?0:(far<0?1:-1);
-                    int[] to=taken&&homeLaid!=null&&homeLaid.spots!=null?Layout.next(Layout.active(homeLaid.spots),pageX,pageY,wx,wy):null;
-                    if(to!=null)go(to[0],to[1]);else move(1f,0,0,180,null);
+                    // A flick carries on a little, the way the finger was going, and then it rests there. It does not snap
+                    // onto a page.
+                    int minimum=ViewConfiguration.get(a).getScaledMinimumFlingVelocity();
+                    int maximum=ViewConfiguration.get(a).getScaledMaximumFlingVelocity();
+                    vx=axis==HomeMotion.HORIZONTAL?Math.max(-maximum,Math.min(maximum,vx)):0;
+                    vy=axis==HomeMotion.VERTICAL?Math.max(-maximum,Math.min(maximum,vy)):0;
+                    if(Math.abs(vx)>minimum||Math.abs(vy)>minimum)fling(vx,vy);else rest();
+                    a.pressing=false;
                     break;
                 }
                 case android.view.MotionEvent.ACTION_CANCEL:
+                    panning=false;
                     pager.removeCallbacks(holdPage);
                     if(carriedHolder!=null){dropPage(-1,-1);break;}
-                    if(!zoomed&&swiping){swiping=false;move(1f,0,0,180,null);}
+                    if(!zoomed&&swiping){swiping=false;rest();}
+                    a.pressing=false;
                     break;
                 default:
             }
@@ -698,6 +903,13 @@ final class HomeScreen {
         private void follow(android.view.MotionEvent e) {
             if(e.getActionMasked()==android.view.MotionEvent.ACTION_DOWN){if(speed!=null)speed.recycle();speed=android.view.VelocityTracker.obtain();}
             if(speed!=null)speed.addMovement(e);
+        }
+        private void hear(android.view.MotionEvent e) {
+            // Interception and handling can see the same event. Feed the gesture detectors once.
+            if(heardTime==e.getEventTime()&&heardAction==e.getAction()&&heardPointers==e.getPointerCount()
+                    &&heardX==e.getX()&&heardY==e.getY())return;
+            heardTime=e.getEventTime();heardAction=e.getAction();heardPointers=e.getPointerCount();heardX=e.getX();heardY=e.getY();
+            follow(e);taps.onTouchEvent(e);pinch.onTouchEvent(e);
         }
     }
 
@@ -721,8 +933,8 @@ final class HomeScreen {
             paint.setColor(MainActivity.mix(a.INK,a.PAPER,0.6f));
             for(List<Integer> one:pages)canvas.drawCircle(x0+(one.get(0)-minX)*step,y0+(one.get(1)-minY)*step,a.dp(3),paint);
             // Where the pages stand now, part way from one to the next while they slide.
-            float gap=a.dp(18),seenX=pageX,seenY=pageY;
-            if(pager!=null&&pager.getWidth()>0){seenX-=shiftX/(pager.getWidth()+gap);seenY-=shiftY/(pager.getHeight()+gap);}
+            float seenX=pageX,seenY=pageY;
+            if(pager!=null&&pager.getWidth()>0){seenX-=shiftX/strideX();seenY-=shiftY/strideY();}
             seenX=Math.max(minX,Math.min(maxX,seenX));seenY=Math.max(minY,Math.min(maxY,seenY));
             paint.setColor(a.ACCENT);
             canvas.drawCircle(x0+(seenX-minX)*step,y0+(seenY-minY)*step,a.dp(4),paint);
@@ -748,17 +960,36 @@ final class HomeScreen {
      */
     private LinearLayout bar() {
         LinearLayout top=a.bar();
-        top.addView(new View(a),new LinearLayout.LayoutParams(a.dp(48),a.dp(48)));
-        TextView called=a.label(a.getString(R.string.app_name),MainActivity.READING,a.MUTED);
-        called.setGravity(Gravity.CENTER);called.setSingleLine(true);called.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout named=a.column();named.setGravity(Gravity.CENTER);
-        named.addView(called,new LinearLayout.LayoutParams(-1,-2));
-        a.versionLine=a.label("",MainActivity.QUIET,a.MUTED);a.versionLine.setGravity(Gravity.CENTER);a.versionLine.setSingleLine(true);
-        named.addView(a.versionLine,new LinearLayout.LayoutParams(-1,-2));
-        a.versionShown();
-        top.addView(named,new LinearLayout.LayoutParams(0,-2,1));
+        // The app's icon and its name at the left, not its name alone in the middle; a tap is your Profile, where everything
+        // about you is set (the owner, 2026-10-17: "put it on the left with the icon we have for it ... clicked from the main
+        // page it should bring to the My profile page").
+        LinearLayout brand=new LinearLayout(a);brand.setGravity(Gravity.CENTER_VERTICAL);
+        android.widget.ImageView logo=new android.widget.ImageView(a);logo.setImageResource(R.mipmap.ic_launcher);
+        brand.addView(logo,new LinearLayout.LayoutParams(a.dp(30),a.dp(30)));
+        TextView called=a.label(a.getString(R.string.app_name),MainActivity.READING,a.INK);
+        called.setTypeface(called.getTypeface(),android.graphics.Typeface.BOLD);called.setSingleLine(true);called.setEllipsize(TextUtils.TruncateAt.END);
+        called.setPadding(a.dp(8),0,0,0);brand.addView(called);
+        brand.setMinimumHeight(a.dp(48));brand.setPadding(a.dp(4),0,a.dp(8),0);
+        brand.setBackgroundResource(a.borderlessFeedback());
+        brand.setContentDescription(Say.t("Mininotes: your Profile"));
+        brand.setOnClickListener(v->a.profile());
+        // Which build this is lives in the menu, under Mininotes (the owner, 2026-10-12: "remove the version in the header on
+        // mobile and put it only in the menu").
+        a.versionLine=null;
+        top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
+        // What is new here, said at the top and listed on a tap (the owner, 2026-10-14: "it should be at the folder level too
+        // and even at the top of the app, and clicking it ... should give us the list of what they are"). Shown only while
+        // anything is new.
+        newMark=a.label("new",MainActivity.QUIET,a.PAPER);
+        newMark.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);newMark.setIncludeFontPadding(false);
+        newMark.setPadding(a.dp(8),a.dp(3),a.dp(8),a.dp(4));
+        GradientDrawable newPill=new GradientDrawable();newPill.setColor(a.ACCENT);newPill.setCornerRadius(a.dp(11));newMark.setBackground(newPill);
+        newMark.setVisibility(View.GONE);newMark.setOnClickListener(v->a.whatIsNew());
+        LinearLayout.LayoutParams beside=new LinearLayout.LayoutParams(-2,-2);beside.gravity=Gravity.CENTER_VERTICAL;beside.setMargins(0,0,a.dp(6),0);
+        top.addView(newMark,beside);
         homeMark=a.syncMark(home());
         top.addView(homeMark);
+        top.addView(a.agentButton());
         top.addView(a.tap("⋮","Home",22,a.INK,v->a.menuFor(v,home())));
         return top;
     }
@@ -780,8 +1011,16 @@ final class HomeScreen {
         plus.setElevation(a.dp(6));
         plus.setContentDescription("New");
         // And files from this device, photos and anything else, wherever there is a + (decision 87).
-        plus.setOnClickListener(v->a.heldMenu(v,null,"Note",(Runnable)()->newNote(where.get()),"Folder",(Runnable)()->newCollection(where.get()),
-            "From this device…",(Runnable)()->a.fromThisDevice(where.get()),null,"From another device…",(Runnable)a::addFromSomeone));
+        // Take a photo keeps the picture in this folder, or on Home, without a picker (decision 123).
+        plus.setOnClickListener(v->{
+            // An album's + adds pictures first (decision 217): several from the phone's picker at once, or one from the camera.
+            String in=where.get();
+            if(in!=null&&!NoteStore.home(in)&&!MainActivity.takesNew(in)&&a.store.album(in)){a.heldMenu(v,null,"Add photos…",(Runnable)()->a.addPhotos(in),
+                "Take a photo",(Runnable)()->a.takePhoto(in),null,"Note",(Runnable)()->newNote(in),"Folder",(Runnable)()->newCollection(in),
+                "Record a note",(Runnable)()->recordNote(in),"From this device…",(Runnable)()->a.fromThisDevice(in),null,"From another device…",(Runnable)a::addFromSomeone);return;}
+            a.heldMenu(v,null,"Note",(Runnable)()->newNote(where.get()),"Folder",(Runnable)()->newCollection(where.get()),
+            "Take a photo",(Runnable)()->a.takePhoto(where.get()),"Record a note",(Runnable)()->recordNote(where.get()),
+            "From this device…",(Runnable)()->a.fromThisDevice(where.get()),null,"From another device…",(Runnable)a::addFromSomeone);});
         return plus;
     }
 
@@ -826,7 +1065,7 @@ final class HomeScreen {
         if(!showing())return;
         // Not under a thing being carried, whose icon would be taken out from under the finger, nor under a name being
         // typed, whose field would go with the row it is in. Each ends by reading Home again.
-        if(a.dragging!=null||naming()){stale=true;return;}
+        if(a.dragging!=null||a.pressing||a.heldTile!=null||panning||scrolling||naming()){stale=true;return;}
         stale=false;
         final int read=++reads;
         final List<MainActivity.Step> path=new ArrayList<>(a.trail);
@@ -835,6 +1074,9 @@ final class HomeScreen {
             // The icons' set is read here the first time, off the screen's thread, before a face is drawn with it.
             Icons.all();
             Map<String,Object> got=new HashMap<>();
+            // Everything in a shared folder shared (decision 195): what that put in one for real goes now.
+            List<String> made=a.store.intoSharedFolders();
+            if(!made.isEmpty())a.network.submit(()->{for(String id:made)Post.send(a,a.store,a.keys(),NoteStore.Branch.Kind.PAGE,id);return null;},v->{},e->{});
             got.put("home",a.store.contents(Things.HOME));
             got.put("beyond",a.store.favouritesAll());
             got.put("dock",a.store.dock());
@@ -845,6 +1087,9 @@ final class HomeScreen {
             // What is temporary and whose time has come goes first, so it is never drawn once more (decision 71).
             a.store.expire(System.currentTimeMillis());
             got.put("archived",a.store.awayCount(false));got.put("binned",a.store.awayCount(true));got.put("temp",a.store.temporaryCount());
+            // Temp's own mark and whether anything in it is new, for its tile (the owner, 2026-10-14).
+            got.put("tempMark",a.store.markOf(NoteStore.Branch.Kind.TEMP,NoteStore.TEMP));got.put("tempNew",a.store.tempHasNew());
+            got.put("newHere",a.store.whatIsNew().size());
             // And how many things wait for an answer in Shared with me, for the count it wears (decision 109).
             got.put("asking",a.store.waitingCount());
             // What a code accepted here is bringing, standing on Home until it comes (decision 73).
@@ -855,7 +1100,7 @@ final class HomeScreen {
             return got;
         },got->{
             if(read!=reads||!showing())return;
-            if(naming()){stale=true;return;}
+            if(a.dragging!=null||a.pressing||a.heldTile!=null||panning||scrolling||naming()){stale=true;return;}
             a.levelColour=(Integer)got.get("colour");a.levelTone=(Integer)got.get("tone");a.repaint();
             @SuppressWarnings("unchecked") List<NoteStore.Branch> lines=(List<NoteStore.Branch>)got.get("home");
             @SuppressWarnings("unchecked") List<NoteStore.Branch> beyond=(List<NoteStore.Branch>)got.get("beyond");
@@ -863,7 +1108,9 @@ final class HomeScreen {
             List<NoteStore.Branch> places=new ArrayList<>();
             // Home's places, each on Home unless switched off in Home's menu (decision 78); Favourites while there is one.
             if(!beyond.isEmpty()&&a.onHome(NoteStore.FAVOURITES))places.add(favourites());
-            for(NoteStore.Branch one:new NoteStore.Branch[]{recent(),temp((Integer)got.get("temp")),shared((Integer)got.get("asking")),
+            NoteStore.Branch inTemp=temp((Integer)got.get("temp"));
+            inTemp.standing=(SyncMark)got.get("tempMark");inTemp.fresh=Boolean.TRUE.equals(got.get("tempNew"));
+            for(NoteStore.Branch one:new NoteStore.Branch[]{recent(),inTemp,shared((Integer)got.get("asking")),
                     archive((Integer)got.get("archived")),bin((Integer)got.get("binned"))})if(a.onHome(one.id))places.add(one);
             @SuppressWarnings("unchecked") List<NoteStore.Branch> waiting=(List<NoteStore.Branch>)got.get("waiting");
             if(waiting!=null)places.addAll(waiting);
@@ -877,6 +1124,9 @@ final class HomeScreen {
             dock.fill(docked);
             if(path.size()>1&&folder.isOpen())folder.fill(path,got);
             if(homeMark!=null)a.askOwed(homeMark,home());
+            if(newMark!=null){Integer many=(Integer)got.get("newHere");int n=many==null?0:many;
+                newMark.setText(n>1?Say.t("new")+" · "+n:Say.t("new"));newMark.setVisibility(n>0?View.VISIBLE:View.GONE);
+                newMark.setContentDescription(n==1?"One thing is new. Tap to see it.":n+" things are new. Tap to see them.");}
         },e->a.alert(MainActivity.READ_FAILED));
     }
 
@@ -906,7 +1156,7 @@ final class HomeScreen {
         a.markOnto(there==null||there.equals(a.dragging.id)?null:folder.laid.icons.get(there));
     }
 
-    /** One favourite put before another in their one order, or last; the dock's places are the first of it. */
+    /** One favourite put before another in their one order, or last; the dock keeps its own (decision 190). */
     private void reorder(final NoteStore.Branch carried,final NoteStore.Branch before) {
         final List<NoteStore.Branch> order=new ArrayList<>(folder.laid.lines);
         order.removeIf(one->one.id.equals(carried.id));
@@ -914,7 +1164,7 @@ final class HomeScreen {
         if(before!=null)for(int i=0;i<order.size();i++)if(order.get(i).id.equals(before.id)){at=i;break;}
         order.add(at,carried);
         final int place=at+1;
-        a.background.submit(()->{a.store.orderFavourites(order);return null;},done->{a.toast(place<=Things.DOCK_PHONE?"In the dock, place "+place:"Favourite "+place);refresh();},
+        a.background.submit(()->{a.store.orderFavourites(order);return null;},done->{a.toast("Favourite "+place);refresh();},
             e->{a.alert("Could not put that there. Nothing was changed.");refresh();});
     }
 
@@ -927,11 +1177,16 @@ final class HomeScreen {
      */
     private void fill(List<NoteStore.Branch> lines,List<NoteStore.Branch> places) {
         final int kept=gridScroll.getScrollY();
-        homeLaid=lay(grid,lines,places,a.getResources().getDisplayMetrics().widthPixels,Where.HOME,
-            gridScroll.getHeight(),"Nothing here yet. Tap + to make a note or a folder.");
+        int width=pager.getWidth()>0?pager.getWidth():a.getResources().getDisplayMetrics().widthPixels;
+        grid.setColumnCount(columns(width));
+        homeLaid=lay(grid,lines,places,width,Where.HOME,
+            homeRoom(),"Nothing here yet. Tap + to make a note or a folder.");
+        if(a.dragging==null)beyond=false;
         buildPages();
+        landedId=null;
         // Scrolled back to where it was once the rows are laid out again: an arrival is not a reason to lose your place.
         gridScroll.post(()->gridScroll.scrollTo(0,kept));
+        if(!zoomed&&!panning&&!scrolling)rest();
     }
 
     // ---- icons where they were put (docs/HOME.md, decision 39) ------------------------------------------------------
@@ -949,17 +1204,23 @@ final class HomeScreen {
         final List<NoteStore.Branch> places;
         /** On Home, where every icon stands on every page (Layout.pages); null for a card's one grid. */
         Map<String,Layout.Spot> spots;
+        GridLayout canvas;
+        int pageX,pageY;
         final Where where;
         /** Each icon's line and view by id, and each empty cell's view by {@link Layout#cell}. */
         final Map<String,NoteStore.Branch> things=new HashMap<>();
         final Map<String,View> icons=new HashMap<>();
         final Map<Integer,View> spaces=new HashMap<>();
-        /** Columns and rows drawn, a cell's width and height in pixels, and how tall the grid was seen when it was laid out. */
-        final int columns,rows,width,height,seen;
+        /**
+         * Columns and rows drawn, a cell's width, and the height a row is drawn at. {@code natural} is that height at the
+         * reading size, before a Home page stretches its rows to fill the screen. {@code seen} is how tall the grid was
+         * when it was laid out.
+         */
+        final int columns,rows,width,height,seen,natural;
 
-        Laid(Map<String,int[]> drawn,List<NoteStore.Branch> lines,List<NoteStore.Branch> places,Where where,int columns,int rows,int width,int height,int seen) {
+        Laid(Map<String,int[]> drawn,List<NoteStore.Branch> lines,List<NoteStore.Branch> places,Where where,int columns,int rows,int width,int height,int seen,int natural) {
             this.drawn=drawn;this.lines=lines;this.places=places;this.where=where;
-            this.columns=columns;this.rows=rows;this.width=width;this.height=height;this.seen=seen;
+            this.columns=columns;this.rows=rows;this.width=width;this.height=height;this.seen=seen;this.natural=natural;
         }
     }
 
@@ -977,7 +1238,7 @@ final class HomeScreen {
      */
     Laid lay(GridLayout in,List<NoteStore.Branch> lines,List<NoteStore.Branch> places,int widthPx,Where where,int seen,String nothingYet) {
         in.removeAllViews();
-        int columns=Math.max(1,in.getColumnCount()),cell=cell(in,widthPx),high=rowHeight(cell);
+        int columns=Math.max(1,in.getColumnCount()),cell=cell(in,widthPx),high=rowHeight(cell),natural=high;
         List<String> ids=new ArrayList<>();List<Integer> cells=new ArrayList<>();
         // Among the favourites, the archive and the bin a thing is only listed, not kept, so it has no cell there: they
         // stand one after the other.
@@ -986,8 +1247,9 @@ final class HomeScreen {
         int least=seen>0?seen:a.getResources().getDisplayMetrics().heightPixels;
         Map<String,int[]> drawn;Map<String,Layout.Spot> spots=null;int rows;
         if(where==Where.HOME) {
-            // Home: pages as big as the screen holds, every one the same (decision 48), and the page in view drawn.
-            rows=Math.max(1,(least-in.getPaddingTop()-in.getPaddingBottom())/high);
+            // A page ends at a whole row. The last row may be partly below the viewport; no row is stretched to fill it.
+            int inner=Math.max(1,least-in.getPaddingTop()-in.getPaddingBottom());
+            rows=HomeMotion.rows(inner,high);
             List<String> all=new ArrayList<>();List<Integer> onPages=new ArrayList<>(),cellsOn=new ArrayList<>();
             NoteStore.Branch lead=null;
             for(NoteStore.Branch place:places)if(place.kind==NoteStore.Branch.Kind.FAVOURITES&&placeCell(place.id)<0)lead=place;
@@ -1004,8 +1266,9 @@ final class HomeScreen {
             drawn=Layout.home(ids,cells,at,NoteStore.FAVOURITES,columns);
             rows=Math.max(Layout.rows(drawn)+1,(int)Math.ceil((least-in.getPaddingTop()-in.getPaddingBottom())/(double)high));
         }
-        Laid laid=new Laid(drawn,lines,places,where,columns,rows,cell,high,seen);
+        Laid laid=new Laid(drawn,lines,places,where,columns,rows,cell,high,seen,natural);
         laid.spots=spots;
+        if(where==Where.HOME){laid.canvas=in;laid.pageX=pageX;laid.pageY=pageY;}
         if(lines.isEmpty()&&places.isEmpty()) {
             // Nothing to carry and nowhere to carry it: the words saying what to do, and no empty cells under them.
             View said=nothing(in,nothingYet,widthPx);
@@ -1071,15 +1334,22 @@ final class HomeScreen {
     }
 
     /**
-     * A grid laid out again where what it was laid out for has changed: the height it is seen in - it is first drawn before
-     * the screen has measured it - or the size of its names, after the reading ladder. Never under a thing being carried
-     * or a name being typed, each of which ends by reading Home again.
+     * A grid laid out again where what it was laid out for has changed: the height it is seen in, it is first drawn before
+     * the screen has measured it, or the size of its names, after the reading ladder. A row stretched to fill the page is
+     * still that row, so the taller drawing is not a change (decision 130). Never under a thing being carried or a name
+     * being typed, each of which ends by reading Home again.
      */
     void refit(ScrollView scroll,Laid laid,Runnable again) {
-        if(laid==null||scroll==null||a.dragging!=null||naming())return;
-        if(scroll.getHeight()==laid.seen&&rowHeight(laid.width)==laid.height)return;
+        if(laid==null||scroll==null||a.dragging!=null||a.pressing||a.heldTile!=null||panning||scrolling||naming())return;
+        int height=laid.where==Where.HOME?homeRoom():scroll.getHeight();
+        boolean wider=laid.where==Where.HOME&&pager!=null&&pager.getWidth()>0
+            &&(columns(pager.getWidth())!=laid.columns||cell(grid,pager.getWidth())!=laid.width);
+        if(!wider&&!Layout.gridChanged(height,laid.seen,rowHeight(laid.width),laid.natural))return;
         scroll.post(again);
     }
+
+    /** Home's grid, laid out again where the room or the reading size has changed. The finger lifting asks this once. */
+    void refitNow(){refit(gridScroll,homeLaid,()->{if(homeLaid!=null&&showing())fill(homeLaid.lines,homeLaid.places);});}
 
     /** Home's places, by id: each keeps its cell in this phone's settings - "favouritesCell", "archiveCell", "binCell". */
     private static final String[] PLACES={NoteStore.FAVOURITES,NoteStore.ARCHIVE,NoteStore.BIN,NoteStore.TOOLS,NoteStore.TEMP,NoteStore.RECENT,NoteStore.OPEN,NoteStore.SHARED};
@@ -1167,7 +1437,8 @@ final class HomeScreen {
         if(space==null)return;
         int face=face(in.width),side=(in.width-face)/2;
         GradientDrawable outline=new GradientDrawable();
-        outline.setCornerRadius(Looks.corner(face,a.dp(14)));outline.setStroke(Math.max(1,a.dp(2)),a.MUTED);
+        outline.setCornerRadius(Looks.corner(face,a.dp(14)));outline.setStroke(Math.max(1,a.dp(3)),a.ACCENT);
+        outline.setColor(MainActivity.mix(a.PAPER,a.ACCENT,0.12f));
         space.setBackground(new android.graphics.drawable.InsetDrawable(outline,side,a.dp(8),in.width-face-side,Math.max(0,in.height-a.dp(8)-face)));
     }
 
@@ -1224,8 +1495,13 @@ final class HomeScreen {
             return tile;
         }
         tile.setContentDescription(said(branch));
-        tile.setOnClickListener(v->opened(branch,where));
+        // A share that waits is an icon like any other. The tap decides: Accept, Refuse, See sender (decision 127).
+        tile.setOnClickListener(v->{if(branch.asking)a.arrival(v,branch);else opened(branch,where);});
         a.grabbable(tile,branch);
+        if(branch.id.equals(landedId)) {
+            tile.setScaleX(0.94f);tile.setScaleY(0.94f);tile.setAlpha(0.5f);
+            tile.post(()->tile.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(160));
+        }
         return tile;
     }
 
@@ -1262,15 +1538,19 @@ final class HomeScreen {
             low.setMargins(-badge/4,0,0,-badge/4);
             over.addView(a.timer(badge),low);
         }
-        if(branch.kind==NoteStore.Branch.Kind.FILE&&branch.fresh) {
-            TextView fresh=a.label("new",MainActivity.QUIET,a.PAPER);
+        // New: a file that came, or a note somebody else changed, or a folder with one in it, not opened since (the owner,
+        // 2026-10-14: "the same everywhere a change hasn't been viewed"). Over the middle of the top edge, clear of the mark.
+        if(branch.fresh||branch.updated) {
+            // New from somebody else; ✓ when one of my own devices updated it (decision 220).
+            TextView fresh=a.label(branch.fresh?"new":"✓",MainActivity.QUIET,a.PAPER);
+            fresh.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             fresh.setIncludeFontPadding(false);fresh.setPadding(a.dp(6),a.dp(2),a.dp(6),a.dp(3));
             GradientDrawable pill=new GradientDrawable();pill.setColor(a.ACCENT);pill.setCornerRadius(a.dp(10));
             fresh.setBackground(pill);
             fresh.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            FrameLayout.LayoutParams corner=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.END);
-            corner.setMargins(0,-a.dp(6),-a.dp(8),0);
-            over.addView(fresh,corner);
+            FrameLayout.LayoutParams top=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.CENTER_HORIZONTAL);
+            top.setMargins(0,-a.dp(8),0,0);
+            over.addView(fresh,top);
         }
         // Shared on its own and still going up: said on its face, under where its mark is, until its bytes are up and its
         // sleeve has gone (decision 94). Quiet, as a count is: it is busy, not wrong.
@@ -1367,16 +1647,36 @@ final class HomeScreen {
         boolean counted=place.kind==NoteStore.Branch.Kind.ARCHIVE||place.kind==NoteStore.Branch.Kind.BIN||place.kind==NoteStore.Branch.Kind.TEMP
             ||place.kind==NoteStore.Branch.Kind.SHARED;
         int count=counted?a.countIn(place):0;
+        // Temp's sync mark on its corner, as a folder wears its own, while anything in it reaches somebody (the owner,
+        // 2026-10-14: "it seems it was the temp folder missing one mark"); its count then stands just left of it.
+        boolean marked=place.kind==NoteStore.Branch.Kind.TEMP&&place.standing!=null&&place.standing!=SyncMark.HERE;
+        int badge=Math.round(face*0.26f);
+        if(marked) {
+            FrameLayout.LayoutParams corner=new FrameLayout.LayoutParams(badge,badge,Gravity.TOP|Gravity.END);
+            corner.setMargins(0,-badge/3,-badge/3,0);
+            over.addView(a.placeMark(place,badge),corner);
+        }
+        if(place.fresh) {
+            TextView fresh=a.label("new",MainActivity.QUIET,a.PAPER);
+            fresh.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            fresh.setIncludeFontPadding(false);fresh.setPadding(a.dp(6),a.dp(2),a.dp(6),a.dp(3));
+            GradientDrawable pill=new GradientDrawable();pill.setColor(a.ACCENT);pill.setCornerRadius(a.dp(10));
+            fresh.setBackground(pill);fresh.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            FrameLayout.LayoutParams top=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.CENTER_HORIZONTAL);
+            top.setMargins(0,-a.dp(8),0,0);
+            over.addView(fresh,top);
+        }
         if(count>0) {
-            TextView many=a.label(count>99?"99+":String.valueOf(count),MainActivity.QUIET,a.INK);
+            // Ink on paper, bold, as on the PC (the owner, 2026-10-14: "the 1 in Temp is not well displayed").
+            TextView many=a.label(count>99?"99+":String.valueOf(count),MainActivity.QUIET,a.PAPER);
+            many.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             many.setIncludeFontPadding(false);many.setGravity(Gravity.CENTER);
-            many.setMinWidth(a.dp(22));many.setPadding(a.dp(6),a.dp(2),a.dp(6),a.dp(3));
-            GradientDrawable pill=new GradientDrawable();pill.setColor(a.PAPER);pill.setCornerRadius(a.dp(11));
-            pill.setStroke(Math.max(1,a.dp(1)),a.LINE);
+            many.setMinWidth(a.dp(22));many.setMinHeight(a.dp(22));many.setPadding(a.dp(6),a.dp(2),a.dp(6),a.dp(2));
+            GradientDrawable pill=new GradientDrawable();pill.setColor(a.INK);pill.setCornerRadius(a.dp(11));
             many.setBackground(pill);
             many.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             FrameLayout.LayoutParams corner=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.END);
-            corner.setMargins(0,-a.dp(6),-a.dp(8),0);
+            corner.setMargins(0,-a.dp(6),marked?badge-badge/3+a.dp(2):-a.dp(8),0);
             over.addView(many,corner);
         }
         over.setClipChildren(false);over.setClipToPadding(false);
@@ -1432,6 +1732,7 @@ final class HomeScreen {
             case OPEN: return "layers";
             case WAITING: return "hourglass";
             case SHARED: return "inbox";
+            case MESSAGES: return "mail";
             default: return ARCHIVE_ICON;
         }
     }
@@ -1462,6 +1763,7 @@ final class HomeScreen {
             case TEMP: return "Open Temp, "+(branch.detail.isEmpty()?"empty":branch.detail+" to be gone");
             case RECENT: return "Open Recent, what was opened lately";
             case SHARED: return "Open Shared with me, the files people share with you"+(branch.detail.isEmpty()?"":", "+branch.detail+" waiting for you");
+            case MESSAGES: return "Open the Inbox, brief messages with the people you are paired with"+(branch.detail.isEmpty()?"":", "+branch.detail+" not read");
             case OPEN: return "What is open, "+(branch.detail.isEmpty()?"nothing":branch.detail);
             case WAITING: return branch.name+": "+branch.detail;
             default:
@@ -1478,13 +1780,16 @@ final class HomeScreen {
     void opened(NoteStore.Branch branch,Where where) {
         switch(branch.kind) {
             case PAGE: openNote(branch.id);return;
-            case FILE: openFile(branch);return;
+            // New and not opened yet: what it is and what to do with it, before anything opens (the owner, 2026-10-16: "to
+            // prevent opening it first, clicking it should provide all the needed information for the person to decide").
+            case FILE: if(branch.fresh)fileMenu(a.getWindow().getDecorView(),branch);else openFile(branch);return;
             case FAVOURITES: folder.openFavourites();return;
             case ARCHIVE: case BIN: case TOOLS: case TEMP: case RECENT: case OPEN: case SHARED: folder.openPlace(branch);return;
             case WAITING: waiting(branch);return;
             case COLLECTION: case BOOK:
                 if(where==Where.CARD)folder.into(branch);
                 // A favourite opens where it really lives, with the way back being the way back from there.
+                else if(where==Where.FAVOURITES&&folder.isOpen()&&folder.lists())folder.into(branch);
                 else if(where==Where.FAVOURITES)openCollection(branch.id);
                 else folder.open(branch);
                 return;
@@ -1532,6 +1837,26 @@ final class HomeScreen {
     // ---- making ------------------------------------------------------------------------------------------------
 
     /** A new note where the + was pressed - on Home, or in the pop-up's collection - opened at once to be written on. */
+    /**
+     * Record a note, from a +: a new note in that place, named for when it was recorded, written down at once so the sound
+     * has a note to be kept with, then opened and recording (the owner, 2026-10-12: "since we have take a picture, we should
+     * also have record a note").
+     */
+    void recordNote(final String asked) {
+        final String where=asked==null||asked.isEmpty()||MainActivity.takesNew(asked)?Things.HOME:asked;
+        a.background.submit(()->Things.HOME.equals(where)?Boolean.TRUE:a.store.mayWriteIn(NoteStore.Branch.Kind.COLLECTION,where),may->{
+            if(Boolean.FALSE.equals(may)){a.alert("This folder is read only here. Ask whoever shared it to let you write in it.");return;}
+            final NoteStore.Note note=new NoteStore.Note();note.book=where;
+            note.title=Say.t("Recording")+" "+new java.text.SimpleDateFormat("d MMM, HH:mm",java.util.Locale.getDefault()).format(new java.util.Date());note.body="";
+            a.background.submit(()->{a.store.save(note);return a.store.get(note.id);},kept->{
+                if(Things.HOME.equals(where))placeNew(note.id);
+                a.cameFrom=new ArrayList<>(a.trail);a.cameFromNote=note.id;
+                a.write((NoteStore.Note)kept);
+                a.getWindow().getDecorView().postDelayed(a::record,250);
+            },e->a.alert("Could not make the note. Nothing was changed."));
+        },e->a.alert(MainActivity.READ_FAILED));
+    }
+
     void newNote(final String asked) {
         // From a place's +: made on Home, and put in the place when it is first written down (decision 87).
         final String place=MainActivity.takesNew(asked)?asked:null,where=place!=null?Things.HOME:asked;
@@ -1571,30 +1896,46 @@ final class HomeScreen {
         // Starred and temporary first, read from the notebook, so each row says what it will do (decision 87); and whether
         // this phone may change it, which only then offers to (decision 93).
         a.background.submit(()->new Object[]{a.store.favourite(NoteStore.Branch.Kind.FILE,file.id),a.store.untilOf(NoteStore.Branch.Kind.FILE,file.id),
-                a.store.mayChangeFile(file.id),a.store.standing(file.id)},
-            got->fileMenu(anchor,file,(Boolean)got[0],(Long)got[1],(Boolean)got[2],(NoteStore.Standing)got[3]),e->a.alert(MainActivity.READ_FAILED));
+                a.store.mayChangeFile(file.id),a.store.standing(file.id),a.store.file(file.id),a.store.linkedOn(file.id)},
+            got->fileMenu(anchor,file,(Boolean)got[0],(Long)got[1],(Boolean)got[2],(NoteStore.Standing)got[3],(NoteStore.Held)got[4],(String)got[5]),e->a.alert(MainActivity.READ_FAILED));
     }
-    private void fileMenu(View anchor,final NoteStore.Branch file,boolean starred,long until,boolean changes,NoteStore.Standing standing) {
+    private void fileMenu(View anchor,final NoteStore.Branch file,boolean starred,long until,boolean changes,NoteStore.Standing standing,NoteStore.Held kept,String linked) {
         MainActivity.Sheet sheet=a.new Sheet();
+        // Its original a file on one of the owner's PCs, kept in step from there (the owner, 2026-10-16: yes, say so).
+        if(!linked.isEmpty())sheet.heading(Say.t("Linked to a file on {0}",linked));
+        // New here, not opened yet: what it is, then what to do with it, first (the owner, 2026-10-16).
+        if(kept!=null&&kept.fresh) {
+            sheet.heading(Say.t("New · {0}",Attachment.size(kept.bytes)));
+            if(!standing.from.isEmpty())sheet.row("From "+standing.fromName+" · "+a.shortWhen(standing.at),()->a.aboutSharing(file));
+            sheet.row("Keep it here",()->a.background.submit(()->{a.store.opened(file.id);return null;},done->{a.toast("Kept here");a.refresh();},e->a.alert(MainActivity.READ_FAILED)));
+            sheet.row("Move to…",()->{a.carrying=file;a.browse();});
+            sheet.row("Move to bin",()->a.putAway(file,true));
+            sheet.line();
+        }
         // Who sent it, first, and the box that says where every device stands with it (the owner, 2026-10-05).
-        if(!standing.from.isEmpty()) {
+        if(!standing.from.isEmpty()&&(kept==null||!kept.fresh)) {
             sheet.row("From "+standing.fromName+" · "+a.shortWhen(standing.at),()->a.aboutSharing(file));
             sheet.line();
         }
-        sheet.row("Open",()->openFile(file));
+        // One Open, named by the app it opens in, and Open with… to pick another (the owner, 2026-10-15: "we should have only
+        // one open, once open we can decide to modify or not").
+        sheet.row("Open",kept==null?null:a.openLine(kept),()->openFile(file));
+        sheet.row("Open with…",()->withHeld(file,a::openFileWith));
         // Written in like a note, by whoever may (decision 93): the same file, by the same id, for everybody who has it.
         if(changes) {
             sheet.row("Rename…",()->a.renameFile(file));
             sheet.row("Replace with another file…",()->a.replaceFile(file));
         }
 
-        sheet.row("Save a copy",()->withHeld(file,held->{
-            a.savingCopy=loose(held);
-            a.startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-                .setType(held.kind).putExtra(Intent.EXTRA_TITLE,held.name),MainActivity.SAVE_COPY);
-        }));
-        sheet.row("Send to a device",()->a.chooseDevice(Collections.singletonList(Lending.of(file.id)),new ArrayList<>()));
-        sheet.row("Put in a note",()->withHeld(file,held->a.putInNote(loose(held))));
+        // Out to anybody or anywhere, as on a note's attachment (the owner, 2026-10-10): another app, Downloads, a place picked.
+        // Copied first, as a note's attachment is (decision 207), so the photo viewer's ⋮ has it too.
+        sheet.row("Copy",()->withHeld(file,held->a.copyFile(held.id,held.name)));
+        sheet.row("Send with another app…",()->withHeld(file,held->a.sendWithApp(held.id,held.name,held.kind)));
+        sheet.row("Save on my phone…",()->withHeld(file,held->a.saveCopyOf(held.id,held.name,held.kind)));
+        sheet.row("Stamp on Minima…",()->withHeld(file,held->PhoneStamp.file(a,held)));
+        sheet.row("Verify on Minima…",()->withHeld(file,held->PhoneStamp.verifyFile(a,held)));
+        sheet.row("Send to a device…",()->a.chooseDevice(Collections.singletonList(Lending.of(file.id)),new ArrayList<>()));
+        sheet.row("Put in a note…",()->withHeld(file,held->a.putInNote(loose(held))));
         sheet.row("Move to…",()->{a.carrying=file;a.browse();});
         // Shared like a note, with its own people and roles (decision 92): the same box a note's Share… opens.
         sheet.row("Share…",()->a.aboutSharing(file));
@@ -1677,7 +2018,7 @@ final class HomeScreen {
             return;
         }
         if(aim.cell==null){a.keepFiles(aim.kind,aim.id,files,new ArrayList<>());return;}
-        final Laid in=aim.in;final int[] at=aim.cell;final boolean onHome=in==homeLaid;
+        final Laid in=aim.in;final int[] at=aim.cell;final boolean onHome=in.where==Where.HOME;
         a.keepFiles(aim.kind,aim.id,files,new ArrayList<>(),kept->{
             // The first in the cell they were let go in, every icon there pinned where it was drawn, and any others after
             // it in the first free cells, as anything new takes.
@@ -1746,10 +2087,16 @@ final class HomeScreen {
 
     // ---- the dock, from a menu --------------------------------------------------------------------------------------
 
-    /** Taken out of the dock: still a favourite, in the Favourites collection, and the rest of the dock closes up. */
+    /** Taken out of the dock: a favourite or not as it was, and the rest of the dock closes up (decision 190). */
     void undock(final NoteStore.Branch thing) {
         a.background.submit(()->{a.store.outOfDock(thing.kind,thing.id);return null;},
-            done->{a.toast("Out of the dock, and still a favourite");a.refresh();},e->a.alert("Could not change that. Nothing was changed."));
+            done->{a.toast("Out of the dock");a.refresh();},e->a.alert("Could not change that. Nothing was changed."));
+    }
+
+    /** Put at the end of the dock from its menu: a favourite or not as it was (decision 190). */
+    void dockAtEnd(final NoteStore.Branch thing) {
+        a.background.submit(()->{a.store.toDockEnd(thing.kind,thing.id);return null;},
+            done->{a.toast("In the dock");a.refresh();},e->a.alert("Could not put that in the dock. Nothing was changed."));
     }
 
     // ---- open things, for the overview ---------------------------------------------------------------------------
@@ -1797,15 +2144,15 @@ final class HomeScreen {
      */
     private boolean dragged(View on,DragEvent event) {
         switch(event.getAction()) {
-            case DragEvent.ACTION_DRAG_STARTED: carriedFrom=null;carriedFrom=from();outOf=carriedFrom==grid?Things.HOME:carriedFrom!=null&&folder.isOpen()?folder.id():null;
+            case DragEvent.ACTION_DRAG_STARTED: stopScroll();carriedFrom=null;carriedFrom=from();outOf=homeGrid(carriedFrom)?Things.HOME:carriedFrom!=null&&folder.isOpen()?folder.id():null;
                 if(a.dragging!=null)showStrip(a.dragging);
                 return a.dragging!=null;
             case DragEvent.ACTION_DRAG_LOCATION:
                 // Over the strip of what can be done to it: that, and nothing under it (decision 90).
                 // And no folder opens under it: a pass over one on the way to the strip set its spring going (decision 90).
-                if(overStrip(event.getX(),event.getY())){light(Grid.Zone.NONE);a.markOnto(null);aim(null,null);desk.removeCallbacks(springing);springAt=null;springKey=null;springDo=null;return true;}
+                if(overStrip(event.getX(),event.getY())){cancelEdge();light(Grid.Zone.NONE);a.markOnto(null);aim(null,null);desk.removeCallbacks(springing);springAt=null;springKey=null;springDo=null;return true;}
                 over(event.getX(),event.getY());return true;
-            case DragEvent.ACTION_DRAG_EXITED: light(Grid.Zone.NONE);a.markOnto(null);aim(null,null);litTarget(-1);return true;
+            case DragEvent.ACTION_DRAG_EXITED: cancelEdge();light(Grid.Zone.NONE);a.markOnto(null);aim(null,null);litTarget(-1);return true;
             case DragEvent.ACTION_DROP:
                 if(overStrip(event.getX(),event.getY()))return dropOnStrip();
                 over(event.getX(),event.getY());return drop(event.getX());
@@ -1904,10 +2251,10 @@ final class HomeScreen {
 
     /** Where a view is, in the coordinates of the screen's own column, which is what a drag is measured in. */
     private Rect rect(View view) {
-        Rect at=new Rect(0,0,view.getWidth(),view.getHeight());
-        // A view that has just been taken off the screen is nowhere: an empty place nothing is over.
-        try{a.root.offsetDescendantRectToMyCoords(view,at);}catch(IllegalArgumentException gone){at.setEmpty();}
-        return at;
+        if(view==null||!view.isAttachedToWindow())return new Rect();
+        int[] at=new int[2],root=new int[2];view.getLocationOnScreen(at);a.root.getLocationOnScreen(root);
+        // Include the surface's translation. Layout offsets alone still point at the cell before the swipe.
+        return new Rect(at[0]-root[0],at[1]-root[1],at[0]-root[0]+view.getWidth(),at[1]-root[1]+view.getHeight());
     }
 
     /**
@@ -1915,13 +2262,11 @@ final class HomeScreen {
      * however far it is scrolled, so its window is asked for from where it is scrolled to.
      */
     private Rect seen(View view) {
-        Rect at=new Rect(view.getScrollX(),view.getScrollY(),view.getScrollX()+view.getWidth(),view.getScrollY()+view.getHeight());
-        try{a.root.offsetDescendantRectToMyCoords(view,at);}catch(IllegalArgumentException gone){at.setEmpty();}
-        return at;
+        return rect(view);
     }
 
     private boolean inside(View view,float x,float y) {
-        if(view==null||view.getParent()==null||view.getVisibility()!=View.VISIBLE)return false;
+        if(view==null||view.getParent()==null||!view.isShown())return false;
         return rect(view).contains((int)x,(int)y);
     }
 
@@ -1930,7 +2275,7 @@ final class HomeScreen {
         if(a.lifted==null)return null;
         // Kept from the start of the carry: a page turned under it has drawn its icons anew.
         if(carriedFrom!=null)return carriedFrom;
-        if(a.lifted.getParent()==grid)return grid;
+        if(a.lifted.getParent() instanceof GridLayout&&homeGrid((GridLayout)a.lifted.getParent()))return (GridLayout)a.lifted.getParent();
         if(folder.grid!=null&&a.lifted.getParent()==folder.grid)return folder.grid;
         return null;
     }
@@ -1947,7 +2292,10 @@ final class HomeScreen {
         // Carried out of Home's rows - up under the app's name, down short of the dock - is a turn of the page too.
         if((zone==Grid.Zone.HOME||zone==Grid.Zone.NONE||zone==Grid.Zone.UP)&&from()!=null&&homeSeen)edgeWatch(x,y);else cancelEdge();
         // Round the card is Home, which is what is seen there (the owner, 2026-10-03: in and out of a group at any level).
-        if(zone==Grid.Zone.HOME||zone==Grid.Zone.UP&&!folder.amongFavourites())across(grid,gridScroll,homeLaid,x,y);
+        if(zone==Grid.Zone.HOME||zone==Grid.Zone.UP&&!folder.amongFavourites()) {
+            Laid under=homeAt(x,y);
+            across(under==null?null:under.canvas,gridScroll,under,x,y);
+        }
         else if(zone==Grid.Zone.CARD&&folder.amongFavourites()&&from()==folder.grid)reorderOver(x,y);
         else if(zone==Grid.Zone.CARD&&!folder.amongFavourites()) {
             // Held on ‹ and the collection above, in a card inside another: up a level. Out of the card is Home.
@@ -2025,22 +2373,24 @@ final class HomeScreen {
         if(in==null||laid==null||from()==null){a.markOnto(null);aim(null,null);return;}
         Rect window=seen(scroll);
         int reach=a.dp(56),step=a.dp(14);
-        if(y<window.top+reach)scroll.scrollBy(0,-step);
-        else if(y>window.bottom-reach)scroll.scrollBy(0,step);
+        if(laid.where!=Where.HOME) {
+            if(y<window.top+reach)scroll.scrollBy(0,-step);
+            else if(y>window.bottom-reach)scroll.scrollBy(0,step);
+        }
         int[] at=cellAt(in,laid,x,y);
         String there=at==null?null:Layout.at(laid.drawn,at[0],at[1]);
         NoteStore.Branch held=there==null?null:laid.things.get(there);
         // Tools, held on, opens, as a collection does; and one of the four is let go on it to be kept there.
         if(held!=null&&held.kind==NoteStore.Branch.Kind.TOOLS) {
             final NoteStore.Branch tools=held;
-            if(Grid.tool(a.dragging.kind)&&in==grid){a.markOnto(laid.icons.get(there));aim(null,null);return;}
+            if(Grid.tool(a.dragging.kind)&&homeGrid(in)){a.markOnto(laid.icons.get(there));aim(null,null);return;}
             if(!Grid.place(a.dragging.kind)){a.markOnto(null);aim(null,null);springKey="in:"+NoteStore.TOOLS;springDo=()->{cardEntered=false;folder.openPlace(tools);};return;}
         }
         Grid.LetGo does=at==null||(there!=null&&held==null)?Grid.LetGo.BACK:Grid.letGo(a.dragging.kind,held==null?null:held.kind,a.dragging.id.equals(there));
         if(does==Grid.LetGo.MERGE||does==Grid.LetGo.INTO||does==Grid.LetGo.AWAY) {
             a.markOnto(laid.icons.get(there));aim(null,null);
             if(does==Grid.LetGo.INTO&&held.kind==NoteStore.Branch.Kind.COLLECTION) {
-                final NoteStore.Branch opening=held;final boolean onHome=in==grid;
+                final NoteStore.Branch opening=held;final boolean onHome=homeGrid(in);
                 springKey="in:"+held.id;springDo=()->{if(folder.isOpen()&&opening.id.equals(folder.id()))return;if(onHome){cardEntered=false;folder.open(opening);}else folder.into(opening);};
             }
             return;
@@ -2054,6 +2404,7 @@ final class HomeScreen {
         final NoteStore.Branch carried=a.dragging;
         View target=a.onto;a.markOnto(null);
         final Laid placeIn=aimIn;final int[] placeAt=aimAt;aim(null,null);
+        if(carried!=null&&placeIn!=null)landedId=carried.id;
         GridLayout came=from();
         boolean fromFavourites=came!=null&&came==folder.grid&&folder.amongFavourites();
         light(Grid.Zone.NONE);
@@ -2074,10 +2425,10 @@ final class HomeScreen {
         // One of the four carried out of Tools onto Home, or onto Tools from Home (decision 72): kept where it is let go.
         if(Grid.tool(carried.kind)) {
             NoteStore.Branch onto=target!=null&&target.getTag() instanceof NoteStore.Branch?(NoteStore.Branch)target.getTag():null;
-            if(came==grid&&onto!=null&&onto.kind==NoteStore.Branch.Kind.TOOLS){keepInTools(carried.id,true);a.toast("Kept in Tools");refresh();return true;}
+            if(homeGrid(came)&&onto!=null&&onto.kind==NoteStore.Branch.Kind.TOOLS){keepInTools(carried.id,true);a.toast("Kept in Tools");refresh();return true;}
             if(came==folder.grid&&folder.isOpen()&&(zone==Grid.Zone.HOME||zone==Grid.Zone.UP)) {
                 keepInTools(carried.id,false);
-                final Map<String,Layout.Spot> spots=placeIn!=null&&placeIn==homeLaid?homeMove(placeIn,carried.id,placeAt[0],placeAt[1]):null;
+                final Map<String,Layout.Spot> spots=placeIn!=null&&placeIn.where==Where.HOME?homeMove(placeIn,carried.id,placeAt[0],placeAt[1]):null;
                 if(spots!=null)placesOn(spots);
                 folder.close();a.toast(carried.name+" is on Home now");refresh();return true;
             }
@@ -2093,6 +2444,14 @@ final class HomeScreen {
             Grid.Onto does=Grid.onto(carried.kind,onto.kind);
             // On the archive or the bin: put away there, as its menu puts it away (decision 41).
             // On Temp: asked for how long (decision 71).
+            // Whatever leaves Home for a place leaves its spot empty: the others are kept where they are drawn now (the owner,
+            // 2026-10-14: "the spot left behind should stay empty"). An icon never placed by hand took the first free cell.
+            if(does==Grid.Onto.AWAY&&homeGrid(came)&&homeLaid!=null&&homeLaid.spots!=null) {
+                final List<NoteStore.Branch> others=new ArrayList<>();
+                for(NoteStore.Branch one:homeLaid.lines)if(!one.id.equals(carried.id))others.add(one);
+                final Map<String,Layout.Spot> held=new HashMap<>(homeLaid.spots);held.remove(carried.id);
+                a.background.submit(()->{a.store.placeOnPages(others,held);return null;},done->placesOn(held),e->{});
+            }
             if(does==Grid.Onto.AWAY&&onto.kind==NoteStore.Branch.Kind.TEMP){stale=true;a.intoTemp(carried);}
             else if(does==Grid.Onto.AWAY)away(carried,onto.kind==NoteStore.Branch.Kind.BIN);
             else if(does==Grid.Onto.MERGE)merge(carried,onto,container,inCard);
@@ -2101,7 +2460,7 @@ final class HomeScreen {
         }
         if(!inCard&&!onHome){stale=true;return true;}
         final String dest=inCard?folder.id():Things.HOME;
-        final Laid laid=placeIn!=null&&placeIn==(inCard?folder.laid:homeLaid)?placeIn:null;
+        final Laid laid=placeIn!=null&&(inCard?placeIn==folder.laid:placeIn.where==Where.HOME)?placeIn:null;
         // Where it came from: only its cell changes.
         if(dest.equals(outOf)){if(laid!=null)put(laid,carried,placeAt);else stale=true;return true;}
         // Into another collection than the one it came out of, or onto Home, at any depth: in the empty cell it was let go
@@ -2121,30 +2480,52 @@ final class HomeScreen {
         return true;
     }
 
-    /** Held at an edge of Home's page while carrying: the page beyond comes after a moment, a new one if there is none. */
+    /**
+     * Held at an edge of the room while carrying. Over a cell, including the last row, it is let go there. In the band
+     * round the room, Home scrolls that way: first the row that was under the foot, then on towards the next page, one
+     * new page at a time (decision 126).
+     */
     private Runnable edgeTurn;private int edgeX,edgeY;private boolean turnedHere;
+    private float edgeSpeedX,edgeSpeedY,edgePointerX,edgePointerY;
+    private long edgeTime;
     private void edgeWatch(float x,float y) {
-        Rect r=rect(desk);int reach=a.dp(28);
-        // Up and down as soon as it leaves the rows icons stand in (the owner's ask): above them, under the app's name, at
-        // once; below them at once too, but for a moment's wait while the dock is there, so a thing on its way to the
-        // dock does not turn the page as it passes. Left and right, held at the edge for two thirds of a second.
-        int dy=0;long wait=650;
-        if(homeLaid!=null&&homeLaid.rows>0) {
-            int top=rect(grid).top+grid.getPaddingTop(),bottom=top+homeLaid.rows*homeLaid.height;
-            // Down only at the page's lower edge - where the dots are - or past it, after a moment: anywhere over the last
-            // row it is let go there (the owner, 2026-10-02: "too sensitive to the bottom").
-            int edge=Math.max(bottom,rect(pager).bottom-a.dp(44));
-            boolean docked=dock.row!=null&&dock.row.getVisibility()==View.VISIBLE;
-            if(y<top){dy=-1;wait=0;}
-            else if(y>edge){dy=1;wait=docked?400:250;}
-        }
-        int dx=dy!=0?0:x<r.left+reach?-1:x>r.right-reach?1:0;
+        Rect room=rect(pager);
+        float band=a.dp(48),maximum=a.dp(520);
+        float vx=HomeMotion.edgeSpeed(x,room.left,room.right,band,maximum);
+        float vy=HomeMotion.edgeSpeed(y,room.top,room.bottom,band,maximum);
+        if(Math.abs(vy)>=Math.abs(vx))vx=0;else vy=0;
+        edgePointerX=x;edgePointerY=y;edgeSpeedX=vx;edgeSpeedY=vy;
+        int dx=(int)Math.signum(vx),dy=(int)Math.signum(vy);
         if(dx==0&&dy==0){cancelEdge();turnedHere=false;return;}
-        // One page for each time it goes out: back into the rows, or off the edge and back, for the next.
-        if(turnedHere||edgeTurn!=null&&dx==edgeX&&dy==edgeY)return;
+        if(turnedHere&&dx==edgeX&&dy==edgeY)return;
+        if(edgeTurn!=null&&dx==edgeX&&dy==edgeY)return;
         cancelEdge();edgeX=dx;edgeY=dy;
-        edgeTurn=()->{edgeTurn=null;turnedHere=true;if(a.dragging!=null)showPage(pageX+edgeX,pageY+edgeY,edgeX,edgeY);};
-        if(wait==0)edgeTurn.run();else desk.postDelayed(edgeTurn,wait);
+        edgeTurn=()->{
+            if(a.dragging==null){edgeTurn=null;return;}
+            long now=android.os.SystemClock.uptimeMillis();
+            float seconds=Math.min(0.048f,Math.max(0.001f,(now-edgeTime)/1000f));edgeTime=now;
+            if(!nudgePage(edgeSpeedX*seconds,edgeSpeedY*seconds)){edgeTurn=null;turnedHere=true;return;}
+            over(edgePointerX,edgePointerY);
+            if(desk!=null&&edgeTurn!=null)desk.postOnAnimation(edgeTurn);
+        };
+        edgeTime=android.os.SystemClock.uptimeMillis()+180;
+        if(desk!=null)desk.postDelayed(edgeTurn,180);
+    }
+    /** The world moved one step that way. False once a new page that way is already open and the scroll is at its end. */
+    private boolean nudgePage(float dx,float dy) {
+        float sx=shiftX-dx,sy=shiftY-dy;
+        int[] b=pageBounds();
+        float[] limits=scrollLimits();
+        boolean outside=sx<limits[0]||sx>limits[1]||sy<limits[2]||sy>limits[3];
+        if(outside) {
+            if(!beyond) {
+                beyond=true;beyondX=dx<0?b[0]-1:dx>0?b[1]+1:seenPageX();beyondY=dy<0?b[2]-1:dy>0?b[3]+1:seenPageY();
+                buildPages();limits=scrollLimits();
+            }
+        }
+        sx=Math.max(limits[0],Math.min(limits[1],sx));sy=Math.max(limits[2],Math.min(limits[3],sy));
+        if(Math.abs(sx-shiftX)<0.01f&&Math.abs(sy-shiftY)<0.01f)return false;
+        show(1f,sx,sy);showFoot();return true;
     }
     private void cancelEdge(){if(edgeTurn!=null&&desk!=null)desk.removeCallbacks(edgeTurn);edgeTurn=null;}
 
@@ -2155,8 +2536,10 @@ final class HomeScreen {
         desk.removeCallbacks(springing);springAt=null;springKey=null;springDo=null;outOf=null;cardEntered=true;
         light(Grid.Zone.NONE);a.markOnto(null);aim(null,null);zone=Grid.Zone.NONE;
         if(a.lifted!=null)a.lifted.setVisibility(View.VISIBLE);
-        a.dragging=null;a.lifted=null;
-        if(!result||stale)refresh();
+        if(a.lifted!=null)a.releaseHold(a.lifted);
+        a.dragging=null;a.lifted=null;a.pressing=false;
+        // Remove the temporary page, including after a cancelled drag, while keeping the viewport in bounds.
+        refresh();
     }
 
     /**
@@ -2170,6 +2553,14 @@ final class HomeScreen {
             // Home: on the page in view, which comes to be if it was empty (decision 46); every icon pinned on its page.
             final Map<String,Layout.Spot> spots=homeMove(in,carried.id,at[0],at[1]);
             if(spots==null){stale=true;return;}
+            // Put the hidden source in its destination before drag-ended reveals it. Waiting for the
+            // worker's read-back briefly showed the old cell again after the shadow disappeared.
+            landTile(in,carried,at);
+            in.spots.clear();in.spots.putAll(spots);
+            for(Laid page:pageLayouts.values()) {
+                page.drawn.remove(carried.id);page.icons.remove(carried.id);page.things.remove(carried.id);
+            }
+            in.drawn.put(carried.id,at.clone());in.icons.put(carried.id,a.lifted);in.things.put(carried.id,carried);
             final List<NoteStore.Branch> lines=new ArrayList<>(in.lines);
             a.background.submit(()->{writeHome(lines,spots);return null;},done->{if(!onCentre())a.toast("Moved to "+said(pageX,pageY).toLowerCase(java.util.Locale.ROOT));refresh();},
                 e->{a.alert("Could not put that there. Nothing was changed.");refresh();});
@@ -2178,14 +2569,23 @@ final class HomeScreen {
         final Map<String,Integer> cells=Layout.moveTo(in.drawn,carried.id,at[0],at[1]);
         if(cells==null){stale=true;return;}
         if(in==homeLaid)placesAt(cells);
-        if(a.lifted!=null&&a.lifted.getLayoutParams() instanceof GridLayout.LayoutParams) {
-            GridLayout.LayoutParams place=(GridLayout.LayoutParams)a.lifted.getLayoutParams();
-            place.rowSpec=GridLayout.spec(at[0]);place.columnSpec=GridLayout.spec(at[1]);
-            a.lifted.setLayoutParams(place);
-        }
+        landTile(in,carried,at);
         final List<NoteStore.Branch> lines=new ArrayList<>(in.lines);
         a.background.submit(()->{a.store.place(lines,cells);return null;},done->refresh(),
             e->{a.alert("Could not put that there. Nothing was changed.");refresh();});
+    }
+
+    /** The dragged view lands immediately; storage success or failure is still reconciled by refresh. */
+    private void landTile(Laid in,NoteStore.Branch carried,int[] at) {
+        View tile=a.lifted;
+        if(tile==null||in.canvas==null||!(tile.getLayoutParams() instanceof GridLayout.LayoutParams))return;
+        GridLayout.LayoutParams place=new GridLayout.LayoutParams((GridLayout.LayoutParams)tile.getLayoutParams());
+        place.rowSpec=GridLayout.spec(at[0]);place.columnSpec=GridLayout.spec(at[1]);
+        place.width=in.width;place.height=in.height;
+        if(tile.getParent()!=in.canvas) {
+            if(tile.getParent() instanceof ViewGroup)((ViewGroup)tile.getParent()).removeView(tile);
+            in.canvas.addView(tile,place);
+        } else tile.setLayoutParams(place);
     }
 
     /**
@@ -2196,7 +2596,7 @@ final class HomeScreen {
         a.putAway(carried,bin);
     }
 
-    /** A favourite at a place in the dock: made one if it was not, and whatever is pushed past the end stays one, in Favourites. */
+    /** A note or a folder at a place in the dock, the rest moved along; whether it is a favourite does not change (decision 190). */
     private void toDock(final NoteStore.Branch thing,final int slot) {
         a.background.submit(()->{a.store.toDock(thing.kind,thing.id,slot);return null;},
             done->a.refresh(),e->{a.alert("Could not put that in the dock. Nothing was changed.");a.refresh();});
@@ -2240,7 +2640,7 @@ final class HomeScreen {
             List<String> from=pathOf(moved),to=pathInto(dest,moved.id);
             Sharing.Change change=Sharing.moving(rules,from,to);
             boolean reaches=!Sharing.audience(rules,from).isEmpty()||!Sharing.audience(rules,to).isEmpty();
-            boolean theirs=moved.kind!=NoteStore.Branch.Kind.FILE&&a.store.theirs(moved.kind,moved.id);
+            boolean theirs=moved.kind!=NoteStore.Branch.Kind.FILE&&a.store.someoneElses(moved.kind,moved.id);
             boolean alone=moved.kind==NoteStore.Branch.Kind.FILE&&!a.store.looseAudience(moved.id).isEmpty();
             return new Object[]{change,names(),reaches,theirs,alone};
         },found->{

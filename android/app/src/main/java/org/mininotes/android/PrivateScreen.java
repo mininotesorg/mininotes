@@ -479,6 +479,12 @@ final class PrivateScreen {
             @Override public void onTextChanged(CharSequence s,int start,int before,int count){}
             @Override public void afterTextChanged(Editable e) {
                 if(loading||shown==null||note==null)return;
+                // help//: typed here: taken out at once and the box that sets this note's help request (decision 204).
+                int[] help=PrivateCode.help(e);
+                if(help!=null){e.delete(help[0],help[1]);final PrivateSpace.Thing t=shown.things.get(note);if(t!=null)later.post(()->privateHelp(t));return;}
+                // erase//: typed here: taken out at once, and every help request of this space with it (decision 201).
+                int[] erase=PrivateCode.erase(e);
+                if(erase!=null){e.delete(erase[0],erase[1]);if(shown.eraseHelp()>0)write();return;}
                 used();
                 // Known by its first line, as every note on the phone is: the words are kept whole, the title empty.
                 shown.text(note,"",e.toString(),System.currentTimeMillis());
@@ -726,10 +732,9 @@ final class PrivateScreen {
             menu.palette(t);
             menu.line();
             menu.heading("This note");
-            menu.row("Versions",()->versions(t));
-            menu.row("Add a photo or file",this::addFiles);
+            menu.row("Versions…",()->versions(t));
+            menu.row("Add a photo or file…",this::addFiles);
             menu.row("Move to…",()->moveTo(t));
-            menu.row(Help.SWITCH,()->privateHelp(t));
             menu.danger("Delete",()->{leaveNote();shown.bin(t.id,System.currentTimeMillis());note=null;write();draw();});
             menu.line();
         }
@@ -748,7 +753,6 @@ final class PrivateScreen {
         if(t.folder)menu.row("Rename…",()->named("Rename folder",t.title,name->{shown.rename(t.id,name);write();draw();}));
         menu.palette(t);
         menu.row("Move to…",()->moveTo(t));
-        menu.row(Help.SWITCH,()->privateHelp(t));
         menu.line();
         menu.danger("Delete",()->{shown.bin(t.id,System.currentTimeMillis());write();draw();});
         menu.show(from);
@@ -792,16 +796,21 @@ final class PrivateScreen {
             body.addView(a.label(Help.WHAT,MainActivity.QUIET,a.MUTED));
             body.addView(a.spaced(a.label(Help.PHONE_PLACE,MainActivity.QUIET,a.MUTED)));
             body.addView(a.spaced(a.label(Help.PRIVATE_TRACE,MainActivity.QUIET,a.MUTED)));
-            final EditText message=a.field(Help.MESSAGE_HINT,280);message.setSingleLine(false);message.setText(t.helpMessage);
+            // Plainly, before it is set: never shown again, and how it is taken away (decision 201).
+            body.addView(a.spaced(a.label(Help.THIS_NOTE,MainActivity.QUIET,a.INK)));
+            TextView never=a.label(Help.NEVER_AGAIN,MainActivity.QUIET,a.INK);never.setTypeface(never.getTypeface(),android.graphics.Typeface.BOLD);
+            body.addView(a.spaced(never));
+            body.addView(a.spaced(a.label(Help.ERASE,MainActivity.QUIET,a.MUTED)));
+            final EditText message=a.field(Help.MESSAGE_HINT,280);message.setSingleLine(false);
             message.setImeOptions(message.getImeOptions()|EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING);
             body.addView(a.spaced(message));
             body.addView(a.spaced(a.label(Help.TO,MainActivity.QUIET,a.INK)));
-            final java.util.Set<String> picked=new java.util.LinkedHashSet<>(t.helpTo);
+            // Always empty, never saying whether one is set (decision 201).
+            final java.util.Set<String> picked=new java.util.LinkedHashSet<>();
             if(paired.isEmpty())body.addView(a.label("Nobody is paired yet. Pair someone in People and devices first.",MainActivity.QUIET,a.MUTED));
             for(final NoteStore.Contact one:paired)
                 body.addView(a.switchRow(one.name,picked.contains(one.address),on->{if(on)picked.add(one.address);else picked.remove(one.address);}));
             AlertDialog.Builder builder=a.new Box().setTitle(Help.ASK_TITLE).setView(a.scrolling(body)).setPositiveButton(Help.TURN_ON,null);
-            if(t.helpOnOpen)builder=builder.setNeutralButton("Turn it off",(d,w)->{shown.help(t.id,false,null,null);write();});
             builder=builder.setNegativeButton("Cancel",null);
             box[0]=builder.create();secure(box[0]);
             box[0].setOnShowListener(d->box[0].getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{

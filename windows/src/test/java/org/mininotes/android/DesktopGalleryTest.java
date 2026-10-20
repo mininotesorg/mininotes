@@ -32,7 +32,7 @@ public class DesktopGalleryTest {
             NoteStore.Shelf kitchen=store.addCollection("Kitchen");store.addBook(store.addBook(kitchen.id,"Recipes").id,"Soups");
             SwingUtilities.invokeAndWait(()->{pad.title.setText("Saturday");pad.page.setText("Pick up fresh bread\nTea for the ferry\n\nLeave room for a little wandering.");});
             await(()->pad.store.latest().body.contains("wandering"));
-            String id=store.latest().id;store.keepVersion(id,"");
+            String id=store.latest().id;NoteStore.Note fixture=store.get(id);fixture.book=store.addBook(kitchen.id,"Shopping lists").id;store.save(fixture);store.keepVersion(id,"");
             SwingUtilities.invokeAndWait(()->pad.page.setText("Pick up fresh bread 🥖\nTea for the ferry ☕\nPostcards 📮❤️\n\nLeave room for a little wandering. 😊"));
             await(()->pad.store.latest().body.contains("Postcards"));
             store.setLevel(Sharing.Scope.PAGE,id,"MxGallery@127.0.0.1:9001",Sharing.Level.WRITE,null);
@@ -152,7 +152,10 @@ public class DesktopGalleryTest {
                 assertTrue(pad.status.getText(),pad.status.getText().startsWith("Let go to put it here"));
             });Thread.sleep(300);shoot(pad.frame,"41-drag-icons");
             // Held over the middle of another note: it is ringed, and letting go would put the two together in a new collection.
-            SwingUtilities.invokeAndWait(()->{DesktopHome.Tile onto=tile(pad.home.folder.grid,"Tuesday");carryTo(pad,onto,onto.getWidth()/2,DesktopHome.FACE/2+10);});
+            // Onto a note other than the one carried: which one is first in the card can differ from run to run.
+            SwingUtilities.invokeAndWait(()->{DesktopHome.Tile carried=pad.home.folder.grid.tiles.get(0),onto=tile(pad.home.folder.grid,"Tuesday");
+                if(onto==carried)onto=tile(pad.home.folder.grid,"Ferry times");
+                carryTo(pad,onto,onto.getWidth()/2,DesktopHome.FACE/2+10);});
             Thread.sleep(300);shoot(pad.frame,"41b-drag-onto-note");
             SwingUtilities.invokeAndWait(()->assertTrue(pad.status.getText(),pad.status.getText().startsWith("Let go to put them together")));
             SwingUtilities.invokeAndWait(pad.home.carry::cancel);
@@ -185,8 +188,7 @@ public class DesktopGalleryTest {
                 assertTrue("From another device in "+rows,rows.contains("From another device…"));});
             // On an address: Open link first.
             menuShot(pad,"47c-menu-page-link",()->{pad.page.setCaretPosition(0);pad.paperMenu(pad.page,new Links.Link(0,4,"https://example.org")).show(pad.page,60,40);});
-            // Share, right-clicked: what else sharing offers.
-            menuShot(pad,"47e-menu-share-button",()->rightClick(texted(pad.frame.getContentPane(),"Share"),10,10));
+            // Share ▾ is gone from the bar: what it offered is ⋯'s Sync and sharing (decision 185), drawn in DesktopMenuOrderTest.
             // Move to…: for a note every collection, each with where it is; for a collection the top too, never itself or its inside.
             dialog(pad,"47f-move-note",()->pad.moveTo(line(pad,"Saturday")));
             dialog(pad,"47g-move-collection",()->pad.moveTo(line(pad,"Recipes")));
@@ -301,7 +303,7 @@ public class DesktopGalleryTest {
             SwingUtilities.invokeAndWait(()->pad.showTree(false));
             // The same two in the dock at the foot of Home, a star on their icons where they live.
             SwingUtilities.invokeAndWait(pad::goHome);settle(pad);shoot(pad.frame,"61b-favourites-dock");
-            SwingUtilities.invokeAndWait(()->assertEquals(2,pad.home.dock.tiles.size()));
+            SwingUtilities.invokeAndWait(()->assertEquals("desk="+pad.home.desk.getWidth()+" dock="+store.dock().size()+" beyond="+store.favouritesBeyondDock().size()+" favourites="+pad.home.allFavourites().size(),2,pad.home.dock.tiles.size()));
             menuShot(pad,"61c-menu-dock-icon",()->rightClick(pad.home.dock.tiles.get(0),20,20));
             SwingUtilities.invokeAndWait(()->pad.open(id));pad.disk.flush(10000);Thread.sleep(200);
             store.keepToHand(NoteStore.Branch.Kind.PAGE,id,false);store.keepToHand(NoteStore.Branch.Kind.BOOK,book,false);
@@ -399,6 +401,7 @@ public class DesktopGalleryTest {
             // Received: two photographs from the laptop, three files Ana wants to send, and two sendings from here.
             java.util.List<Enclosure.Listed> fromLaptop=java.util.List.of(new Enclosure.Listed(java.util.UUID.randomUUID().toString(),"beach.jpg","image/jpeg",2_400_000,"{}"),
                 new Enclosure.Listed(java.util.UUID.randomUUID().toString(),"receipt.pdf","application/pdf",84_000,"{}"));
+            store.pairedWith("MxGallery2@127.0.0.1:9002","Work laptop",true,new byte[]{9,1},new byte[]{9,2});
             NoteStore.Transfer laptop=store.offerArrived("MxGallery2@127.0.0.1:9002","Work laptop",java.util.UUID.randomUUID().toString(),1,fromLaptop,Drop.FETCHING);
             // The photograph a real picture, so its card shows it; the receipt only its kind.
             java.io.ByteArrayOutputStream jpeg=new java.io.ByteArrayOutputStream();javax.imageio.ImageIO.write(photo,"jpg",jpeg);
@@ -495,7 +498,7 @@ public class DesktopGalleryTest {
             dialog(pad,"36-import-choice",pad::askHowToImport);
             dialog(pad,"37-replace-confirm",pad::confirmReplace);
             // The menu under the three dots: its lines start near its left edge.
-            SwingUtilities.invokeAndWait(()->{JButton more=find(pad.frame.getContentPane(),"More");pad.menu(more);});Thread.sleep(400);
+            SwingUtilities.invokeAndWait(()->{JButton more=find(pad.frame.getRootPane(),"Menu");pad.menu(more);});Thread.sleep(400);
             SwingUtilities.invokeAndWait(()->{try{
                 MenuElement[] open=javax.swing.MenuSelectionManager.defaultManager().getSelectedPath();
                 JComponent menu=open.length>0?(JComponent)open[0].getComponent():null;
@@ -506,13 +509,14 @@ public class DesktopGalleryTest {
             SwingUtilities.invokeAndWait(()->javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath());
             // With the tree shown, its line in the same menu is ticked (decision 26).
             SwingUtilities.invokeAndWait(()->pad.showTree(true));
-            menuShot(pad,"26b-menu-tree-ticked",()->pad.menu(find(pad.frame.getContentPane(),"More")));
+            menuShot(pad,"26b-menu-tree-ticked",()->pad.menu(find(pad.frame.getRootPane(),"Menu")));
             SwingUtilities.invokeAndWait(()->pad.showTree(false));
             SwingUtilities.invokeAndWait(()->{pad.newestKnown="";pad.updateShown();});
             dialog(pad,"20-password",()->DesktopLock.askPassword(pad.frame,"Show recovery words","Type your password to see your recovery words.","Show the words"));
             // Share with (decision 103): groups first, then people, the rights beside each name; and a group folded open.
             dialog(pad,"12-add-someone",()->pad.people(new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,id,"","Saturday","",0,0,false)));
-            dialogAfter(pad,"12b-share-with-group-open",()->pad.people(new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,id,"","Saturday","",0,0,false)),"Show who is in Friends");
+            // Groups are open at first now (decision 189): drawn so, then folded with a click.
+            dialogAfter(pad,"12b-share-with-group-open",()->pad.people(new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,id,"","Saturday","",0,0,false)),"Hide who is in Friends");
             // A click beside a box, on the shade over the window behind it, closes the box and takes the shade away.
             SwingUtilities.invokeLater(()->DesktopUi.tell(pad.frame,"About",DesktopUi.body("Synthetic")));
             JDialog[] about={null};
@@ -549,7 +553,7 @@ public class DesktopGalleryTest {
             menuShot(pad,"82c-round-box-parlons-add",()->pad.personClicked(pad.peopleShown.get(0),pad.rounds.getComponent(0)));
             dialog(pad,"82d-parlons-box",()->pad.parlonsBox(store.address("MxGallery@127.0.0.1:9001"),null));
             store.setParlons("MxGallery@127.0.0.1:9001","MxG18HGGGALLERYANA00000000000000000000@78.141.237.9:9501",System.currentTimeMillis());
-            SwingUtilities.invokeAndWait(()->pad.open(together.id));pad.disk.flush(10000);Thread.sleep(300);SwingUtilities.invokeAndWait(()->{});
+            SwingUtilities.invokeAndWait(()->pad.open(together.id));pad.disk.flush(10000);await(()->pad.peopleShown.size()==1);Thread.sleep(300);SwingUtilities.invokeAndWait(()->{});
             SwingUtilities.invokeAndWait(()->assertEquals(Parlons.CONTACT,pad.parlonsWords("MxGallery@127.0.0.1:9001")));
             menuShot(pad,"82e-round-box-parlons-contact",()->pad.personClicked(pad.peopleShown.get(0),pad.rounds.getComponent(0)));
             dialog(pad,"82f-parlons-box-set",()->pad.parlonsBox(store.address("MxGallery@127.0.0.1:9001"),null));
@@ -768,7 +772,7 @@ public class DesktopGalleryTest {
         return null;
     }
     private static JButton find(Container in,String tip) {
-        for(Component c:in.getComponents()){if(c instanceof JButton b&&tip.equals(b.getToolTipText()))return b;if(c instanceof Container k){JButton f=find(k,tip);if(f!=null)return f;}}
+        for(Component c:in.getComponents()){if(c instanceof JButton b&&tip.equals(b.getToolTipText())&&b.isShowing())return b;if(c instanceof Container k){JButton f=find(k,tip);if(f!=null)return f;}}
         return null;
     }
     /** Where Home's grid and its icons are, said when a picture would otherwise show a grid that is not there. */

@@ -43,7 +43,9 @@ public class DesktopCardMenuTest {
             for(NoteStore.Branch place:new NoteStore.Branch[]{DesktopHome.tempPlace(0),DesktopHome.archivePlace(0),DesktopHome.binPlace(0),DesktopHome.sharedPlace()}) {
                 SwingUtilities.invokeAndWait(()->{pad.goHome();pad.home.folder.openPlace(place);});settle(pad);
                 List<String> got=opened(pad);
-                assertEquals(place.name,items(()->pad.home.menuFor(place)),got);
+                // The place's own menu less Open, which in its own open card does nothing (the owner, 2026-10-11).
+                assertEquals(place.name,items(()->DesktopFolder.withoutOpen(pad.home.menuFor(place))),got);
+                assertFalse("no Open in its own card",got.contains("Open"));
                 if(place.kind==NoteStore.Branch.Kind.TEMP){assertTrue(got.toString(),got.contains("Also show on Home"));shoot(pad.frame,"98-temp-card-menu");}
                 if(place.kind==NoteStore.Branch.Kind.BIN)assertTrue(got.toString(),got.contains("Empty the bin…"));
             }

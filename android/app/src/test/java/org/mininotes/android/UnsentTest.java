@@ -16,7 +16,7 @@ public class UnsentTest {
         assertEquals("Ana's phone has not been paired with this phone yet, so “Perso” cannot be sealed for it.",Unsent.said(half,"this phone"));
         assertTrue(Unsent.remedy(half,"this phone").contains("scan it on Ana's phone"));
         assertEquals(Unsent.Fix.PAIR,Unsent.fix(half));
-        assertEquals("Pair with it",Unsent.button(Unsent.fix(half)));
+        assertEquals("Add it",Unsent.button(Unsent.fix(half)));
     }
 
     @Test public void oneKnownOnlyFromAListOfPeopleIsSaidToBeInThatListAndCanBeLinkedOrTakenOff() {
@@ -42,7 +42,7 @@ public class UnsentTest {
 
     @Test public void theOtherReasonsKeepTheirButtonsAndTheirTitles() {
         Unsent.Problem half=p(Unsent.Why.NOT_PAIRED,"Ana's phone","Perso");
-        assertEquals("Pair with it",Unsent.button(half));assertNull(Unsent.takeOff(half));
+        assertEquals("Add it",Unsent.button(half));assertNull(Unsent.takeOff(half));
         assertEquals("How notes travel",Unsent.button(p(Unsent.of(Direct.WAITS),"Home PC","Perso")));
         assertNull(Unsent.button(p(Unsent.Why.NOT_REACHED,"Ana's phone","Perso")));assertNull(Unsent.button((Unsent.Problem)null));
         assertEquals("It could not go",Unsent.title(List.of(half,p(Unsent.Why.NOT_REACHED,"Home PC","Perso")),0,2));

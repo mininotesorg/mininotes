@@ -39,6 +39,9 @@ final class Enclosure {
     /** Whether a file of this size goes at all. */
     static boolean travels(long bytes){return bytes>0&&bytes<=MOST;}
 
+    /** In place of where to fetch it: the file is taken out of the note at the sender's end (decision 206). */
+    static final String TAKEN_OUT="taken-out";
+
     /**
      * Whether an id that arrived can name a file here. It becomes the file's name in the pad's own folder,
      * so only the plain ids this app makes are taken: never a path.
@@ -54,6 +57,8 @@ final class Enclosure {
         }
         /** Whether there is anywhere to fetch it from. */
         boolean fetchable(){return !manifest.isEmpty()&&travels(bytes)&&plainId(id);}
+        /** Named as taken out of the note at the sender's end, in its bin there (decision 206): to be taken out here too. */
+        boolean takenOut(){return TAKEN_OUT.equals(manifest);}
         /** The same file, named but not yet said where to find. */
         Listed unsaid(){return new Listed(id,name,kind,bytes,"");}
     }
@@ -66,6 +71,8 @@ final class Enclosure {
         final List<String> drop=new ArrayList<>();
         /** Waiting to be fetched from that device, and no longer listed: forgotten. */
         final List<String> forget=new ArrayList<>();
+        /** Listed as taken out at the sender's end, and here or waited for here: to be taken out here too (decision 206). */
+        final List<String> takeOut=new ArrayList<>();
         /** Already waiting, and now said where to find - or somewhere new. */
         final List<Listed> refresh=new ArrayList<>();
     }
@@ -85,12 +92,13 @@ final class Enclosure {
         Set<String> named=new HashSet<>();
         for(Listed one:listed) {
             if(!plainId(one.id)||!named.add(one.id))continue;
+            if(one.takenOut()){if(here.contains(one.id)||waiting.contains(one.id))plan.takeOut.add(one.id);continue;}
             if(here.contains(one.id)||declined.contains(one.id))continue;
             if(waiting.contains(one.id)){if(one.fetchable())plan.refresh.add(one);continue;}
             if(one.fetchable())plan.fetch.add(one);
         }
         for(String id:fromThem)if(!named.contains(id))plan.drop.add(id);
-        for(String id:waiting)if(!named.contains(id))plan.forget.add(id);
+        for(String id:waiting)if(!named.contains(id)||plan.takeOut.contains(id))plan.forget.add(id);
         return plan;
     }
 

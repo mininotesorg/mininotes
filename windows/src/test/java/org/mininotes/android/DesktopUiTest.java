@@ -65,7 +65,8 @@ public class DesktopUiTest {
                             javax.imageio.ImageIO.write(image,"png",Path.of("build","verification","windows-sharing.png").toFile());
                         }catch(Throwable error){shareFailure.set(error);}finally{dialog.dispose();shared.countDown();}
                     }
-                });capture.start();findButton(pad.frame,"Share").doClick();
+                });capture.start();// Share ▾, then its first line, Share…
+                ((JMenuItem)pad.shareMenu().getComponent(0)).doClick();
             });
             assertTrue("Sharing dialog did not open",shared.await(30,java.util.concurrent.TimeUnit.SECONDS));
             if(shareFailure.get()!=null)throw new AssertionError(shareFailure.get());
@@ -129,12 +130,20 @@ public class DesktopUiTest {
                 MenuSelectionManager.defaultManager().setSelectedPath(new MenuElement[]{menu[0],colour[0],colour[0].getPopupMenu()});
             });
             Thread.sleep(400);
+            // A real pointer over the screen can move the selection back a level: the colours chosen again, as a hover does.
+            SwingUtilities.invokeAndWait(()->MenuSelectionManager.defaultManager().setSelectedPath(new MenuElement[]{menu[0],colour[0],colour[0].getPopupMenu()}));
+            Thread.sleep(300);
             // Red, let go on as the mouse does: the menu stays, the ring moves, and the page behind it is red.
             SwingUtilities.invokeAndWait(()->{assertTrue("the colours are showing",colour[0].getPopupMenu().isShowing());release(line(colour[0].getPopupMenu(),"Red"));});
             await(()->!pad.page.getBackground().equals(paper));pad.disk.flush(10000);SwingUtilities.invokeAndWait(()->{});
             SwingUtilities.invokeAndWait(()->{
                 assertTrue("the menu is still up after a colour",menu[0].isShowing()&&colour[0].getPopupMenu().isShowing());
-                assertEquals(3,MenuSelectionManager.defaultManager().getSelectedPath().length);
+                // Swing may also highlight a row under the physical pointer. That fourth
+                // element is normal; what must stay selected is this same open submenu.
+                MenuElement[] selected=MenuSelectionManager.defaultManager().getSelectedPath();
+                assertTrue("the colour submenu remains selected",selected.length>=3);
+                assertSame(menu[0],selected[0]);assertSame(colour[0],selected[1]);
+                assertSame(colour[0].getPopupMenu(),selected[2]);
                 assertEquals("Red, chosen",line(colour[0].getPopupMenu(),"Red").getAccessibleContext().getAccessibleName());
                 assertEquals("No colour",line(colour[0].getPopupMenu(),"No colour").getAccessibleContext().getAccessibleName());
                 assertNotNull("the line it dropped from wears the colour",colour[0].getIcon());
@@ -197,7 +206,7 @@ public class DesktopUiTest {
                 assertFalse("on Home, not in a note",pad.onPage);
                 java.util.List<String> names=new java.util.ArrayList<>();
                 for(NoteStore.Branch one:pad.store.contents(Things.HOME))names.add(one.name);
-                assertTrue(names.toString(),names.contains("My first note")&&names.contains("Read me"));
+                assertTrue(names.toString(),names.contains("My first note")&&names.contains(NoteStore.READ_ME));
                 // And from then on, whatever was open: closed inside a note, it opens there.
                 String first=null;for(NoteStore.Branch one:pad.store.contents(Things.HOME))if("My first note".equals(one.name))first=one.id;
                 String id=first;SwingUtilities.invokeAndWait(()->pad.open(id));

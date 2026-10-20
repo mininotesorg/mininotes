@@ -308,6 +308,15 @@ final class IconPicker {
             e->a.alert(why(e,"Could not remove the picture. Nothing was changed.")));
     }
 
+    /** A person's picture chosen (decision 158): the picker, with whose it is kept until it answers. Null: yours. */
+    void chooseFace(String address,String name) {
+        a.getSharedPreferences("settings",MainActivity.MODE_PRIVATE).edit()
+            .putString(PICTURING,"face:\n"+(address==null?"":address)+"\n"+(name==null?"":name)).apply();
+        Intent pick=new Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE);
+        try{a.startActivityForResult(pick,MainActivity.PICTURE);}
+        catch(ActivityNotFoundException none){a.alert("Nothing on this phone offers pictures to choose from.");}
+    }
+
     /** Choose a picture…: the phone's own picker for pictures, with where the one chosen goes kept until it answers. */
     private void choosePicture(NoteStore.Branch thing,boolean mine) {
         a.getSharedPreferences("settings",MainActivity.MODE_PRIVATE).edit()
@@ -326,6 +335,19 @@ final class IconPicker {
         a.getSharedPreferences("settings",MainActivity.MODE_PRIVATE).edit().remove(PICTURING).apply();
         String[] part=kept==null?new String[0]:kept.split("\n",3);
         if(picked==null||part.length<3)return;
+        // A person's picture (decision 158): made small as any is, and kept as yours or as theirs here.
+        if("face:".equals(part[0])) {
+            final String address=part[1].isEmpty()?null:part[1];
+            // Framed first (decision 159): read upright, moved and zoomed in its round, then made small as any is.
+            final ContentResolver from=a.getContentResolver();
+            a.background.submit(()->upright(from,picked,1600),picture->Reframe.open(a,picture,2*Thumb.SIDE,square->{
+                final int job=a.busy("Making the picture small enough to travel…");
+                a.background.submit(()->{byte[] thumb=thumbOf(square);if(address==null)a.store.setMyFace(thumb);else a.store.setFaceHere(address,thumb);return null;},
+                    done->{a.busyDone(job,"Picture set");a.faceChanged(address);},
+                    e->{a.busyDone(job,null);a.alert(why(e,"Could not use that picture. Nothing was changed."));});
+            }),e->a.alert(why(e,"Could not read that picture. Nothing was changed.")));
+            return;
+        }
         final NoteStore.Branch.Kind kind;
         final boolean mine=part[0].startsWith("mine:");
         try{kind=NoteStore.Branch.Kind.valueOf(mine?part[0].substring(5):part[0]);}catch(IllegalArgumentException unknown){return;}
@@ -372,6 +394,32 @@ final class IconPicker {
             if(made==null)throw new IllegalArgumentException("That picture could not be made small enough to travel. Nothing was changed.");
             return made;
         } finally {whole.recycle();}
+    }
+
+    /** A picture read whole, at most {@code most} pixels on its long side, turned the way the camera said it was held. */
+    static Bitmap upright(ContentResolver from,Uri picked,int most) throws IOException {
+        BitmapFactory.Options size=new BitmapFactory.Options();size.inJustDecodeBounds=true;
+        try(InputStream in=from.openInputStream(picked)){if(in==null)throw new IllegalArgumentException(NOT_A_PICTURE);BitmapFactory.decodeStream(in,null,size);}
+        if(size.outWidth<=0||size.outHeight<=0)throw new IllegalArgumentException(NOT_A_PICTURE);
+        BitmapFactory.Options read=new BitmapFactory.Options();
+        int step=1;while(Math.max(size.outWidth,size.outHeight)/(step*2)>=most)step*=2;
+        read.inSampleSize=step;
+        Bitmap whole;
+        try(InputStream in=from.openInputStream(picked)){whole=in==null?null:BitmapFactory.decodeStream(in,null,read);}
+        if(whole==null)throw new IllegalArgumentException(NOT_A_PICTURE);
+        Matrix turn=turned(from,picked);
+        if(turn.isIdentity())return whole;
+        Bitmap made=Bitmap.createBitmap(whole,0,0,whole.getWidth(),whole.getHeight(),turn,true);
+        if(made!=whole)whole.recycle();
+        return made;
+    }
+
+    /** A square already framed, made small enough to travel: each of Thumb's tries in turn, the first that fits kept. */
+    static byte[] thumbOf(Bitmap square) {
+        int[] all={0,0,square.getWidth()};
+        byte[] made=Looks.firstFit(Thumb.tries(square.getWidth()),one->encode(square,all,new Matrix(),one));
+        if(made==null)throw new IllegalArgumentException("That picture could not be made small enough to travel. Nothing was changed.");
+        return made;
     }
 
     /** One way of encoding the square: scaled to the try's side, turned upright, and written as WebP at its quality. */

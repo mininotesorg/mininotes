@@ -68,12 +68,13 @@ final class Grid {
 
     /**
      * Whether an icon is one of Home's places rather than a thing: the Favourites collection, the archive or the bin
-     * (decision 41), Temp, Recent and Shared with me (decision 94). It has no row in the notebook, holds nothing that is carried about, and keeps a cell of its own on Home.
+     * (decision 41), Temp, Recent and Shared with me (decision 94), and Messages (decision 145). It has no row in the notebook, holds nothing that is carried about, and keeps a cell of its own on Home.
      */
     static boolean place(NoteStore.Branch.Kind kind) {
         return kind==NoteStore.Branch.Kind.FAVOURITES||kind==NoteStore.Branch.Kind.ARCHIVE||kind==NoteStore.Branch.Kind.BIN
             ||kind==NoteStore.Branch.Kind.TOOLS||kind==NoteStore.Branch.Kind.TEMP||kind==NoteStore.Branch.Kind.RECENT
-            ||kind==NoteStore.Branch.Kind.WAITING||kind==NoteStore.Branch.Kind.OPEN||kind==NoteStore.Branch.Kind.SHARED;
+            ||kind==NoteStore.Branch.Kind.WAITING||kind==NoteStore.Branch.Kind.OPEN||kind==NoteStore.Branch.Kind.SHARED
+            ||kind==NoteStore.Branch.Kind.MESSAGES;
     }
 
     /** The places Tools can hold (decision 72): the archive, the bin, Temp and Recent. */

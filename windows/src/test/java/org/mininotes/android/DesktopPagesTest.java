@@ -15,11 +15,13 @@ import java.util.concurrent.TimeUnit;
 import javax.swing.*;
 
 /**
- * Home in pages on the PC (docs/HOME.md, decisions 45-50): an icon carried to the edge and held goes on to the page beyond,
- * which comes to be when it is let go there; the wheel, Shift with it, the keys and a double-click turn the pages; the
- * favourites and the search are on the main page only; every page at once, zoomed out; a smaller window moves icons
- * without losing where they were put; and Home's right-click holds all of Home's own rows. Synthetic notebook; pictures
- * saved beside the gallery's.
+ * Home in pages on the PC (docs/HOME.md, decisions 45-50, 126): the pages are one surface, scrolled by pixels, and a scroll
+ * rests between them. The search and the favourites float over the icons, so the lines stay one cell apart (decision 128).
+ * An icon carried to the edge and held scrolls on to the page beyond, which comes to be when it is
+ * let go there; the wheel, Shift with it, scrolls, and the keys and a double-click still go a page or home; the favourites
+ * and the search are on the main page only; every page at once, zoomed out; a smaller window moves icons without losing
+ * where they were put; and Home's right-click holds all of Home's own rows. Synthetic notebook; pictures saved beside the
+ * gallery's.
  */
 public class DesktopPagesTest {
     @Rule public TemporaryFolder temp=new TemporaryFolder();
@@ -42,6 +44,11 @@ public class DesktopPagesTest {
                 assertTrue(grid.onCentre());
                 assertEquals("one page, the main one",1,Layout.active(grid.spots()).size());
                 assertTrue("the search on the main page",home.search.isVisible());
+                assertEquals("the icons fill the window, under the search and the favourites",home.desk.getHeight(),home.scroll.getHeight());
+                assertTrue("the bars float over the lower icons",home.foot.getY()<home.scroll.getHeight()&&home.foot.getY()+home.foot.getHeight()<=home.desk.getHeight());
+                assertEquals("one line follows the next, with no band between",DesktopHome.HIGH,grid.cellBounds(1,0).y-grid.cellBounds(0,0).y);
+                Rectangle searchRow=home.search.getParent().getBounds();
+                assertFalse("between the bars, the point is the icon under them",home.foot.contains(home.foot.getWidth()/2,searchRow.y+searchRow.height+4));
                 assertFalse("nothing to turn to",grid.turn(1,0));
             });
 
@@ -49,7 +56,7 @@ public class DesktopPagesTest {
             Point edge=onEdt(()->{Point p=new Point(home.scroll.getWidth()-8,home.scroll.getHeight()/2);SwingUtilities.convertPointToScreen(p,home.scroll);return p;});
             SwingUtilities.invokeAndWait(()->{carryAt(pad,tile(grid,"Ideas"),edge);
                 assertTrue(pad.status.getText(),pad.status.getText().startsWith("Hold here for the page to the right"));});
-            Thread.sleep(1000);SwingUtilities.invokeAndWait(()->{});
+            await(()->onEdt(()->home.scroll.getViewport().getViewPosition().x)>=onEdt(grid::pageW)-1);SwingUtilities.invokeAndWait(()->{});
             SwingUtilities.invokeAndWait(()->{assertEquals("the page to the right",1,grid.pageX);assertEquals(0,grid.pageY);
                 assertFalse("no search off the main page",home.search.isVisible());});
             SwingUtilities.invokeAndWait(()->{Rectangle r=grid.cellBounds(1,2);Point to=new Point(r.x+r.width/2,r.y+40);SwingUtilities.convertPointToScreen(to,grid);
@@ -60,16 +67,23 @@ public class DesktopPagesTest {
             SwingUtilities.invokeAndWait(()->{
                 assertEquals("that page there now",2,Layout.active(grid.spots()).size());
                 assertTrue(pad.status.getText(),pad.status.getText().startsWith("Moved to page one to the right"));
-                assertTrue(tile(grid,"Ideas").isVisible());assertFalse("the others are on the main page",tile(grid,"Shopping").isVisible());
+                Rectangle seen=grid.getVisibleRect();
+                assertTrue("Ideas is in view",seen.intersects(tile(grid,"Ideas").getBounds()));
+                assertFalse("the others are on the main page",seen.intersects(tile(grid,"Shopping").getBounds()));
             });
             shoot(pad.frame,"97a-page-to-the-right");
 
-            // Turning: back with the keys' way, by the wheel with Shift, and a double-click home.
+            // Back with the keys, which go a whole page. The wheel scrolls by pixels and rests short of the next page; more of it arrives there.
             SwingUtilities.invokeAndWait(()->{assertTrue(grid.turn(-1,0));assertTrue(grid.onCentre());assertTrue(home.search.isVisible());});
             SwingUtilities.invokeAndWait(()->{for(MouseWheelListener one:grid.getMouseWheelListeners())one.mouseWheelMoved(new MouseWheelEvent(grid,MouseEvent.MOUSE_WHEEL,System.currentTimeMillis(),InputEvent.SHIFT_DOWN_MASK,10,10,1,false,MouseWheelEvent.WHEEL_UNIT_SCROLL,3,1));});
-            SwingUtilities.invokeAndWait(()->assertEquals("Shift and the wheel: sideways",1,grid.pageX));
+            await(()->onEdt(()->home.scroll.getViewport().getViewPosition().x)>0);
+            SwingUtilities.invokeAndWait(()->{assertEquals("one turn rests short of the next page",0,grid.pageX);assertTrue(home.scroll.getViewport().getViewPosition().x>0);});
+            SwingUtilities.invokeAndWait(()->{for(int n=0;n<20;n++)for(MouseWheelListener one:grid.getMouseWheelListeners())one.mouseWheelMoved(new MouseWheelEvent(grid,MouseEvent.MOUSE_WHEEL,System.currentTimeMillis(),InputEvent.SHIFT_DOWN_MASK,10,10,1,false,MouseWheelEvent.WHEEL_UNIT_SCROLL,3,1));});
+            await(()->onEdt(()->grid.pageX)==1);
+            SwingUtilities.invokeAndWait(()->assertEquals("Shift and the wheel, further: the page to the right",1,grid.pageX));
             shoot(pad.frame,"97b-dots");
             SwingUtilities.invokeAndWait(()->{for(MouseListener one:grid.getMouseListeners())one.mouseClicked(new MouseEvent(grid,MouseEvent.MOUSE_CLICKED,System.currentTimeMillis(),0,10,10,2,false,MouseEvent.BUTTON1));});
+            await(()->onEdt(grid::onCentre));
             SwingUtilities.invokeAndWait(()->assertTrue("a double-click: the main page",grid.onCentre()));
 
             // Every page at once, and a click on one goes there.
@@ -129,8 +143,9 @@ public class DesktopPagesTest {
                 pad.home.carry.cancel();});
             Point above=onEdt(()->{Point p=new Point(12,-12);SwingUtilities.convertPointToScreen(p,home.scroll);return p;});
             SwingUtilities.invokeAndWait(()->{carryAt(pad,tile(grid,"Bills"),above);
-                assertEquals("the page above, at once",-1,grid.pageY);assertEquals(0,grid.pageX);
-                assertTrue(pad.status.getText(),pad.status.getText().startsWith("Page one up now"));});
+                assertTrue(pad.status.getText(),pad.status.getText().startsWith("Hold here for the page above"));});
+            await(()->onEdt(()->grid.pageY)==-1&&onEdt(()->grid.pageX)==0&&onEdt(()->pad.status.getText()).startsWith("Page one up now"));
+            SwingUtilities.invokeAndWait(()->assertTrue(pad.status.getText(),pad.status.getText().startsWith("Page one up now")));
             SwingUtilities.invokeAndWait(()->{carryTo(pad,new Point(above.x,above.y-4));assertEquals("one page each time it goes out",-1,grid.pageY);});
             SwingUtilities.invokeAndWait(()->{Rectangle r=grid.cellBounds(0,0);Point to=new Point(r.x+r.width/2,r.y+40);SwingUtilities.convertPointToScreen(to,grid);carryTo(pad,to);release(pad,to);});
             settle(pad);
@@ -139,16 +154,17 @@ public class DesktopPagesTest {
             assertEquals("Undo: back on the main page",Layout.CENTRE,byName(onEdt(()->store.contents(Things.HOME)),"Bills").page);
             // Over the last row: it stays on this page, to be let go there.
             SwingUtilities.invokeAndWait(()->grid.showPage(0,0));settle(pad);
-            Point lastRow=onEdt(()->{Rectangle r=grid.cellBounds(grid.rows()-1,1);Point p=new Point(r.x+r.width/2,r.y+r.height-6);SwingUtilities.convertPointToScreen(p,grid);return p;});
+            Point lastRow=onEdt(()->{Rectangle r=grid.cellBounds(grid.rows()-1,1);Point p=new Point(r.x+r.width/2,r.y+40);SwingUtilities.convertPointToScreen(p,grid);return p;});
             SwingUtilities.invokeAndWait(()->carryAt(pad,tile(grid,"Bills"),lastRow));
             Thread.sleep(600);SwingUtilities.invokeAndWait(()->{});
             SwingUtilities.invokeAndWait(()->{assertEquals("over the last row: no turn",0,grid.pageY);pad.home.carry.cancel();});
             settle(pad);
             // At the page's lower edge, with the dock there: the page below after a moment, not as it passes on its way to the dock.
-            Point below=onEdt(()->{Point p=new Point(home.scroll.getWidth()/2,home.scroll.getHeight()-8);SwingUtilities.convertPointToScreen(p,home.scroll);return p;});
+            // The lower corner, beside the favourites: the centre of that edge is the dock, which floats there now.
+            Point below=onEdt(()->{Point p=new Point(8,home.scroll.getHeight()-8);SwingUtilities.convertPointToScreen(p,home.scroll);return p;});
             SwingUtilities.invokeAndWait(()->{carryAt(pad,tile(grid,"Bills"),below);
                 if(home.dock.isShowing())assertEquals("not yet, while the dock is there",0,grid.pageY);});
-            Thread.sleep(600);SwingUtilities.invokeAndWait(()->{});
+            await(()->onEdt(()->grid.pageY)==1&&onEdt(()->pad.status.getText()).contains("now"));
             SwingUtilities.invokeAndWait(()->{assertEquals("the page below",1,grid.pageY);
                 Point back=new Point(grid.cellBounds(0,0).x+30,grid.cellBounds(0,0).y+30);SwingUtilities.convertPointToScreen(back,grid);
                 carryTo(pad,back);pad.home.carry.cancel();});

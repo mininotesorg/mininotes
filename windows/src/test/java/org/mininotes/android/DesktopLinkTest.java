@@ -70,7 +70,7 @@ public class DesktopLinkTest {
 
     @Test public void theOwnersOtherDevicesAreOnTheListSoTheOthersTakeTheirHello() throws Exception {
         // The owner, 2026-10-03: the grocery list went between Parisa and the PC that shared it, never between Parisa and
-        // his phones, which have it through Connect my other device and so were on no list she had.
+        // his phones, which have it through Add my device and so were on no list she had.
         Device pc=new Device("Test PC",C_AT),phone=new Device("Test phone",A_AT),friend=new Device("Somebody else",D_AT);
         pc.store.pairedWith(phone.at,"Test phone",true,phone.keys.agreement().getPublic().getEncoded(),phone.keys.signing().getPublic().getEncoded());
         pc.store.addShare(new Sharing.Rule(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,A_AT,true));

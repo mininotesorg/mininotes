@@ -17,7 +17,7 @@ import java.io.FileNotFoundException;
  * as a path — the phone refuses that, and rightly — so it is handed over as an address that grants the
  * reader one look at one file, for as long as that app is open.
  *
- * <p>Read only, never exported, and it will only open a file the notebook has a row for: an address made
+ * <p>Read only, but for a working copy lent by Open to edit (see Editing); never exported, and it will only open a file the notebook has a row for: an address made
  * up by something else opens nothing.
  */
 public final class Lending extends ContentProvider {
@@ -45,8 +45,14 @@ public final class Lending extends ContentProvider {
     }
 
     @Override public ParcelFileDescriptor openFile(Uri uri,String mode) throws FileNotFoundException {
-        if(mode!=null&&!mode.equals("r"))throw new FileNotFoundException("Read only");
         NoteStore.Held held=asked(uri);
+        // Open to edit (see Editing): the working copy made for it, which the app it was lent to may write.
+        if(Editing.editing(uri)) {
+            File copy=Editing.copyOf(getContext(),held.id);
+            if(!copy.isFile())throw new FileNotFoundException("Not lent to edit");
+            return ParcelFileDescriptor.open(copy,ParcelFileDescriptor.parseMode(mode==null?"r":mode));
+        }
+        if(mode!=null&&!mode.equals("r"))throw new FileNotFoundException("Read only");
         File file=store().fileFor(held.id);
         if(!file.isFile())throw new FileNotFoundException("The file is gone");
         if(!PhoneLock.sealed(file)&&!PhoneLock.packed(file))return ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY);
@@ -72,7 +78,7 @@ public final class Lending extends ContentProvider {
         Object[] row=new Object[columns.length];
         for(int at=0;at<columns.length;at++) {
             if(OpenableColumns.DISPLAY_NAME.equals(columns[at]))row[at]=held.name;
-            else if(OpenableColumns.SIZE.equals(columns[at]))row[at]=held.bytes;
+            else if(OpenableColumns.SIZE.equals(columns[at]))row[at]=Editing.editing(uri)?Editing.copyOf(getContext(),held.id).length():held.bytes;
         }
         answer.addRow(row);
         return answer;

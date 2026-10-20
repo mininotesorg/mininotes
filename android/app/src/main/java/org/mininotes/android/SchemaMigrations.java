@@ -12,7 +12,7 @@ import java.util.List;
  * types, so the version rules are unit tested without a device.
  */
 final class SchemaMigrations {
-    static final int VERSION=47;
+    static final int VERSION=58;
 
     /** Every pad starts with one collection holding one book, so writing never begins with a decision. */
     static final String FIRST_COLLECTION="collection-first", FIRST_BOOK="book-first";
@@ -746,6 +746,128 @@ final class SchemaMigrations {
         "ALTER TABLE things ADD COLUMN helpWords TEXT NOT NULL DEFAULT ''",
     };
 
+    /**
+     * The name a person or a device shares, and the name we pick for them (the owner, 2026-10-07: "we should see the name
+     * they share, the name we pick"). Empty for every device already here, so the name the row already has stays the one
+     * they share until a name is picked. Showing the picked name is off, and a picked name is for all of this owner's
+     * devices, until somebody says this device only.
+     */
+    private static final String[] CALLED={
+        "ALTER TABLE addresses ADD COLUMN sharedName TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE addresses ADD COLUMN picked TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE addresses ADD COLUMN showPicked INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE addresses ADD COLUMN pickedHere INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE addresses ADD COLUMN pickedAt INTEGER NOT NULL DEFAULT 0",
+    };
+
+    /**
+     * Brief messages to and from people paired here, for the Inbox (decision 145): each kept by its own id, so one that
+     * arrives twice is kept once; whether it went out or came in; its kind, words and any Parlons! address it carries; when;
+     * whether its far end said it has it, whether it was seen here, and how often and when it was last handed on.
+     */
+    private static final String[] MESSAGES={
+        "CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY, address TEXT NOT NULL, outgoing INTEGER NOT NULL, "
+            +"kind INTEGER NOT NULL, words TEXT NOT NULL DEFAULT '', parlons TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL, "
+            +"delivered INTEGER NOT NULL DEFAULT 0, seen INTEGER NOT NULL DEFAULT 0, tries INTEGER NOT NULL DEFAULT 0, "
+            +"handedAt INTEGER NOT NULL DEFAULT 0)",
+        "CREATE INDEX IF NOT EXISTS messages_by_address ON messages(address, at)",
+        // What is this person's own, kept here and nowhere else: their Parlons! address, to answer when somebody asks for it.
+        "CREATE TABLE IF NOT EXISTS mine(key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    };
+
+    /**
+     * A person's picture (decision 158): the one they gave, which travels from them and wears the time it was decided, and
+     * one picked for them on this device, which never travels and is worn over theirs. Base64 text of a {@link Thumb}.
+     */
+    private static final String[] FACES={
+        "ALTER TABLE addresses ADD COLUMN face TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE addresses ADD COLUMN faceDecided INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE addresses ADD COLUMN faceHere TEXT NOT NULL DEFAULT ''",
+    };
+
+    /**
+     * Notes and folders kept as files on this device too (decision 162): for each, where on the disk, the hash and the time of
+     * the file as last written or taken in and the note's revision then, header lines another editor keeps there (for a
+     * folder, its name then), the folder kept on disk it is kept under, and why it was lost where it was. This device's own: a path means nothing elsewhere, and none of it is ever sent.
+     */
+    private static final String[] ON_DISK={
+        "CREATE TABLE IF NOT EXISTS ondisk(id TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'note', path TEXT NOT NULL, "
+            +"hash TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0, head TEXT NOT NULL DEFAULT '', "
+            +"under TEXT NOT NULL DEFAULT '', lost TEXT NOT NULL DEFAULT '')",
+    };
+
+    /**
+     * The dock on its own, no longer the first favourites (the owner, 2026-10-18: "add to the dock ... independent of add to
+     * the favourites even if at first everything added to the favourite should be added to the dock"; decision 190): its
+     * order on this device, never sent. Filled with every live favourite, the dock's own first, then the rest as they were.
+     */
+    private static final String[] DOCKED={
+        "ALTER TABLE things ADD COLUMN docked INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE notes ADD COLUMN docked INTEGER NOT NULL DEFAULT 0",
+        "UPDATE things SET docked=CASE WHEN dock>0 THEN dock ELSE 100000 END WHERE favourite=1",
+        "UPDATE notes SET docked=CASE WHEN dock>0 THEN dock ELSE 100000 END WHERE pinned=1",
+    };
+
+    /**
+     * Stamps on Minima through Integritas (decision 199): what was stamped here, by its fingerprint and when; and this
+     * device's own secrets, an Integritas key, kept in the notebook so they are as locked as it is, and never in a backup.
+     */
+    private static final String[] STAMPS={
+        "CREATE TABLE IF NOT EXISTS stamps(id TEXT PRIMARY KEY, kind TEXT NOT NULL, hash TEXT NOT NULL, at INTEGER NOT NULL, request TEXT NOT NULL DEFAULT '')",
+        "CREATE TABLE IF NOT EXISTS secrets(name TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    };
+
+    /**
+     * A help request is set inside a private space alone now (decision 201): one set on an ordinary note or folder is taken
+     * away, and with it the trace it left in the notebook.
+     */
+    private static final String[] HELP_PRIVATE_ONLY={
+        "UPDATE notes SET helpOnOpen=0, helpTo='', helpWords='' WHERE helpOnOpen<>0 OR helpTo<>'' OR helpWords<>''",
+        "UPDATE things SET helpOnOpen=0, helpTo='', helpWords='' WHERE helpOnOpen<>0 OR helpTo<>'' OR helpWords<>''",
+    };
+
+    /** Where on Minima a stamp was found, kept with it once a verification finds it (decision 203). */
+    private static final String[] STAMP_FOUND={
+        "ALTER TABLE stamps ADD COLUMN block INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE stamps ADD COLUMN txpow TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE stamps ADD COLUMN recorded TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE stamps ADD COLUMN name TEXT NOT NULL DEFAULT ''",
+    };
+
+    /**
+     * A note's file taken out on one device is taken out of the note everywhere (decision 206): one this device let go because
+     * that device said so is marked, so that device putting it back brings it back here too.
+     */
+    private static final String[] TAKEN_OUT={
+        "ALTER TABLE incoming ADD COLUMN taken INTEGER NOT NULL DEFAULT 0",
+    };
+
+    /**
+     * Every stamp on Minima kept, each its own row (the owner, 2026-10-19: "all stamped versions of the notes should be easily
+     * retrievable"; decision 218): what was stamped and when, how far it is (waiting for Minima, confirmed, or not seen in
+     * time), how often it was looked for, where on Minima it landed, and for a note the exact text whose fingerprint went,
+     * so that version can be read again and put back. The stamps table stays as it was; what it holds is copied here.
+     */
+    private static final String[] STAMPED={
+        "CREATE TABLE IF NOT EXISTS stamped(n INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', "
+            +"hash TEXT NOT NULL, at INTEGER NOT NULL, request TEXT NOT NULL DEFAULT '', said TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '', "
+            +"state TEXT NOT NULL DEFAULT 'waiting', tries INTEGER NOT NULL DEFAULT 0, checked INTEGER NOT NULL DEFAULT 0, block INTEGER NOT NULL DEFAULT 0, "
+            +"txpow TEXT NOT NULL DEFAULT '', tx TEXT NOT NULL DEFAULT '', recorded TEXT NOT NULL DEFAULT '', title TEXT, words TEXT)",
+        "CREATE INDEX IF NOT EXISTS stamped_id ON stamped(id, at)",
+        "INSERT INTO stamped(id,kind,name,hash,at,request,state,block,txpow,recorded) SELECT id,kind,name,hash,at,request,"
+            +"CASE WHEN block>0 THEN 'confirmed' ELSE 'unseen' END,block,txpow,recorded FROM stamps",
+    };
+
+    /**
+     * The NFT Integritas mints for a verification with its PDF report, kept with the stamps of that fingerprint (the owner,
+     * 2026-10-19: "in the details we should link as much as possible to the Minima explorer, like we have in the PDF report";
+     * decision 224): its coin id and the transaction that made it, as verify/file gives them. Nothing already there changes.
+     */
+    private static final String[] STAMP_NFT={
+        "ALTER TABLE stamped ADD COLUMN nft TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE stamped ADD COLUMN nfttx TEXT NOT NULL DEFAULT ''",
+    };
+
     /** STEPS[i] upgrades a database at version i+1 to version i+2. */
     private static final String[][] STEPS={
         {VIEW_INDEX},
@@ -840,6 +962,28 @@ final class SchemaMigrations {
         ACCEPTED,
         // 46 -> 47: a note or folder set to send a help request when it opens, to whom, and with what words (decision 113).
         HELP,
+        // 47 -> 48: the name they share, and the name we pick, for a person or a device (decision 124).
+        CALLED,
+        // 48 -> 49: brief messages, for the Inbox (decision 145).
+        MESSAGES,
+        // 49 -> 50: a person's picture (decision 158).
+        FACES,
+        // 50 -> 51: notes and folders kept as files on this device too (decision 162).
+        ON_DISK,
+        // 51 -> 52: the dock on its own, in its own order on this device (decision 190).
+        DOCKED,
+        // 52 -> 53: stamps on Minima, and this device's secrets (decision 199).
+        STAMPS,
+        // 53 -> 54: help requests on ordinary things taken away (decision 201).
+        HELP_PRIVATE_ONLY,
+        // 54 -> 55: where on Minima a stamp was found (decision 203).
+        STAMP_FOUND,
+        // 55 -> 56: a note's file taken out everywhere (decision 206).
+        TAKEN_OUT,
+        // 56 -> 57: every stamp on Minima kept, with how far it is and a note's stamped text (decision 218).
+        STAMPED,
+        // 57 -> 58: the NFT of a verification, kept with its stamps (decision 224).
+        STAMP_NFT,
     };
 
     /** The one collection and the one book a pad cannot be without, for a restore that carries neither. */
@@ -895,6 +1039,16 @@ final class SchemaMigrations {
         Collections.addAll(statements,LOOK_DECIDED);
         Collections.addAll(statements,ACCEPTED);
         Collections.addAll(statements,HELP);
+        Collections.addAll(statements,CALLED);
+        Collections.addAll(statements,MESSAGES);
+        Collections.addAll(statements,FACES);
+        Collections.addAll(statements,ON_DISK);
+        Collections.addAll(statements,DOCKED);
+        Collections.addAll(statements,STAMPS);
+        Collections.addAll(statements,STAMP_FOUND);
+        Collections.addAll(statements,TAKEN_OUT);
+        Collections.addAll(statements,STAMPED);
+        Collections.addAll(statements,STAMP_NFT);
         return statements;
     }
 

@@ -9,6 +9,10 @@
         <intent><action android:name="android.intent.action.SENDTO" /><data android:scheme="mailto" /></intent>
         <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent>
         <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="http" /></intent>
+        <!-- And what opens a kept file, so its Open can name the app it opens in (the owner, 2026-10-15). -->
+        <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="content" android:mimeType="*/*" /></intent>
+        <!-- The phone's own camera, so Take a photo on + can hand it one picture to write (decision 123). -->
+        <intent><action android:name="android.media.action.IMAGE_CAPTURE" /></intent>
     </queries>
     <!-- Signature level at the transport's end: asking for it grants nothing unless this app is signed
          with the same key. An unsigned build is simply refused at the door. -->
@@ -35,6 +39,9 @@
          switched off in Profile or from the notification itself. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
+    <!-- To listen again by itself once the phone has started, as after an update (decision 226): until the pad was opened it
+         heard nothing. Only where it listens at all; see Starting. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- To ask, from Profile and only when somebody taps for it, that Android let the pad go on listening
          while the phone sleeps. Android asks the person; refusing it means notes wait until the phone
          wakes. See Waking for what it costs: one short wake-up every five to nine minutes. -->
@@ -81,6 +88,9 @@
         <!-- One kept file, lent to whatever app can open it: never exported, read only, one look at a time. -->
         <provider android:name=".Lending" android:authorities="${applicationId}.files"
             android:exported="false" android:grantUriPermissions="true" />
+        <!-- One picture the phone's camera writes, then copied into a folder or a note and deleted (decision 123). -->
+        <provider android:name=".Shot" android:authorities="${applicationId}.shot"
+            android:exported="false" android:grantUriPermissions="true" />
         <!-- The node kept up while the pad is closed. Text from one device to another is what the type is
              for, and it is the one kind that is not cut off after six hours. -->
         <service android:name=".Listening" android:exported="false"
@@ -96,5 +106,13 @@
         <receiver android:name=".Waking" android:exported="false" />
         <!-- The alarm that keeps a help request's updates going while the phone sleeps (decision 115). Only this app sets it. -->
         <receiver android:name=".HelpWaking" android:exported="false" />
+        <!-- Listening again after the phone starts and after an update (decision 226). Exported because the system sends
+             these; both are broadcasts only the system may send, and it does nothing but what an opening does. -->
+        <receiver android:name=".Starting" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

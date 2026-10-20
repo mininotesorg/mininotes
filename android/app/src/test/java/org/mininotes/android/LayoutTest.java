@@ -169,6 +169,15 @@ public class LayoutTest {
         assertEquals(java.util.Set.of(List.of(0,0),List.of(1,0),List.of(0,-1)),Layout.dotted(drawn,1,0));
         assertEquals(java.util.Set.of(List.of(0,0),List.of(1,0),List.of(0,-1),List.of(-1,0)),Layout.dotted(drawn,-1,0));
         assertEquals("only the main page: one dot, so none are drawn",java.util.Set.of(List.of(0,0)),Layout.dotted(Map.of(),0,0));
+        // The canvas is those pages edge to edge, the centre always inside, and a point lands on the page and cell under it.
+        assertArrayEquals(new int[]{0,1,-1,0},Layout.span(drawn));
+        assertArrayEquals(new int[]{0,0,0,0},Layout.span(Map.of()));
+        assertArrayEquals("the first cell of the main page",new int[]{0,0,0,0},
+            Layout.underCanvas(10,14,200,100,10,14,50,50,3,2,0,0,1,1));
+        assertArrayEquals("page to the right, its second row, third column",new int[]{1,0,1,2},
+            Layout.underCanvas(310,64,200,100,10,14,50,50,3,2,0,0,1,1));
+        assertNull("the room before the columns",Layout.underCanvas(5,14,200,100,10,14,50,50,3,2,0,0,1,1));
+        assertNull("past the last page",Layout.underCanvas(10,14+200,200,100,10,14,50,50,3,2,0,0,1,0));
     }
 
     @Test public void aWindowTooSmallForACellMovesThatIconOnItsOwnPageAndWritesNothing() {
@@ -223,6 +232,35 @@ public class LayoutTest {
         assertTrue(Layout.active(moved).contains(List.of(-1,0)));
         // Onto itself: nothing changes.
         assertEquals(drawn,Layout.movePage(drawn,1,0,1,0));
+    }
+
+    @Test public void theRowsFillThePageSoNothingIsLeftThatIsNotARow() {
+        assertEquals(3,Layout.rowsThatFill(788,200));
+        assertEquals(262,Layout.rowThatFills(788,200));
+        assertTrue("what is left is shorter than a row",788-3*Layout.rowThatFills(788,200)<200);
+        assertEquals(2,Layout.rowsThatFill(400,200));
+        assertEquals(200,Layout.rowThatFills(400,200));
+        assertEquals(1,Layout.rowsThatFill(50,200));
+        assertEquals(200,Layout.rowThatFills(50,200));
+    }
+
+    @Test public void aStretchedRowIsNotAReasonToDrawTheGridAgain() {
+        int reading=200,packed=Layout.rowThatFills(788,reading);
+        assertTrue("the row is taller once it fills the page",packed!=reading);
+        assertFalse("that taller row is still the same row",Layout.gridChanged(800,800,reading,reading));
+        assertTrue(Layout.gridChanged(0,800,reading,reading));
+        assertTrue(Layout.gridChanged(800,800,reading,240));
+    }
+
+    @Test public void aFingerOnAnIconKeepsItUntilTheSlideIsClear() {
+        int slop=8;long hold=400;
+        assertFalse("a short slide on an icon is still the icon's",Layout.pageTakes(true,false,false,slop*2+1,slop,0,hold));
+        assertTrue("a clear slide before the hold moves the pages",Layout.pageTakes(true,false,false,slop*Layout.ICON_SLOP+1,slop,50,hold));
+        assertFalse("once the hold has had its time the icon keeps the finger",Layout.pageTakes(true,false,false,slop*Layout.ICON_SLOP+1,slop,hold,hold));
+        assertFalse(Layout.pageTakes(true,true,false,slop*4,slop,0,hold));
+        assertFalse(Layout.pageTakes(true,false,true,slop*4,slop,0,hold));
+        assertTrue("empty room still gives the page a shorter slide",Layout.pageTakes(false,false,false,slop*Layout.ROOM_SLOP+1,slop,0,hold));
+        assertFalse(Layout.pageTakes(false,false,false,slop,slop,0,hold));
     }
 
     @Test public void aCellIsOneNumberBothWays() {

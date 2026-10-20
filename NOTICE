@@ -31,6 +31,10 @@ No minimaapi AAR or Minima node binary is bundled in the native application.
 ZXing core 3.5.3 (com.google.zxing:core) is Apache-2.0, used to draw and read
 QR codes. It is a dependency, not a fork, and keeps its own terms.
 
+Apache PDFBox 3.0.3 (org.apache.pdfbox:pdfbox, with fontbox and pdfbox-io) and
+Apache Commons Logging 1.3.3 are Apache-2.0, used on the PC to draw the first
+page of a PDF on its card. Dependencies, not forks, keeping their own terms.
+
 The generated Gradle wrapper is an Apache-2.0 component of Gradle.
 JUnit 4.13.2 is an EPL-1.0 test-only dependency.
 The JavaScript build/test tools retain their respective dependency licenses.

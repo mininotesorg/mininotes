@@ -1,0 +1,7 @@
+Mininotes is a paper pad on your phone: open it and write. It opens on a ruled page with the cursor already in it, keeps what you write the moment you write it, and needs no account and no connection at all.
+
+Notes live in collections laid out like your phone's home screen, as deep as you like. Every note and collection can wear its own colour, icon or picture, and files sit beside them.
+
+A note you share goes phone to phone over Maxima, the messaging layer of the Minima network. The Maxima node is inside the app, so there is nothing else to install: it seals the note for the other phone before it leaves, hands it to a public relay that cannot read it, and the note arrives even while the pad is closed. Who may read, write or pass a thing on works the way it does in Google Drive, and when two people write in the same note before either has seen the other, the two are merged line by line and nothing is lost.
+
+No account, no sign-in, no analytics, no advertising identifier. The app looks once a day whether a newer version is out, which About can switch off.

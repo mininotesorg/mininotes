@@ -12,7 +12,7 @@ them say so and go. Tap the mark or a round for the rest.
 
 ## Build from source
 
-Requirements: JDK 17, Android SDK platform 36 / build tools 35.0.0, Gradle 8.11.1 (wrapper), Android Gradle Plugin 8.10.1. Point `ANDROID_HOME` to the SDK, or put `sdk.dir=/your/sdk` in an untracked `local.properties`.
+Requirements: JDK 17, Android SDK platform 37 / build tools 35.0.0, Gradle 8.11.1 (wrapper), Android Gradle Plugin 8.10.1. Point `ANDROID_HOME` to the SDK, or put `sdk.dir=/your/sdk` in an untracked `local.properties`.
 
 ```sh
 cd android
@@ -23,7 +23,7 @@ Windows: `gradlew.bat testReleaseUnitTest lintRelease assembleRelease`.
 
 The release APK is **unsigned**, under `app/build/outputs/apk/release/`, unless `android/keystore.properties` names a key — see `app/build.gradle`. No signing key is required to compile. To test locally, run `assembleDebug` or `installDebug` for an APK signed by your own development key. Android refuses to install a build over one signed with a different key, and uninstalling takes the notebook with it: export a backup first.
 
-App ID `org.mininotes.android`, version in `app/build.gradle`, Android 9+. This initial ID must be finalized before public distribution. Retain the same signing identity for upgrades.
+App ID `org.mininotes.android`, fixed since the first public build (it is what Android and every store know the app by), version in `app/build.gradle`, Android 9+. Retain the same signing identity for upgrades.
 
 ## Implemented and limitations
 

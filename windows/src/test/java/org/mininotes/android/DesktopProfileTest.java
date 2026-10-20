@@ -16,8 +16,11 @@ public class DesktopProfileTest {
         Desktop pad=app[0];JDialog[] profile=new JDialog[1];
         try {
             pad.disk.flush(15000);SwingUtilities.invokeAndWait(()->{});
-            SwingUtilities.invokeAndWait(()->{DesktopProfile.open(pad);for(Window w:pad.frame.getOwnedWindows())if(w instanceof JDialog d&&d.getTitle().equals("Profile"))profile[0]=d;});
+            SwingUtilities.invokeAndWait(()->{DesktopProfile.open(pad);for(Window w:pad.frame.getOwnedWindows())if(w instanceof JDialog d&&d.getTitle().equals("My profile"))profile[0]=d;});
             pad.disk.flush(15000);SwingUtilities.invokeAndWait(()->{});
+            // The app's text size on the ladder a note's menu has (decision 209), not a list.
+            SwingUtilities.invokeAndWait(()->{Container ladder=(Container)find(profile[0],"app text size",false);assertNotNull(ladder);
+                assertNotNull(find(ladder,"A−",true));assertNotNull(find(ladder,"A+",true));assertFalse(hasList(profile[0]));});
             SwingUtilities.invokeAndWait(()->{assertNull(find(profile[0],"Save name",true));((JTextField)find(profile[0],"profileName",false)).setText("Desk fixture");});
             pad.disk.flush(15000);SwingUtilities.invokeAndWait(()->{});
             assertEquals("Desk fixture",new org.mininotes.desktop.platform.content.Context(folder.toFile()).getSharedPreferences("settings",0).getString("me",""));
@@ -60,6 +63,7 @@ public class DesktopProfileTest {
             assertEquals("Saved when leaving",new org.mininotes.desktop.platform.content.Context(folder.toFile()).getSharedPreferences("settings",0).getString("me",""));
         }finally {SwingUtilities.invokeAndWait(()->{if(profile[0]!=null)profile[0].dispose();pad.shutdown(false);});pad.disk.flush(15000);SwingUtilities.invokeAndWait(()->{});}
     }
+    private static boolean hasList(Container root){for(Component c:root.getComponents()){if(c instanceof JComboBox)return true;if(c instanceof Container child&&hasList(child))return true;}return false;}
     private static Component find(Container root,String value,boolean button){
         for(Component c:root.getComponents()){
             if(button&&c instanceof JButton b&&value.equals(b.getText())||!button&&value.equals(c.getName()))return c;

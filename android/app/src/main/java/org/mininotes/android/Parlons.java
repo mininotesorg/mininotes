@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
  * profile link, and from the note app we should be able to contact them directly in Parlons!"; docs/HOME.md, decision 101).
  *
  * <p>Parlons! is a Maxima chat app. Its address is {@code Mx} and letters, an {@code @}, and where its home is:
- * {@code MxG18HGG…@78.141.237.9:9501}. The app opens on nothing but its own launcher, no link and no shared text, so
+ * {@code Mx…@…}. The app opens on nothing but its own launcher, no link and no shared text, so
  * contacting somebody in it is this: their address copied, Parlons! opened, and a word saying to paste it there.
  *
  * <p>An address is kept on the person's card here, with when it was decided. When it is set the owner chooses where it
@@ -46,7 +46,12 @@ final class Parlons {
     static final String ONLY_HERE="Only this device", ALL_MINE="All my devices", CHOOSE="Choose devices…";
 
     /** The button that contacts them, and the one that asks for their address where there is none yet. */
-    static final String CONTACT="Contact on Parlons!", ADD="Add their Parlons! address…";
+    static final String CONTACT="Chat on Parlons!", ADD="Add their Parlons! address…";
+    /** What an address field shows before anything is in it: the shape of one, nobody's. */
+    static final String HINT="Mx\u2026@\u2026";
+
+    /** Where a person's address is not known: said missing, and tapped, the box that takes it. */
+    static final String MISSING="Parlons! address missing: add it…";
 
     private Parlons(){}
 
@@ -72,7 +77,7 @@ final class Parlons {
         String found=text;
         if(!(text.startsWith("Mx")&&text.indexOf('@')>2&&!text.matches(".*\\s.*"))) {
             Matcher inside=INSIDE.matcher(text);
-            if(!inside.find())throw new IllegalArgumentException("That is not a Parlons! address. One starts with Mx and has an @ in it, like MxG18HGG…@78.141.237.9:9501.");
+            if(!inside.find())throw new IllegalArgumentException("That is not a Parlons! address. One starts with Mx and has an @ in it.");
             found=inside.group();
         }
         // A sentence's full stop, or the bracket or quote round it, is not part of it.

@@ -44,6 +44,49 @@ public class DesktopSyncStatusTest {
         assertEquals("Sync confirmed",SyncStatus.read(store,note.id).status());
         share("peer-c");assertEquals("Waiting for delivery",SyncStatus.read(store,note.id).status());
     }
+    /**
+     * Temp wears a mark of its own on its card (the owner, 2026-10-14: "on top of folders like Temp, we should have an arrow
+     * there to sync now"): the worst of what is in it that reaches anybody, and its notes are what its Sync now sends.
+     */
+    @Test public void tempWearsTheWorstMarkOfWhatIsInIt() {
+        NoteStore.Branch.Kind TEMP=NoteStore.Branch.Kind.TEMP;
+        // Nothing in Temp: only here.
+        assertEquals(SyncMark.HERE,store.markOf(TEMP,NoteStore.TEMP));
+        assertTrue(store.pagesUnder(TEMP,NoteStore.TEMP).isEmpty());
+        // A note in Temp, only here: still only here.
+        store.makeTemporary(NoteStore.Branch.Kind.PAGE,note.id,System.currentTimeMillis()+3_600_000L);
+        assertEquals(SyncMark.HERE,store.markOf(TEMP,NoteStore.TEMP));
+        assertEquals(java.util.List.of(note.id),store.pagesUnder(TEMP,NoteStore.TEMP).stream().map(p->p.id).toList());
+        // Shared, and not gone yet: waiting, as the note is.
+        share("peer-a");
+        assertEquals(SyncMark.WAITING,store.markOf(TEMP,NoteStore.TEMP));
+        assertEquals(1,store.owed(TEMP,NoteStore.TEMP).size());
+        assertTrue(store.everybodyIn(TEMP,NoteStore.TEMP).contains("peer-a"));
+        // Everybody has it: green, as the note is.
+        // At the revision it is now: putting it in Temp is a change, which goes too.
+        long now=store.get(note.id).revision;
+        store.acknowledged("peer-a",note.id,now,true);
+        assertEquals(SyncMark.GONE,store.markOf(TEMP,NoteStore.TEMP));
+        // A note not in Temp is not counted.
+        NoteStore.Note other=new NoteStore.Note();other.book=store.someBook();other.body="Synthetic other";other.revision=1;store.save(other);
+        store.setLevel(Sharing.Scope.PAGE,other.id,"peer-a",Sharing.Level.WRITE,null);
+        assertEquals(SyncMark.GONE,store.markOf(TEMP,NoteStore.TEMP));
+    }
+
+    /** What waits, as the things themselves, and what is new, each to be opened from a list (the owner, 2026-10-14). */
+    @Test public void whatWaitsAndWhatIsNewAreListed() {
+        share("peer-a");
+        java.util.List<String> waiting=SyncStatus.waitingThings(store,NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING).stream().map(b->b.id).toList();
+        assertEquals(java.util.List.of(note.id),waiting);
+        store.acknowledged("peer-a",note.id,note.revision,true);
+        assertTrue(SyncStatus.waitingThings(store,NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING).isEmpty());
+        assertTrue(store.whatIsNew().isEmpty());
+        store.unseen(note.id);
+        assertEquals(java.util.List.of(note.id),store.whatIsNew().stream().map(b->b.id).toList());
+        store.touch(NoteStore.Branch.Kind.PAGE,note.id);
+        assertTrue("opened, no longer new",store.whatIsNew().isEmpty());
+    }
+
     @Test public void oneShortLineAndTheWholeTimeOnAsking() {
         var now=java.time.ZonedDateTime.of(2026,9,25,15,0,0,0,java.time.ZoneId.of("Europe/Istanbul"));
         long today=now.withHour(9).withMinute(5).toInstant().toEpochMilli(),earlier=now.minusDays(2).toInstant().toEpochMilli();

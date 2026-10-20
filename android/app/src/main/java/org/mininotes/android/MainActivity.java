@@ -91,7 +91,7 @@ public final class MainActivity extends Activity {
     private boolean cards=true;
     int PAPER,INK,MUTED,LINE,CARD,ACCENT,WARN,SHEET;
     private static final long SAVE_DELAY=500, FLUSH_TIMEOUT=2000;
-    static final int EXPORT=10, IMPORT=11, ATTACH=12, SAYING_SO=13, SEND_FILES=14, SAVE_COPY=15, HEARING=16, PICTURE=17, REPLACE=18, IMPORT_BYTES=10000000;
+    static final int EXPORT=10, IMPORT=11, ATTACH=12, SAYING_SO=13, SEND_FILES=14, SAVE_COPY=15, HEARING=16, PICTURE=17, REPLACE=18, SHOT=19, IMPORT_BYTES=10000000;
     /** Asked only when the first help request alarm is switched on (decision 113), never before. */
     static final int LOCATING=19, LOCATING_BACKGROUND=20;
     /** The text of a backup, inside the zip that carries it and whatever the notes hold. */
@@ -185,6 +185,16 @@ public final class MainActivity extends Activity {
     private long filesOpenedAt;
     /** The foot of the strip - the count, the microphone and the clip - and the bar that stands in its place while recording. */
     private View filesFoot,recordingBar;
+    private View noteTools,noteSync,noteFiles;
+    private LinearLayout noteSyncLine;
+    /** Design C's head: the way back, named for where it goes; the line saying where the note lives; the tabs and their band. */
+    private TextView backTo,notePath;
+    /** Whether a landscape keyboard has folded the note's head away to its bar. */
+    private boolean compactWriting;
+    private LinearLayout tabStrip;
+    private View tabsHolder;
+    private int tabBand;
+    private boolean noteKeyboard;
     private TextView recordingTime;
     /** A recording going on: Android's recorder, the note it is for, the file it writes, when it began. */
     private android.media.MediaRecorder recorder;
@@ -280,6 +290,8 @@ public final class MainActivity extends Activity {
     /** The line being dragged into a new place among the lines beside it, and the gap it left behind. */
     /** The menu on screen, if one is, so a ladder inside it can repaint it while it stays open. */
     Sheet showing;
+    /** A picture of an album shown large, while it is (see PhoneAlbum). */
+    PhoneAlbum.Viewer viewer;
     /** Something was given a colour while the menu was over it, so the level is redrawn when it closes. */
     private boolean painted;
     NoteStore.Branch dragging;
@@ -341,7 +353,15 @@ public final class MainActivity extends Activity {
      * looking at what you wrote rather than what you wrote a while ago. Ten seconds unless the thing says
      * otherwise, and it can say otherwise — see {@link NoteStore#pauseFor}.
      */
-    private final Runnable sendSoon=this::sendOpenNote;
+    private final Runnable sendSoon=this::sendDue;
+    /**
+     * Every note written here that is still to go, open or not, and when (uptime): a note left before its wait was over
+     * used never to go until Sync now was pressed (the owner, 2026-10-10). One that could not go is tried again a minute on.
+     */
+    private final java.util.Map<String,Long> due=new java.util.HashMap<>();
+    private static final long TRY_AGAIN=60_000;
+    /** When the others were last asked, on coming back, for what they have: not more than every two minutes. */
+    private long askedOthers;
     /** The wait for the note that is open, in milliseconds, or 0 while nobody has asked the notebook. */
     private long sendDelay;
 
@@ -372,12 +392,13 @@ public final class MainActivity extends Activity {
         }
     }
 
-    TextView label(String s,int size,int colour){TextView t=new Words(size);t.setText(s);t.setTextColor(colour);return t;}
+    // In the language chosen (decision 160): looked up by its English, a whole phrase at a time.
+    TextView label(String s,int size,int colour){TextView t=new Words(size);t.setText(Say.t(s));t.setTextColor(colour);return t;}
     TextView line(String s,int size,int colour){TextView t=label(s,size,colour);t.setSingleLine(true);t.setEllipsize(TextUtils.TruncateAt.END);return t;}
     int touchFeedback(){TypedValue v=new TypedValue();getTheme().resolveAttribute(android.R.attr.selectableItemBackground,v,true);return v.resourceId;}
     int borderlessFeedback(){TypedValue v=new TypedValue();getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless,v,true);return v.resourceId;}
     void alert(String message){new Box().setMessage(message).show();}
-    void toast(String message){Toast.makeText(this,message,Toast.LENGTH_SHORT).show();}
+    void toast(String message){Toast.makeText(this,Say.t(message),Toast.LENGTH_SHORT).show();}
     LinearLayout bar(){LinearLayout b=new LinearLayout(this);b.setGravity(Gravity.CENTER_VERTICAL);b.setPadding(dp(8),dp(2),dp(8),dp(2));topBar=b;return b;}
     /** The same, drawn heavy: for the one control that is reached for more than any other. */
     private TextView heavy(String face,String name,int size,int colour,View.OnClickListener action) {
@@ -414,12 +435,14 @@ public final class MainActivity extends Activity {
         entry.setMinimumHeight(dp(52));
         entry.setPadding(0,dp(6),0,dp(6));
         TextView what=label(left,READING,INK);
-        entry.addView(what,new LinearLayout.LayoutParams(0,-2,1));
+        // What it says about itself goes under its name, in one quiet line or two, never squeezed beside it (the owner,
+        // 2026-10-11: "everything needs to be perfectly displayed"; decision 157).
         if(right!=null&&!right.isEmpty()) {
-            TextView set=label(right,QUIET,MUTED);
-            set.setPadding(dp(12),0,0,0);set.setGravity(Gravity.END);
-            entry.addView(set);
-        }
+            LinearLayout said=column();said.addView(what);
+            TextView set=label(right,QUIET,MUTED);set.setMaxLines(2);set.setEllipsize(TextUtils.TruncateAt.END);
+            said.addView(set);
+            entry.addView(said,new LinearLayout.LayoutParams(0,-2,1));
+        } else entry.addView(what,new LinearLayout.LayoutParams(0,-2,1));
         if(go!=null) {
             TextView on=label("\u203a",READING,MUTED);
             on.setPadding(dp(10),0,0,dp(2));
@@ -769,11 +792,18 @@ public final class MainActivity extends Activity {
      * Every switch in one screen, so nobody has to look for one: the lock and its ways in, syncing, listening
      * while the pad is closed, and looking for a newer version.
      */
-    private void settings() {
+    void settings() {
         background.submit(()->{int n=0;for(NoteStore.Contact one:store.addresses())if(one.paired())n++;
                 return new Object[]{n,store.palette(),store.collections()};},got->{
             final int paired=(Integer)got[0];palette=(Writers.Palette)got[1];
             final LinearLayout body=inside();final AlertDialog[] box={null};
+            // The language first: everything under it is said in it (decision 160).
+            final List<String> codes=new ArrayList<>();final List<String> names=new ArrayList<>();
+            codes.add(Say.SYSTEM);names.add("The phone's language");
+            for(Map.Entry<String,String> one:Say.LANGUAGES.entrySet()){codes.add(one.getKey());names.add(one.getValue());}
+            String setting=getSharedPreferences("settings",MODE_PRIVATE).getString("language",Say.SYSTEM);
+            int language=Math.max(0,codes.indexOf(setting));
+            body.addView(dropRow("Language",names,null,language,names.get(language),picked->{if(box[0]!=null)box[0].dismiss();setLanguage(codes.get(picked));}));
             body.addView(part("Security"));
             securityInto(body,box);
 
@@ -797,6 +827,11 @@ public final class MainActivity extends Activity {
             // everything (docs/HOME.md, decision 23).
             // The pad's size, the same ladder as at the top of every menu away from a note. A note given a size of
             // its own, from its menu, keeps it.
+            // Voice typing, which keyboards allow only where they may learn (decision 222).
+            body.addView(switchRow("Keyboard learns from my notes",Pad.learnsHere(this),on->{
+                getSharedPreferences("settings",MODE_PRIVATE).edit().putString(Pad.KEYBOARD_LEARNS,String.valueOf(on)).apply();
+                if(page!=null)page.learns(on);}));
+            body.addView(under("Needed for the keyboard's voice typing. Off, the keyboard learns nothing from what you write, and its microphone is not offered in notes. Private spaces never let it learn."));
             body.addView(label("Text size of notes",READING,INK),new LinearLayout.LayoutParams(-1,-2));
             body.addView(ladderRow(()->step(textSize),rung->setSize(SIZES[rung]),new ArrayList<>()),new LinearLayout.LayoutParams(-1,-2));
             body.addView(under("Notes open at this size unless one has its own, set from its menu. Menus follow it too."));
@@ -805,11 +840,13 @@ public final class MainActivity extends Activity {
             body.addView(switchRow("Dock",showDock,on->setShowing("showDock",on)));
             body.addView(switchRow("Search",showSearch,on->setShowing("showSearch",on)));
             for(String[] place:PLACES_ON_HOME){final String id=place[0];body.addView(switchRow(place[1],onHome(id),on->setOnHome(id,on)));}
+            // Read me, which a newcomer needs and the owner of a full Home may not (decision 214).
+            body.addView(switchRow(NoteStore.READ_ME,store.readMeOnHome(),on->{store.setReadMeOnHome(on);refresh();}));
             body.addView(under("The dock and search are on Home's first page. Off, search and each place are in ⋮, and favourites are in Favourites."));
             body.addView(tempSpanRow());
             body.addView(under("How long what is let go on Temp stays, before it is deleted for good for everybody who has it."));
-            body.addView(switchRow("Temp: send to my devices",tempToMine(),this::setTempToMine));
-            body.addView(under("What is let go on Temp goes to your other devices too, as a note to yourself."));
+            body.addView(switchRow("Temp: send what is in it",tempToMine(),this::setTempToMine));
+            body.addView(under("What is let go on Temp goes to your other devices, and to the people you choose in Temp's menu."));
             // Where what comes on Temp from my other devices shows: in Temp only, unless this is on (decision 98).
             body.addView(switchRow("Temp: also show on Home",store.tempOnHome(),this::setTempOnHome));
             body.addView(under("What comes on Temp from your other devices is in Temp. On, it is on Home as well."));
@@ -1609,11 +1646,20 @@ public final class MainActivity extends Activity {
      */
     private void drawRounds(List<SyncStatus.Person> who) {
         rounds.removeAllViews();roundsShown=who;
-        for(final SyncStatus.Person one:who) {
+        // A few rounds, those that need a look first, and the rest in one +N that lists everybody (see SyncStatus.roundsShown).
+        List<SyncStatus.Person> drawn=SyncStatus.roundsShown(who,SyncStatus.PHONE_ROUNDS);
+        for(final SyncStatus.Person one:drawn) {
             View round=personRound(one);
-            round.setOnClickListener(v->{if(one.linked())inkBox(one.called(),one.standing(),one.address());else notLinked(one);});
+            // A tap is their menu, not only their colour (the owner, 2026-10-10: "we should have much more than ... setting the colors").
+            round.setOnClickListener(v->roundMenu(v,one));
             round.setOnLongClickListener(v->{roundMenu(v,one);return true;});
             rounds.addView(round);
+        }
+        if(drawn.size()<who.size()) {
+            View more=disc("+"+(who.size()-drawn.size()),false);
+            more.setContentDescription(Say.t("Everybody it reaches: {0}",String.valueOf(who.size())));
+            more.setOnClickListener(v->everybodyOnIt(v,who));
+            rounds.addView(more);
         }
         final boolean may=roundsAdmin;
         View plus=disc("+",true);
@@ -1621,6 +1667,29 @@ public final class MainActivity extends Activity {
         if(!may)plus.setAlpha(0.45f);
         plus.setOnClickListener(v->{if(may)addSomeoneHere();else toast("Only the owner or an admin can add people");});
         rounds.addView(plus);
+    }
+
+    /**
+     * Everybody the open note reaches, one line each: their round, their name and where they stand, the ones that need a
+     * look first; a line is that person's menu, as their round is.
+     */
+    private void everybodyOnIt(View anchor,List<SyncStatus.Person> who) {
+        Sheet sheet=new Sheet();
+        sheet.heading(Say.t("Everybody it reaches: {0}",String.valueOf(who.size())));
+        for(final SyncStatus.Person one:SyncStatus.lookFirst(who)) {
+            LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);line.setPadding(dp(16),dp(6),dp(20),dp(6));
+            View round=personRound(one);round.setClickable(false);round.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            line.addView(round);
+            LinearLayout words=column();
+            words.addView(line(one.called(),READING,INK));
+            words.addView(line(one.linked()?one.standing():one.notLinked(Post.here()),QUIET,MUTED));
+            line.addView(words,new LinearLayout.LayoutParams(0,-2,1f));
+            line.setBackgroundResource(touchFeedback());
+            line.setContentDescription(one.linked()?one.called()+": "+one.standing():one.notLinked(Post.here()));
+            line.setOnClickListener(v->{sheet.close();roundMenu(anchor,one);});
+            sheet.body().addView(line,new LinearLayout.LayoutParams(-1,-2));
+        }
+        sheet.show(anchor);
     }
 
     /** Add someone, on the open note: Share with, as from its Share box, and closing it is back on the note. */
@@ -1636,11 +1705,16 @@ public final class MainActivity extends Activity {
      */
     private void roundMenu(View round,final SyncStatus.Person one) {
         Sheet sheet=new Sheet();
-        if(!one.linked())sheet.row(Unsent.link(one.called()),this::myAddress);
-        sheet.row("Writing colour",()->inkBox(one.called(),one.standing(),one.address()));
-        // Contacting them on Parlons!, or giving them an address to be contacted at (decision 101).
-        if(one.linked())sheet.row(parlonsWords(one.address()),()->contactOnParlons(one.address()));
-        sheet.row("Sharing",()->{if(active!=null&&!shelves)aboutSharing(openNoteAsThing(null));});
+        sheet.heading(one.called());
+        // Their picture in big, first (decision 158).
+        if(one.linked())bigFace(sheet.body(),1,one.address());
+        // Their page in People and devices: renaming them, their colour, Parlons!, groups, what they have (the owner, 2026-10-11).
+        if(one.linked())sheet.row(one.called()+"'s page…",()->people().openPerson(one.address(),one.called()));
+        if(!one.linked()){sheet.row(Unsent.link(one.called()),this::myAddress);sheet.row("Why it has not gone to them…",()->notLinked(one));}
+        // Parlons! is on their page, not on a note's round (the owner, 2026-10-17).
+        if(one.linked())sheet.row("Picture…",()->faceMenu(round,one.address(),one.called()));
+        sheet.row("Writing colour…",()->inkBox(one.called(),one.standing(),one.address()));
+        sheet.row("Sharing…",()->{if(active!=null&&!shelves)aboutSharing(openNoteAsThing(null));});
         if(!one.linked()&&one.listing()!=null){sheet.line();sheet.row(Unsent.takeOff(one.listedIn()),()->takeOff(one.called(),one.listedIn(),one.listing()));}
         sheet.show(round);
     }
@@ -1692,6 +1766,15 @@ public final class MainActivity extends Activity {
             round.setBackground(washed);((TextView)round).setTextColor(Writers.ink(writes,fill));
         }
         holder.addView(round,new android.widget.FrameLayout.LayoutParams(side,side));
+        if(one.linked())wearFace(round,one.address());
+        // Ringed in their writing colour, full strength, picture or not: whose the coloured words are, at a glance (the owner,
+        // 2026-10-15: "in a shared note, the people icons at the top should indicate clearly their writing color").
+        if(one.linked()&&writes!=null&&Tint.known(writes)) {
+            GradientDrawable ring=new GradientDrawable();ring.setShape(GradientDrawable.OVAL);ring.setColor(0);
+            ring.setStroke(Math.max(dp(2),Math.round(side*0.11f)),Tint.of(writes,darkPaper()));
+            View ringed=new View(this);ringed.setBackground(ring);ringed.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            holder.addView(ringed,new android.widget.FrameLayout.LayoutParams(side,side));
+        }
         View tint;
         int across;
         if(one.linked()) {
@@ -1762,6 +1845,8 @@ public final class MainActivity extends Activity {
             InputMethodManager keys=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
             if(keys!=null)keys.hideSoftInputFromWindow(page.getWindowToken(),0);
             saidState();
+            // No + on the tabs of a copy only read.
+            drawTabs();
         },e->{});
     }
 
@@ -1807,7 +1892,8 @@ public final class MainActivity extends Activity {
     }
 
     private void shell() {
-        rows=null;topBar=null;versionLine=null;stage=new FrameLayout(this);stage.setBackgroundColor(PAPER);root=column();
+        rows=null;topBar=null;versionLine=null;noteTools=null;noteSync=null;noteFiles=null;noteSyncLine=null;
+        stage=new FrameLayout(this);stage.setBackgroundColor(PAPER);root=column();
         stage.addView(root,new FrameLayout.LayoutParams(-1,-1));
         // A new screen is not a new app: whatever you were looking closely at, you go on looking closely
         // at. The zoom is put back once the new stage has a size to put it back against.
@@ -1821,8 +1907,10 @@ public final class MainActivity extends Activity {
             if(android.os.Build.VERSION.SDK_INT>=30) {
                 android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars());
                 top=bars.top;bottom=Math.max(bars.bottom,insets.getInsets(WindowInsets.Type.ime()).bottom);
+                noteKeyboard=insets.isVisible(WindowInsets.Type.ime());
             } else {top=insets.getSystemWindowInsetTop();bottom=insets.getSystemWindowInsetBottom();}
             root.setPadding(0,top,0,bottom);
+            fitWriting();
             // A menu that is open was fitted to the room there was. There is a different amount now.
             if(showing!=null)showing.fit();
             return insets;
@@ -1832,10 +1920,15 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        // The app's words in the language chosen, or the phone's own where there is a list for it (decision 160).
+        Say.use(Say.resolve(getSharedPreferences("settings",MODE_PRIVATE).getString("language",Say.SYSTEM),java.util.Locale.getDefault()));
+        // Persian is written from right to left: every screen laid out mirrored, as the phone does for its own RTL languages.
+        getWindow().getDecorView().setLayoutDirection(Say.rightToLeft()?android.view.View.LAYOUT_DIRECTION_RTL:android.view.View.LAYOUT_DIRECTION_LOCALE);
         PhoneLock.tidy(this);
         // Locked, and not opened since the app started: the password first, and nothing of the notebook before it.
         if(!PhoneLock.open(this)){lockedOut=true;usePaper(paperNow());unlockScreen();return;}
-        store=NoteStore.of(this);background=new Background(handler::post);privately=new PrivateScreen(this);helpAlarm=new HelpAlarm(this);
+        store=NoteStore.of(this);store.filesOut=note->filesChanged(store.keptWith(note),note);background=new Background(handler::post);privately=new PrivateScreen(this);helpAlarm=new HelpAlarm(this);
+        if(state!=null){homeScreen().restoreViewport(state);readingPosition=state.getBundle("readingPosition");}
         store.usually=syncAfter();
         // Shared with me a place, out of the collection 0.2.026 made for it, and the two notes everybody has, once a device
         // (decision 94). First on the worker, which does one thing at a time, so whatever is drawn next has them.
@@ -1843,6 +1936,8 @@ public final class MainActivity extends Activity {
         background.submit(()->{store.sharedWithMeBecomesAPlace();boolean welcomed=store.welcome(build);
                 // Read me with private notes in it, where it still says what an earlier build wrote (decision 111).
                 welcomed|=store.readMeAgain();
+                // Photos on Home, an album, once on this phone, under the id all the owner's devices give it (decision 217).
+                welcomed|=store.photosOnce()!=null;
                 // The demo build's made-up notebook, once (see Demo). Never in the real app.
                 if(BuildConfig.DEMO)welcomed|=Demo.seed(store,this);
                 return welcomed;},
@@ -1859,6 +1954,8 @@ public final class MainActivity extends Activity {
         background.submit(()->PhoneLock.takeIn(this,store,keys()).size(),taken->{if(taken>0)refresh();},e->{});
         // A file fetched, or somebody saying they have one: the open note's cards and its line drawn again.
         Post.filesMoved=filesMoved;
+        // Stamps still waiting for Minima when the app last stopped, looked for again (decision 218).
+        PhoneStamp.resume(this);
         usePaper(paperNow());
         cards=getSharedPreferences("settings",MODE_PRIVATE).getBoolean("cards",true);
         whoWrote=getSharedPreferences("settings",MODE_PRIVATE).getBoolean("whoWrote",true);
@@ -1899,57 +1996,97 @@ public final class MainActivity extends Activity {
         // A blank page exists before the window takes focus, so the app draws at once rather than after a
         // disk read. The stored page is dropped into it a moment later — and because that stored page is
         // usually one you are coming back to read, it arrives without the keyboard.
-        else write(new NoteStore.Note());
+        else {write(new NoteStore.Note());if(state!=null)quiet();}
         background.submit(()->new Opening(textSize,
                 toShelves?null:(id!=null?store.get(id):store.latest()),store.someBook()),
             opening->{
                 if(toShelves)return;
                 repaint();if(page!=null)page.setTextSize(pageSize());
                 if(opening.note!=null)load(opening.note);
-                else if(active!=null)active.book=opening.book;},
+                else if(active!=null){active.book=opening.book;restoreReadingPosition(active.id);}},
             e->alert(READ_FAILED));
     }
 
     // ---- writing -----------------------------------------------------------------------------------------
 
+    /**
+     * Where the open note lives, from Home down, under its title; and the way back named for where it goes: the listing it
+     * was opened from, or else the collection it is in.
+     */
+    private void askWhereNoteIs(final NoteStore.Note note) {
+        final String book=note.book;
+        final String from=cameFrom!=null&&!cameFrom.isEmpty()&&note.id!=null&&note.id.equals(cameFromNote)?cameFrom.get(cameFrom.size()-1).name:null;
+        background.submit(()->{
+            List<String> names=new ArrayList<>();names.add("Home");
+            if(book!=null&&!NoteStore.home(book))for(String id:store.pathOf(book))if(!NoteStore.home(id))names.add(store.collectionName(id));
+            return names;
+        },names->{
+            if(active!=note||backTo==null||notePath==null)return;
+            String back=from!=null?from:names.get(names.size()-1);
+            backTo.setContentDescription("Back to "+back);
+            notePath.setText(String.join(" › ",names));
+        },e->{});
+    }
+
+    /** Keep the writing visible above a landscape keyboard, with tools reachable from the same bar. */
+    private void fitWriting() {
+        if(shelves||page==null||topBar==null||noteSyncLine==null||noteSync==null||noteFiles==null)return;
+        page.caretVisible(noteKeyboard);
+        boolean compact=noteKeyboard&&getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            &&recorder==null;
+        // The mark lives in the bar now (design C); a landscape keyboard takes the title, the path and the tabs' room.
+        compactWriting=compact;
+        noteSyncLine.setVisibility(compact?View.GONE:View.VISIBLE);
+        // The same rule as drawTabs: shown while not writing compactly, tabs or not, for its + (the owner, 2026-10-12).
+        if(tabsHolder!=null)tabsHolder.setVisibility(compact||active==null||readOnly&&!Sections.tabbed(whole())?View.GONE:View.VISIBLE);
+        noteFiles.setVisibility(compact?View.GONE:View.VISIBLE);
+        noteTools.setVisibility(compact?View.VISIBLE:View.GONE);
+        LinearLayout.LayoutParams paper=(LinearLayout.LayoutParams)page.getLayoutParams();
+        int margin=dp(compact?2:12);
+        if(paper.bottomMargin!=margin){paper.bottomMargin=margin;page.setLayoutParams(paper);}
+        int padding=dp(compact?6:24);
+        if(page.getPaddingBottom()!=padding)page.setPadding(0,dp(2),0,padding);
+        if(compact)page.post(()->{if(page!=null&&!shelves)page.bringPointIntoView(Math.max(0,page.getSelectionEnd()));});
+    }
+
+    private void writingTools(View anchor) {
+        InputMethodManager keys=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
+        if(keys!=null)keys.hideSoftInputFromWindow(anchor.getWindowToken(),0);
+        keyboard(false);
+        Sheet tools=new Sheet();tools.heading("NOTE TOOLS");
+        tools.row("Show files",()->foldFiles(true));
+        tools.row("Attach a file…",this::attach);
+        tools.row("Take a photo…",this::takePhotoHere);
+        tools.row("Record audio",this::record);
+        tools.show(anchor);
+    }
+
     /** The whole app, most of the time: one ruled page. */
     void write(NoteStore.Note note) {
+        // Another note: the words looked for in the last one are not looked for here (decision 216).
+        if(active!=null&&note!=null&&note.id!=null&&!note.id.equals(active.id))closeFindBar();
         // Another note: a recording going on is kept with the one it was started in, and a sound playing stops.
         if(active==null||note.id==null||!note.id.equals(active.id)){stopRecording(null);stopPlaying();}
         active=note;shelves=false;carrying=null;saved=edits;failed=false;pageShared=false;
         readOnly=false;saidReadOnly=false;readOwner="";shell();
         // One of the things open, for the overview - once there is something on it to open again.
         homeScreen().noteOpened(note);
-        LinearLayout top=bar();
-        top.addView(heavy("←","Back",30,INK,v->leaveNote()));
-        // The note's title, where every other level has its name: at the top, and only there. It used to
-        // be the first line of the page, which tied two things together that are not one thing - the first
-        // thing somebody writes is often not what the note is called, and renaming a note meant rewriting
-        // its first sentence. It is a word of its own now: tap it to change it, and the page underneath is
-        // all writing. One too long for the bar rolls past rather than being cut off, twice when the note
-        // opens - not for ever, because something moving at the top of a page is hard to read under.
-        named=label("",READING,INK);
-        named.setHint("Title");named.setHintTextColor(MUTED);
-        named.setTypeface(named.getTypeface(),android.graphics.Typeface.BOLD);
-        named.setSingleLine(true);named.setGravity(Gravity.CENTER);
-        named.setEllipsize(TextUtils.TruncateAt.MARQUEE);named.setMarqueeRepeatLimit(2);
-        named.setHorizontalFadingEdgeEnabled(true);named.setSelected(true);
-        named.setContentDescription("This note's title. Tap to change it.");
-        named.setMinimumHeight(dp(36));
-        named.setOnClickListener(v->renameNote());
-        // Held, the note's own menu, the same one it has everywhere else.
-        named.setOnLongClickListener(v->{pageMenu(v);return true;});
-        // Silence means saved, and given to whoever receives it. Anything else is said in one quiet line
-        // under the name, which is not there at all when there is nothing to say.
-        status=label("",QUIET,MUTED);status.setGravity(Gravity.CENTER);status.setSingleLine(true);status.setOnClickListener(v->retry());
-        status.setVisibility(View.GONE);
-        LinearLayout middle=column();middle.setGravity(Gravity.CENTER);
+        // The note's head, as the owner chose it (2026-10-10, design C): on a band a shade darker than the paper, the way back
+        // named for where it goes, then who the note reaches and its menu; under them its tabs, as index cards, the open
+        // one the paper itself; and on the paper the title, with where the note lives and what its writing is doing.
+        final int band=mix(PAPER,INK,darkPaper()?0.10f:0.07f);
+        // One bar (the owner, 2026-10-11: "the header on our notes now takes too much space"): the way back, the note's
+        // face and title, who it reaches, its menu. Under it one quiet line, where it lives and what its writing is doing;
+        // then the tabs, only on a note that has some.
+        LinearLayout top=bar();top.setBackgroundColor(band);
+        backTo=heavy("‹","Back",30,INK,v->leaveNote());
+        top.addView(backTo,new LinearLayout.LayoutParams(dp(40),dp(48)));
         // Before the title, the note's face, as it is on Home: its icon, or its picture. Tapped, the icon picker - the
         // same box as the menu's Icon… (docs/HOME.md, step 4) - except on a copy this phone only reads.
-        LinearLayout titled=new LinearLayout(this);titled.setGravity(Gravity.CENTER);nameHolder=titled;
+        LinearLayout titled=new LinearLayout(this);titled.setGravity(Gravity.CENTER_VERTICAL);nameHolder=titled;
         FrameLayout faceReach=new FrameLayout(this);
         pageFace=new View(this);pageIcon="";pagePicture=null;
-        faceReach.addView(pageFace,new FrameLayout.LayoutParams(dp(26),dp(26),Gravity.CENTER));
+        faceReach.addView(pageFace,new FrameLayout.LayoutParams(dp(24),dp(24),Gravity.CENTER));
         faceReach.setBackgroundResource(borderlessFeedback());
         faceReach.setContentDescription("This note's icon. Tap to change it.");
         faceReach.setOnClickListener(v->{
@@ -1957,33 +2094,62 @@ public final class MainActivity extends Activity {
             if(active!=null)picker().open(new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,active.id,active.book,
                 active.title==null||active.title.trim().isEmpty()?"this note":active.title.trim(),"",0,0,false,active.colour));
         });
-        titled.addView(faceReach,new LinearLayout.LayoutParams(dp(40),dp(40)));
-        // As wide as the title needs, beside its face, and no wider than the bar leaves it, where it rolls.
-        titled.addView(named,new LinearLayout.LayoutParams(-2,-2));
-        middle.addView(titled,new LinearLayout.LayoutParams(-1,-2));
-        middle.addView(status,new LinearLayout.LayoutParams(-1,-2));
+        titled.addView(faceReach,new LinearLayout.LayoutParams(dp(34),dp(44)));
+        named=label("",READING,INK);
+        named.setHint("Title");named.setHintTextColor(MUTED);
+        named.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP,20);
+        named.setTypeface(named.getTypeface(),android.graphics.Typeface.BOLD);
+        named.setSingleLine(true);named.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);
+        named.setEllipsize(TextUtils.TruncateAt.END);
+        named.setContentDescription("This note's title. Tap to change it.");
+        named.setMinimumHeight(dp(44));
+        named.setOnClickListener(v->renameNote());
+        // Held, the note's own menu, the same one it has everywhere else.
+        named.setOnLongClickListener(v->{pageMenu(v);return true;});
+        titled.addView(named,new LinearLayout.LayoutParams(0,-2,1));
+        top.addView(titled,new LinearLayout.LayoutParams(0,-2,1));
+        noteSync=syncMark(new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,note.id,note.book,
+            "this note","",0,0,false,note.colour));
+        top.addView(noteSync);
+        rounds=new LinearLayout(this);rounds.setGravity(Gravity.CENTER_VERTICAL);roundsShown=new ArrayList<>();
+        top.addView(rounds,new LinearLayout.LayoutParams(-2,-2));
+        noteTools=tap("+","Note tools",22,INK,this::writingTools);
+        noteTools.setVisibility(View.GONE);top.addView(noteTools);
+        top.addView(agentButton());
+        top.addView(tap("⋮","This note",22,INK,this::pageMenu));
+        root.addView(top);
+        tabStrip=new LinearLayout(this);tabStrip.setGravity(Gravity.BOTTOM);tabStrip.setPadding(dp(12),dp(2),dp(12),0);
+        android.widget.HorizontalScrollView tabsScroll=new android.widget.HorizontalScrollView(this);
+        tabsScroll.setHorizontalScrollBarEnabled(false);tabsScroll.setBackgroundColor(band);tabsScroll.addView(tabStrip);
+        tabBand=band;tabsHolder=tabsScroll;
+        // Silence means saved, and given to whoever receives it. Anything else is said in one quiet line
+        // under the name, which is not there at all when there is nothing to say.
+        status=label("",QUIET,MUTED);status.setSingleLine(true);status.setOnClickListener(v->retry());
+        status.setVisibility(View.GONE);
+        LinearLayout head=column();head.setPadding(dp(48),0,dp(16),dp(4));head.setBackgroundColor(band);
+        noteSyncLine=head;
+        head.addView(status,new LinearLayout.LayoutParams(-1,-2));
+        // Where it lives, then what its syncing is doing, in words; a tap on those does what the mark does, or says why.
+        LinearLayout where=new LinearLayout(this);where.setGravity(Gravity.CENTER_VERTICAL);
+        notePath=label("",QUIET,MUTED);notePath.setSingleLine(true);notePath.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        where.addView(notePath,new LinearLayout.LayoutParams(-2,-2));
+        handler.removeCallbacks(wordsAway);wordsClicked=null;
+        noteWords=label("",QUIET,MUTED);noteWords.setSingleLine(true);noteWords.setEllipsize(TextUtils.TruncateAt.END);
+        noteWords.setPadding(dp(6),0,0,0);noteWords.setVisibility(View.GONE);
+        noteWords.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        noteWords.setOnClickListener(v->{if(wordsClicked!=null)wordsClicked.run();else if(owedMark!=null)owedMark.performClick();});
+        where.addView(noteWords,new LinearLayout.LayoutParams(0,-2,1));
+        head.addView(where,new LinearLayout.LayoutParams(-1,-2));
+        // Under it, a stamped note's line (decision 218): there only on a note stamped on Minima; a tap opens the stamp's box.
+        stampLine=label("",QUIET,MUTED);stampLine.setVisibility(View.GONE);noteStamps=java.util.List.of();stampShown=null;
+        stampLine.setOnClickListener(v->{if(stampShown==null)return;if(stampChanged&&active!=null){save();PhoneStamp.note(this,active.id,active.title);}else PhoneStamp.show(this,stampShown.n());});
+        head.addView(stampLine,new LinearLayout.LayoutParams(-1,-2));
         showPageLook();pageLook();
         askWhatIsOwed();
         askPause(note.id);
-        top.addView(middle,new LinearLayout.LayoutParams(0,-2,1));
-        top.addView(tap("⋮","This note",22,INK,this::pageMenu));
-        root.addView(top);
-        // One line under the title, as on the PC, in marks and no words: the note's sync mark - a tap sends what
-        // is waiting, or opens who has it - then a round for each person it reaches, a tap each to say who and
-        // where they stand.
-        LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);line.setPadding(dp(12),0,dp(20),dp(2));
-        line.addView(syncMark(new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,note.id,note.book,
-            "this note","",0,0,false,note.colour)));
-        rounds=new LinearLayout(this);rounds.setGravity(Gravity.CENTER_VERTICAL);roundsShown=new ArrayList<>();
-        line.addView(rounds,new LinearLayout.LayoutParams(-2,-2));
-        // Then what its syncing is doing, in words, beside the mark it is about; a tap does what the mark does, or says why.
-        handler.removeCallbacks(wordsAway);wordsClicked=null;
-        noteWords=label("",QUIET,MUTED);noteWords.setSingleLine(true);noteWords.setEllipsize(TextUtils.TruncateAt.END);
-        noteWords.setPadding(dp(4),dp(12),0,dp(12));noteWords.setVisibility(View.GONE);
-        noteWords.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        noteWords.setOnClickListener(v->{if(wordsClicked!=null)wordsClicked.run();else if(owedMark!=null)owedMark.performClick();});
-        line.addView(noteWords,new LinearLayout.LayoutParams(0,-2,1));
-        root.addView(line,new LinearLayout.LayoutParams(-1,-2));
+        root.addView(head,new LinearLayout.LayoutParams(-1,-2));
+        root.addView(tabsScroll,new LinearLayout.LayoutParams(-1,-2));
+        askWhereNoteIs(note);
         page=new Pad(this,LINE);page.setGravity(Gravity.TOP);page.setTextSize(pageSize());page.setTextColor(INK);
         // A little paper under the last line, and no more: a page that kept a keyboard's worth of it
         // scrolled that emptiness into view as you wrote, and the writing was pushed off the top.
@@ -1999,6 +2165,19 @@ public final class MainActivity extends Activity {
         // a keyboard sliding up over the thing you are selecting is in the way; a tap or a double tap says
         // you mean to write, and those are the only two things that bring it up.
         page.setShowSoftInputOnFocus(false);
+        // Translate, beside Copy when words are chosen (docs/TRANSLATION.md): only those words.
+        page.setCustomSelectionActionModeCallback(new android.view.ActionMode.Callback(){
+            static final int TRANSLATE=0x7472;
+            @Override public boolean onCreateActionMode(android.view.ActionMode mode,android.view.Menu menu){menu.add(0,TRANSLATE,200,Say.t("Translate"));return true;}
+            @Override public boolean onPrepareActionMode(android.view.ActionMode mode,android.view.Menu menu){return false;}
+            @Override public boolean onActionItemClicked(android.view.ActionMode mode,android.view.MenuItem item) {
+                if(item.getItemId()!=TRANSLATE||page==null)return false;
+                int from=Math.min(page.getSelectionStart(),page.getSelectionEnd()),to=Math.max(page.getSelectionStart(),page.getSelectionEnd());
+                if(to>from)PhoneTranslate.open(MainActivity.this,page.getText().subSequence(from,to).toString(),new int[]{from,to});
+                mode.finish();return true;
+            }
+            @Override public void onDestroyActionMode(android.view.ActionMode mode){}
+        });
         final android.view.GestureDetector taps=new android.view.GestureDetector(this,
             new android.view.GestureDetector.SimpleOnGestureListener() {
                 @Override public boolean onSingleTapUp(MotionEvent e){tapped(e.getY());return false;}
@@ -2012,13 +2191,14 @@ public final class MainActivity extends Activity {
             return true;
         });
         page.post(this::repaint);
-        LinearLayout.LayoutParams sheet=new LinearLayout.LayoutParams(-1,0,1);sheet.setMargins(dp(20),0,dp(20),dp(12));
+        LinearLayout.LayoutParams sheet=new LinearLayout.LayoutParams(-1,0,1);sheet.setMargins(dp(20),dp(8),dp(20),dp(12));
         root.addView(page,sheet);
         // Files dragged in from another app onto the page are kept with the note, as the clip keeps them.
         page.setOnDragListener((v,event)->filesOver(v,event,this::keepDropped));
         // And a picture pasted on it - a screenshot copied, a picture the keyboard sends - as a messaging app takes one.
         if(android.os.Build.VERSION.SDK_INT>=31)page.setOnReceiveContentListener(new String[]{"image/*"},this::pastedPicture);
-        root.addView(fileStrip(page));
+        noteFiles=fileStrip(page);root.addView(noteFiles);
+        root.post(this::fitWriting);
         // A code typed here is caught before anything can write it down, keep it, or send it (decision 111).
         if(privately!=null)privately.watch(page,()->!loading&&!readOnly,null);
         page.addTextChangedListener(watch(()->{
@@ -2033,6 +2213,7 @@ public final class MainActivity extends Activity {
             edits++;saidState();if(!readOnly)noteSays(NoteLine.SAVING,NoteLine.Tone.GOING,null);
             handler.removeCallbacks(autoSave);handler.postDelayed(autoSave,SAVE_DELAY);}));
         fill(note);
+        askStamps(note.id,note.body);
         // A note you open is a note you are reading. The keyboard comes up when you tap the page, not
         // before — except on a blank one, where there is nothing to read and writing is the only reason
         // you are there.
@@ -2082,9 +2263,8 @@ public final class MainActivity extends Activity {
         if(page==null||readOnly)return;
         android.text.Layout out=page.getLayout();
         if(out==null)return;
-        // Not on a page with nothing on it. A note is named by its first line, and a tap near the foot of
-        // an empty page would push that name thirty rules down and leave the note without one.
-        if(page.getText().toString().trim().isEmpty())return;
+        // An empty page too (the owner, 2026-10-12: "we have to make sure we can click wherever we want in a note, even when
+        // the note was never used before"): a note has a title of its own now, so blank lines above the writing name nothing.
         int last=out.getLineCount()-1;
         int bottom=out.getLineBottom(last);
         float at=y+page.getScrollY()-page.getPaddingTop();
@@ -2155,13 +2335,29 @@ public final class MainActivity extends Activity {
         askWritable();
         // And its face, which the blank page's bar was drawn with the default of.
         pageLook();
+        restoreReadingPosition(note.id);
+    }
+
+    private void restoreReadingPosition(String id) {
+        if(readingPosition!=null) {
+            final Bundle position=readingPosition;readingPosition=null;
+            final Pad opened=page;
+            opened.post(()->{
+                if(page!=opened||active==null||!id.equals(active.id))return;
+                opened.restoreAfterLayout(position);
+                if(position.getBoolean("keyboard")&&!readOnly){keyboard(true);wantKeyboard=true;opened.post(raise);}
+            });
+        }
     }
     private void fill(NoteStore.Note note) {
         kept=note.body==null?"":note.body;keptRevision=note.revision;
         if(note.title==null)note.title="";
         keptTitle=note.title;
-        holds(kept);
-        loading=true;page.put(note.body,note.writers);loading=false;
+        // The tab it was last open on in this session, or the first (decision 142).
+        Integer was=note.id==null?null:tabsOpen.get(note.id);
+        split(kept,note.writers,was==null?0:was);
+        loading=true;page.put(tabWords,tabPageWriters);loading=false;
+        holdsTab();drawTabs();
         linkify();
         // Opened at the top, the cursor at its start: it opened at the end, which on a long note is somewhere in the middle
         // of the screen's worth, and the beginning had to be scrolled back to every time (the owner, 2026-10-02).
@@ -2182,9 +2378,209 @@ public final class MainActivity extends Activity {
             palette=(Writers.Palette)got[0];
             if(active==null||page==null||shelves||!active.id.equals(id))return;
             repaint();
-            page.follow(body,(Writers)got[1]);
+            // The note's writers, cut to the tab on the page; the rest kept for when it is written down whole.
+            if(!body.equals(tabBody))return;
+            split(body,(Writers)got[1],tab);
+            page.follow(tabWords,tabPageWriters);
             askWhatIsOwed();
         },e->{});
+    }
+
+    // ---- tabs, kept as sections in the note's words (Sections; the owner, 2026-10-10; decision 142) ----------------------
+
+    /** The tab open on the page, by note, for this session: a note opens again on the tab it was left on. */
+    private final Map<String,Integer> tabsOpen=new HashMap<>();
+    /** The open tab; the note it was cut from and that tab's words as they were; the note around them, and its writers. */
+    private int tab;
+    private String tabBody="",tabWords="",tabBefore="",tabAfter="";
+    private Writers tabPageWriters=Writers.none(),writersBefore=Writers.none(),writersAfter=Writers.none(),rawWritersBefore=Writers.none(),rawWritersAfter=Writers.none();
+
+    /**
+     * The note cut around one tab: its words go on the page, and what is before and after them is kept to put them back
+     * between. Where the tab has no line end to keep typed words off the next tab line, or its tab line is the last thing
+     * in the note, one is kept ready; it is only written if something is typed.
+     */
+    private void split(String body,Writers writers,int index) {
+        String text=body==null?"":body;
+        List<Sections.Section> all=Sections.of(text);
+        tab=Math.max(0,Math.min(index,all.size()-1));
+        Sections.Section s=all.get(tab);
+        Writers w=writers!=null&&writers.length()==text.length()?writers:Writers.unknown(text.length());
+        tabBody=text;tabWords=text.substring(s.start,s.end);
+        tabBefore=text.substring(0,s.start);tabAfter=text.substring(s.end);
+        rawWritersBefore=writersBefore=w.slice(0,s.start);rawWritersAfter=writersAfter=w.slice(s.end,text.length());
+        tabPageWriters=w.slice(s.start,s.end);
+        if(tab<all.size()-1&&s.start==s.end&&s.end<text.length()&&text.charAt(s.end)!='\n') {
+            tabAfter="\n"+tabAfter;writersAfter=Writers.join(Writers.of(Writers.ME,1),writersAfter);
+        }
+        if(s.name!=null&&s.start==text.length()&&!text.isEmpty()&&text.charAt(text.length()-1)!='\n') {
+            tabBefore=tabBefore+"\n";writersBefore=Writers.join(writersBefore,Writers.of(Writers.ME,1));
+        }
+        if(active!=null&&active.id!=null)tabsOpen.put(active.id,tab);
+    }
+
+    /** The whole note as it stands: the words around the open tab, and the tab's words as they are on the page. */
+    private String whole() {
+        if(page==null)return kept==null?"":kept;
+        String now=page.getText().toString();
+        return now.equals(tabWords)?tabBody:tabBefore+now+tabAfter;
+    }
+
+    /** Who wrote each letter of the whole note, the page's share as the page has it. */
+    private Writers wholeWriters() {
+        String now=page.getText().toString();
+        return now.equals(tabWords)?Writers.join(rawWritersBefore,page.writers(),rawWritersAfter):Writers.join(writersBefore,page.writers(),writersAfter);
+    }
+
+    /** The open tab's name, or null for a first tab with none of its own. */
+    private String tabName() {
+        List<Sections.Section> all=Sections.of(tabBody);
+        return tab<all.size()?all.get(tab).name:null;
+    }
+
+    /** The tab of that name in a note, or the same place where it is gone. */
+    private static int tabNamed(String body,String name,int index) {
+        List<Sections.Section> all=Sections.of(body);
+        if(name!=null)for(int i=0;i<all.size();i++)if(name.equals(all.get(i).name))return i;
+        return Math.max(0,Math.min(index,all.size()-1));
+    }
+
+    /** The page takes as much as the whole note still may: the cap is on the note, not on one of its tabs. */
+    private void holdsTab() {
+        int around=tabBefore.length()+tabAfter.length();
+        List<InputFilter> keep=new ArrayList<>();
+        for(InputFilter one:page.getFilters())if(!(one instanceof InputFilter.LengthFilter))keep.add(one);
+        keep.add(new InputFilter.LengthFilter(Math.max(PAGE_MOST-around,tabWords.length())));
+        page.setFilters(keep.toArray(new InputFilter[0]));
+    }
+
+    /** The open tab on the page, from the top. */
+    private void showTab() {
+        loading=true;page.put(tabWords,tabPageWriters);loading=false;
+        holdsTab();linkify();drawTabs();
+        page.setSelection(0);
+        final Pad opened=page;page.post(()->{if(page==opened)opened.scrollTo(0,0);});
+    }
+
+    /** The cards: each tab, the open one the paper itself; then + for another. Only + on a note with no tabs yet. */
+    private void drawTabs() {
+        if(tabStrip==null||page==null)return;
+        tabStrip.removeAllViews();
+        String body=whole();
+        final List<Sections.Section> all=Sections.of(body);
+        if(Sections.tabbed(body))for(int i=0;i<all.size();i++) {
+            final int index=i;final boolean open=i==tab;
+            final String called=all.get(i).called(i);
+            TextView card=label(called,READING,open?INK:MUTED);
+            if(open)card.setTypeface(card.getTypeface(),android.graphics.Typeface.BOLD);
+            card.setSingleLine(true);card.setGravity(Gravity.CENTER);
+            card.setPadding(dp(open?18:16),0,dp(open?18:16),0);
+            GradientDrawable face=new GradientDrawable();
+            float round=dp(10);face.setCornerRadii(new float[]{round,round,round,round,0,0,0,0});
+            face.setColor(open?PAPER:mix(tabBand,INK,0.06f));
+            card.setBackground(face);
+            card.setContentDescription("Tab "+called+(open?", open":""));
+            card.setOnClickListener(v->switchTab(index));
+            card.setOnLongClickListener(v->{tabMenu(v,index,called,all.size());return true;});
+            LinearLayout.LayoutParams at=new LinearLayout.LayoutParams(-2,dp(open?38:34));at.setMargins(0,0,dp(4),0);
+            tabStrip.addView(card,at);
+        }
+        // The + to add a tab at the top of every note, as on the PC (the owner, 2026-10-12): with tabs, a + after them; with
+        // none, only "+ Add a tab", small and quiet, so a note's head stays short.
+        boolean some=Sections.tabbed(body);
+        if(tabsHolder!=null)tabsHolder.setVisibility((some||!readOnly)&&!compactWriting?View.VISIBLE:View.GONE);
+        if(some&&!readOnly)tabStrip.addView(tap("+","Add a tab",20,MUTED,v->addTab()),new LinearLayout.LayoutParams(dp(44),dp(36)));
+        else if(!readOnly) {
+            TextView add=tap("+  "+Say.t("Add a tab"),Say.t("Add a tab"),QUIET,MUTED,v->addTab());
+            add.setGravity(Gravity.CENTER_VERTICAL);add.setPadding(dp(4),0,dp(12),0);
+            tabStrip.addView(add,new LinearLayout.LayoutParams(-2,dp(30)));
+        }
+    }
+
+    private void switchTab(int index) {
+        if(page==null||active==null||index==tab)return;
+        split(whole(),wholeWriters(),index);
+        showTab();
+    }
+
+    /** Another tab, last, opened, and its name asked; Cancel keeps the one it was given. */
+    private void addTab() {
+        if(page==null||active==null)return;
+        if(readOnly){toast("Read only");return;}
+        String body=whole();
+        String now=Sections.add(body,null);
+        changeTabs(body,now,Sections.of(now).size()-1);
+        renameTab(tab,Sections.of(now).get(tab).called(tab));
+    }
+
+    /** A tab held: its name, renaming it, and taking it out. */
+    private void tabMenu(View card,final int index,final String called,int count) {
+        Sheet sheet=new Sheet();sheet.heading(called);
+        if(readOnly)sheet.dimRow("Read only");
+        else {
+            sheet.row("Rename…",()->renameTab(index,called));
+            if(count>1)sheet.row("Remove this tab…",()->removeTab(index,called));
+        }
+        sheet.show(card);
+    }
+
+    private void renameTab(final int index,String called) {
+        final EditText input=field("Tab name",Sections.NAME_MOST);
+        input.setText(called);input.selectAll();
+        new Box().setTitle("Name this tab").setView(input)
+            .setPositiveButton("Save",(d,w)->{
+                if(page==null||active==null)return;
+                String body=whole();
+                String now=Sections.rename(body,index,input.getText().toString());
+                if(!now.equals(body))changeTabs(body,now,index);
+            }).show();
+        input.requestFocus();
+    }
+
+    private void removeTab(final int index,String called) {
+        new Box().setTitle("Remove "+called+"?")
+            .setMessage("Its words go with it. Versions, in the note's menu, still has the note as it was.")
+            .setPositiveButton("Remove",(d,w)->{
+                if(page==null||active==null)return;
+                String body=whole();
+                String now=Sections.remove(body,index);
+                changeTabs(body,now,tab>index?tab-1:tab==index?Math.max(0,index-1):tab);
+            }).show();
+    }
+
+    /** The note's tabs changed here: written as any writing is, the open tab shown, who wrote what kept. */
+    // ---- Translate… (PhoneTranslate, docs/TRANSLATION.md) ------------------------------------------------------------
+
+    /** Whether the note on the screen takes writing. */
+    boolean noteWritable(){return page!=null&&!readOnly;}
+    /** Translate…, on the tab on the screen. */
+    void translateTab(){if(page!=null)PhoneTranslate.open(this,page.getText().toString(),null);}
+    /** What was chosen, put in place by its translation; false where the note changed meanwhile. */
+    boolean replaceChosen(int from,int to,String was,String words) {
+        if(page==null||readOnly)return false;
+        Editable text=page.getText();
+        if(to>text.length()||!text.subSequence(from,to).toString().equals(was))return false;
+        text.replace(from,to,words);return true;
+    }
+    /** The tab on the screen, its words put in place by their translation, as an edit. */
+    void replaceTab(String words) {
+        if(page==null||readOnly)return;
+        String body=whole(),now=Sections.put(body,tab,words);
+        if(!now.equals(body))changeTabs(body,now,tab);
+    }
+    /** A translation of the tab on the screen, as a tab of its own after the others, named for its language. */
+    void addTranslatedTab(String language,String words) {
+        if(page==null||readOnly)return;
+        String body=whole(),now=Sections.add(body,language);int index=Sections.of(now).size()-1;
+        now=Sections.put(now,index,words);
+        changeTabs(body,now,index);
+    }
+
+    private void changeTabs(String was,String now,int index) {
+        Writers who=Writers.follow(now,Writers.ME,was,wholeWriters());
+        split(now,who,index);
+        showTab();
+        edits++;save();
     }
 
     /** As much as the page takes typed into it. */
@@ -2243,7 +2639,8 @@ public final class MainActivity extends Activity {
     /** As long as a title may be. Long enough to be a sentence; it rolls in the bar if it has to. */
     private static final int TITLE_MOST=120;
 
-    private boolean blank(){return active!=null&&page.getText().toString().trim().isEmpty()&&active.title.trim().isEmpty();}
+    // The whole note, not the tab on the page: a note open on an empty tab is not a blank note (decision 142).
+    private boolean blank(){return active!=null&&whole().trim().isEmpty()&&active.title.trim().isEmpty();}
     /** A page nobody wrote on is thrown away rather than kept as an empty page. */
     private void closeNote() {
         if(active==null)return;
@@ -2302,22 +2699,25 @@ public final class MainActivity extends Activity {
         linkify();
         // Words typed and taken back are not writing, as on the PC (DesktopEdits): the page says what the notebook holds, so
         // nothing is written and nothing goes. So a private code typed and taken out leaves no new revision, no new time and
-        // nothing owed behind it (decision 111).
-        if(page.getText().toString().equals(kept)) {
+        // nothing owed behind it (decision 111). A title on its own is writing: a photo shared into a new note has a name
+        // and no words yet, and leaving that unwritten threw the note away (decision 125).
+        String titleNow=active.title==null?"":active.title;
+        String titleWas=keptTitle==null?"":keptTitle;
+        if(whole().equals(kept)&&titleNow.equals(titleWas)) {
             saved=edits;failed=false;saidState();
             if(noteWords!=null&&NoteLine.SAVING.contentEquals(noteWords.getText()))noteSays(null,null,null);
             // The mark that went to waiting at the first key says again where the note stands.
             askWhatIsOwed();refreshOwed();
             return;
         }
-        final NoteStore.Note note=active;note.body=page.getText().toString();note.updated=System.currentTimeMillis();
+        final NoteStore.Note note=active;note.body=whole();note.updated=System.currentTimeMillis();
         // Each writing is counted. A count says what a clock cannot: whether a version that arrives from
         // somewhere else came after this one or beside it.
         final long seen=keptRevision;
         note.revision=Math.max(note.revision,seen)+1;
-        final NoteStore.Note written=note.copy();final long attempt=edits;
+        final NoteStore.Note written=note.copy();final long attempt=edits;final long wait=sendDelay;
         // Who wrote each letter, taken with the words at the same moment, so the two always fit each other.
-        written.writers=page.writers();
+        written.writers=wholeWriters();
         background.submit(()->{
                 boolean wrote=store.saveFrom(written,seen);
                 // Made from a place's +: in the place from its first written word (decision 87).
@@ -2329,18 +2729,19 @@ public final class MainActivity extends Activity {
                    // The notebook had something newer than this page had seen, so nothing was written.
                    // The two are put together and the page is written again from there.
                    if(!wrote){changedUnderneath(written.id);return;}
+                   // And it goes, once the writing has stopped for as long as this note asks for - whether or not it is
+                   // still open by then. Sharing something once and then leaving every later word of it sitting here
+                   // until somebody presses a button is a copy that silently drifts out of date.
+                   // Left while it was being written down: it goes now, not after the rest of its wait (the owner, 2026-10-14).
+                   if(wait>0)sendIn(written.id,hurry.remove(written.id)?0:wait);
                    if(active!=note)return;kept=written.body;keptRevision=written.revision;keptTitle=written.title;
+                   // Its text now against the text stamped: the line says at once that it changed since (decision 218).
+                   compareStamps(kept);
                    // A new note is one of the things open from its first written word.
                    homeScreen().noteOpened(written);
                    saved=Math.max(saved,attempt);failed=false;saidState();
                    if(saved==edits&&noteWords!=null&&NoteLine.SAVING.contentEquals(noteWords.getText()))noteSays(null,null,null);
-                   askWhatIsOwed();refreshOwed();
-                   // And it goes, once the writing has stopped for as long as this note asks for.
-                   // Sharing something once and then leaving every later word of it sitting here until
-                   // somebody presses a button is a copy that silently drifts out of date, which is worse
-                   // than no copy at all.
-                   handler.removeCallbacks(sendSoon);
-                   if(sendDelay>0)handler.postDelayed(sendSoon,sendDelay);},
+                   askWhatIsOwed();refreshOwed();},
             error->{if(active==note)warn();
                 else if(active==null&&!shelves)recover(written);
                 else alert("A note could not be saved and its last edit was not stored. Open it again to retype that change.");});
@@ -2352,6 +2753,7 @@ public final class MainActivity extends Activity {
     private void keepVersion() {
         if(active==null)return;
         final String note=active.id;
+        sendOnLeaving(note);
         background.submit(()->{store.keepVersion(note,"");return null;},done->{},e->{});
     }
 
@@ -2362,19 +2764,55 @@ public final class MainActivity extends Activity {
      * would be worse than the delay it is reporting. What did not go is still owed, the mark beside the
      * name goes on saying so, and Sync now still says it in full.
      */
-    private void sendOpenNote() {
-        if(active==null||shelves)return;
-        final String id=active.id;
+    /** Notes left while their last words were still being written down: they go as soon as they are, not after the wait. */
+    private final java.util.Set<String> hurry=new java.util.HashSet<>();
+
+    /**
+     * A note left - Home, another note, the app put away - sends what it owes now rather than after the rest of its wait
+     * (the owner, 2026-10-14: "everything should be sync as soon as possible, at least when we are out of a note"). Not a
+     * note set to go only when asked: its wait is never started.
+     */
+    private void sendOnLeaving(String id) {
+        if(id==null)return;
+        if(edits!=saved)hurry.add(id);
+        if(due.containsKey(id)){due.put(id,android.os.SystemClock.uptimeMillis());nextSend();}
+    }
+
+    private void sendIn(String id,long wait) {
+        due.put(id,android.os.SystemClock.uptimeMillis()+wait);
+        nextSend();
+    }
+
+    private void nextSend() {
+        handler.removeCallbacks(sendSoon);
+        long first=Long.MAX_VALUE;
+        for(long at:due.values())first=Math.min(first,at);
+        if(first!=Long.MAX_VALUE)handler.postAtTime(sendSoon,first);
+    }
+
+    /** Each note whose wait is over, sent; the rest wait on. */
+    private void sendDue() {
+        long now=android.os.SystemClock.uptimeMillis();
+        List<String> going=new ArrayList<>();
+        for(java.util.Map.Entry<String,Long> one:due.entrySet())if(one.getValue()<=now)going.add(one.getKey());
+        for(String id:going){due.remove(id);sendNote(id);}
+        nextSend();
+    }
+
+    private void sendNote(final String id) {
         // Said on the note's line, quietly, as it goes and how it ended: the mark alone changed, and nothing said it
-        // had gone. Only while the words are not still being written, which "Saving…" is saying.
-        final boolean say=pageShared&&edits==saved;
+        // had gone. Only while it is open and the words are not still being written, which "Saving…" is saying.
+        final boolean say=isOpen(NoteStore.Branch.Kind.PAGE,id)&&pageShared&&edits==saved;
         if(say)noteSays(NoteLine.sending(namesShown()),NoteLine.Tone.GOING,null);
         network.submit(()->Post.send(this,store,keys(),NoteStore.Branch.Kind.PAGE,id),
             // Asked again rather than assumed. The line was redrawn from the count it already had, so a
             // note that had just gone went on saying "Not sent yet" until it was closed and opened.
             done->{if(done.sent>0){askWhatIsOwed();refreshOwed();}
+                // Not gone to somebody: tried again on a clock rather than left for a button.
+                if(done.failed>0&&!due.containsKey(id))sendIn(id,TRY_AGAIN);
                 if(say&&isOpen(NoteStore.Branch.Kind.PAGE,id)&&edits==saved)noteSent(done,false);},
-            e->{if(say&&isOpen(NoteStore.Branch.Kind.PAGE,id))noteFailed(e);});
+            e->{if(!due.containsKey(id))sendIn(id,TRY_AGAIN);
+                if(say&&isOpen(NoteStore.Branch.Kind.PAGE,id))noteFailed(e);});
     }
 
     /**
@@ -2383,6 +2821,14 @@ public final class MainActivity extends Activity {
      * <p>A phone that was off while somebody wrote comes back owing whatever was written, and the person
      * who wrote it has put their phone away. So the catching up is done by the one that was away.
      */
+    private void catchUp() {
+        sendWhatIsOwed();
+        long now=android.os.SystemClock.uptimeMillis();
+        if(askedOthers!=0&&now-askedOthers<120_000)return;
+        askedOthers=now;
+        network.submit(()->Post.ask(this,store,keys(),NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING),asked->{},e->{});
+    }
+
     private void sendWhatIsOwed() {
         network.submit(()->Post.send(this,store,keys(),NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING),
             done->{if(done.sent>0){askWhatIsOwed();refresh();refreshOwed();}},e->{});
@@ -2528,6 +2974,16 @@ public final class MainActivity extends Activity {
         attachingPlace=takesNew(where)?where:null;
         attach(NoteStore.Branch.Kind.COLLECTION,takesNew(where)?Things.HOME:where);
     }
+    /**
+     * A photo taken where the + was pressed, kept there: in that folder, or on Home and then in the place (decision 123).
+     * The same from a note's camera, which keeps it with the note.
+     */
+    void takePhoto(String where) {
+        attachingPlace=takesNew(where)?where:null;
+        takePhoto(NoteStore.Branch.Kind.COLLECTION,takesNew(where)?Things.HOME:where);
+    }
+    /** The open note, or the folder being stood in. */
+    void takePhotoHere(){attachingPlace=null;takePhoto(holding(),holdingId());}
     private String attachingPlace;
 
     /** Let go on Temp: temporary for as long as Temp keeps things, without a question, and said, with Undo. */
@@ -2567,10 +3023,58 @@ public final class MainActivity extends Activity {
     }
     /** Temp's own rows: how long things stay, whether they go to this owner's other devices, and sending them now. */
     void tempRows(Sheet sheet) {
-        View span=tempSpanRow();span.setPadding(dp(20),dp(4),dp(20),dp(4));sheet.body().addView(span);
-        sheet.toggle("Send to my devices",tempToMine(),this::setTempToMine);
+        View span=tempSpanRow();span.setPadding(dp(20),dp(4),dp(20),dp(4));
+        // Its symbol before it, the size and the gap a menu row's has, so its words and what it is set to stand in the same
+        // column as the rows' under it (the owner, 2026-10-12: "Things stay and its drop-down look bad").
+        if(span instanceof LinearLayout line&&Symbols.of("Things stay")!=null) {
+            View face=new View(this);face.setBackground(IconFace.symbol(this,Symbols.of("Things stay"),INK));
+            LinearLayout.LayoutParams at=new LinearLayout.LayoutParams(dp(22),dp(22));at.setMarginEnd(dp(16));
+            line.addView(face,0,at);
+        }
+        sheet.body().addView(span);
+        sheet.toggle("Send what is in Temp",tempToMine(),this::setTempToMine);
+        // To whom: devices of mine and people (the owner, 2026-10-11; decisions 150 and 151).
+        if(tempToMine())sheet.row("Who it goes to…",this::chooseTempDevices);
         sheet.toggle("Also show on Home",store.tempOnHome(),this::setTempOnHome);
-        sheet.row("Sync now with my devices",this::tempSyncNow);
+        sheet.row("Sync Temp now",this::tempSyncNow);
+    }
+
+    /**
+     * Which of this owner's devices Temp goes to (decision 150): every one, as it always went, or those switched on. Kept on
+     * this phone; what is already in Temp is sent to any newly chosen one at once.
+     */
+    void chooseTempDevices() {
+        background.submit(()->{
+            List<NoteStore.Contact> mine=new ArrayList<>(),people=new ArrayList<>();
+            for(NoteStore.Contact one:store.addresses())if(one.paired())(one.mine?mine:people).add(one);
+            return new Object[]{mine,store.tempDevices(),people,store.tempPeople()};
+        },got->{
+            @SuppressWarnings("unchecked") final List<NoteStore.Contact> mine=(List<NoteStore.Contact>)got[0];
+            @SuppressWarnings("unchecked") java.util.Set<String> chosen=(java.util.Set<String>)got[1];
+            @SuppressWarnings("unchecked") final List<NoteStore.Contact> people=(List<NoteStore.Contact>)got[2];
+            @SuppressWarnings("unchecked") java.util.Set<String> chosenPeople=(java.util.Set<String>)got[3];
+            if(mine.isEmpty()&&people.isEmpty()){alert("Nobody added yet. Add someone or your other device in People and devices.");return;}
+            final java.util.Set<String> now=new java.util.LinkedHashSet<>(),nowPeople=new java.util.LinkedHashSet<>();
+            LinearLayout body=inside();
+            body.addView(label("What you let go on Temp, or share into it, goes to everyone switched on here, with Temp's time.",QUIET,MUTED));
+            if(!mine.isEmpty())body.addView(part("My devices"));
+            for(final NoteStore.Contact one:mine) {
+                boolean on=chosen==null||chosen.contains(one.address);if(on)now.add(one.address);
+                body.addView(switchRow(one.name,on,yes->{if(yes)now.add(one.address);else now.remove(one.address);}));
+            }
+            if(!people.isEmpty()){body.addView(part("People"));body.addView(under("They can read it, not change it."));}
+            for(final NoteStore.Contact one:people) {
+                boolean on=chosenPeople.contains(one.address);if(on)nowPeople.add(one.address);
+                body.addView(switchRow(one.name,on,yes->{if(yes)nowPeople.add(one.address);else nowPeople.remove(one.address);}));
+            }
+            new Box().setTitle("Temp goes to").setView(scrolling(body)).setPositiveButton("Save",(d,w)->{
+                final boolean all=now.size()==mine.size();final java.util.Set<String> kept=new java.util.LinkedHashSet<>(now),keptPeople=new java.util.LinkedHashSet<>(nowPeople);
+                final int count=kept.size()+keptPeople.size();
+                background.submit(()->{store.setTempDevices(all?null:kept);store.setTempPeople(keptPeople);return null;},
+                    done->{toast("Temp goes to "+count+(count==1?" device or person":" devices and people"));tempSyncNow();},
+                    e->alert("Could not keep that. Nothing was changed."));
+            }).show();
+        },e->alert(READ_FAILED));
     }
 
     private void setTemporary(final NoteStore.Branch thing,final long until) {
@@ -2675,7 +3179,7 @@ public final class MainActivity extends Activity {
      */
     private void withText(NoteStore.Branch thing,String nothing,Consumer<String> then) {
         if(thing.kind==NoteStore.Branch.Kind.PAGE&&active!=null&&active.id.equals(thing.id)) {
-            String text=page.getText().toString();
+            String text=whole();
             if(text.trim().isEmpty()&&active.title.trim().isEmpty()){toast(nothing);return;}
             then.accept(active.title.trim().isEmpty()?text:active.title.trim()+"\n\n"+text);
             return;
@@ -2735,7 +3239,7 @@ public final class MainActivity extends Activity {
 
     void browse() {
         stopRecording(null);stopPlaying();
-        closeNote();active=null;shelves=true;keyboard(false);shell();
+        closeNote();closeFindBar();active=null;shelves=true;keyboard(false);shell();
         if(trail.isEmpty())trail.add(new Step(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING,"Home"));
         // Home, and a collection's pop-up over it, are HomeScreen's (docs/HOME.md, step 2); so are the archive and the bin
         // while they are on Home (decision 41). What is left below is the places a thing carried with Move to… can go, and
@@ -2755,22 +3259,16 @@ public final class MainActivity extends Activity {
             ?getString(R.string.app_name):here().name,READING,MUTED);
         called.setGravity(Gravity.CENTER);called.setSingleLine(true);
         called.setEllipsize(TextUtils.TruncateAt.END);
-        if(here().kind==NoteStore.Branch.Kind.LIBRARY) {
-            // At the top of the app, which build this is - and, when a newer one is out, the way to it.
-            LinearLayout named=column();named.setGravity(Gravity.CENTER);
-            named.addView(called,new LinearLayout.LayoutParams(-1,-2));
-            versionLine=label("",QUIET,MUTED);versionLine.setGravity(Gravity.CENTER);versionLine.setSingleLine(true);
-            named.addView(versionLine,new LinearLayout.LayoutParams(-1,-2));
-            versionShown();
-            top.addView(named,new LinearLayout.LayoutParams(0,-2,1));
-        } else {versionLine=null;top.addView(called,new LinearLayout.LayoutParams(0,-2,1));}
+        // Which build this is lives in the menu, under Mininotes, not up here (the owner, 2026-10-12: "remove the version in
+        // the header on mobile and put it only in the menu").
+        versionLine=null;top.addView(called,new LinearLayout.LayoutParams(0,-2,1));
         // What others share with you is not kept apart: it stands among your own things, saying on itself
         // that it came from somebody else. So there is nothing up here for it.
         // One menu: this level, then the app. Everything about a thing is managed from inside it.
         // A place is not a thing that is shared, so it wears no mark: not the archive, the bin, or favourites.
         if(carrying==null&&here().kind!=NoteStore.Branch.Kind.ARCHIVE&&here().kind!=NoteStore.Branch.Kind.BIN
             &&here().kind!=NoteStore.Branch.Kind.DROPS&&!amongFavourites())top.addView(syncMark(standingIn()));
-        if(carrying==null)top.addView(tap("⋮",here().name,22,INK,this::levelMenu));
+        if(carrying==null){top.addView(agentButton());top.addView(tap("⋮",here().name,22,INK,this::levelMenu));}
         else top.addView(new View(this),new LinearLayout.LayoutParams(dp(48),dp(48)));
         root.addView(top);
         if(carrying!=null)root.addView(carryingBar());
@@ -2828,6 +3326,8 @@ public final class MainActivity extends Activity {
         // what it travels with. On a collection it would stay on this phone, which is not what it is for.
         boolean aNote=holding()==NoteStore.Branch.Kind.PAGE;
         if(aNote)foot.addView(tap("\uD83C\uDFA4","Record audio",20,MUTED,v->record()));
+        // The camera beside the clip: a photo kept with this note, or with this folder (decision 123).
+        foot.addView(heavy("\uD83D\uDCF7","Take a photo",20,MUTED,v->takePhotoHere()));
         foot.addView(heavy("\uD83D\uDCCE","Attach a file",20,MUTED,v->attach()));
         strip.addView(foot,new LinearLayout.LayoutParams(-1,-2));
         filesFoot=foot;recordingBar=null;
@@ -2883,7 +3383,7 @@ public final class MainActivity extends Activity {
      * The microphone: starts at once. Android asks the person the first time; refused for good, only its own
      * settings can change that, so the microphone then says so and leads there.
      */
-    private void record() {
+    void record() {
         if(recorder!=null)return;
         if(holding()!=NoteStore.Branch.Kind.PAGE||holdingId().isEmpty()){toast("Open a note to record into it.");return;}
         if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)==android.content.pm.PackageManager.PERMISSION_GRANTED){startRecording();return;}
@@ -3142,11 +3642,15 @@ public final class MainActivity extends Activity {
         for(int at=0;at<rows.length;at++) {
             if(rows[at]==null){group++;continue;}
             String words=(String)rows[at];
-            android.view.MenuItem item=menu.getMenu().add(group,does.size(),does.size(),words);
+            android.view.MenuItem item=menu.getMenu().add(group,does.size(),does.size(),Say.t(words));
             if(words.equals(ticked))item.setCheckable(true).setChecked(true);
+            // Its symbol before its words, as in every menu (decision 157).
+            String glyph=Symbols.of(words);
+            if(glyph!=null&&Icons.known(glyph)){android.graphics.drawable.Drawable face=IconFace.symbol(this,glyph,INK);face.setBounds(0,0,dp(20),dp(20));item.setIcon(face);}
             does.add((Runnable)rows[++at]);
         }
         if(group>1)menu.getMenu().setGroupDividerEnabled(true);
+        if(android.os.Build.VERSION.SDK_INT>=29)menu.setForceShowIcon(true);
         menu.setOnMenuItemClickListener(item->{does.get(item.getItemId()).run();return true;});
         menu.show();
     }
@@ -3227,10 +3731,26 @@ public final class MainActivity extends Activity {
 
     /** A small star, for the corner or the end of whatever is a favourite. */
 
-    TextView star(int px) {
-        TextView star=label("\u2605",QUIET,INK);
-        star.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,px*0.62f);
-        star.setGravity(Gravity.CENTER);star.setIncludeFontPadding(false);
+    View star(int px) {
+        // Drawn, not a letter: the font's star never sat in the middle of its round (the owner, 2026-10-14: "make sure the star
+        // for favorites is centered in its circle"). Its outline is centred, as the PC's is.
+        final int ink=INK;
+        android.graphics.drawable.Drawable drawn=new android.graphics.drawable.Drawable() {
+            final android.graphics.Paint paint=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            @Override public void draw(android.graphics.Canvas c) {
+                android.graphics.Rect b=getBounds();
+                float r=Math.min(b.width(),b.height())*0.34f,cx=b.exactCenterX(),cy=b.exactCenterY()+r*0.0955f;
+                android.graphics.Path p=new android.graphics.Path();
+                for(int i=0;i<10;i++){double a=-Math.PI/2+i*Math.PI/5;float rr=i%2==0?r:r*0.45f;
+                    float x=cx+(float)(Math.cos(a)*rr),y=cy+(float)(Math.sin(a)*rr);if(i==0)p.moveTo(x,y);else p.lineTo(x,y);}
+                p.close();paint.setColor(ink);c.drawPath(p,paint);
+            }
+            @Override public void setAlpha(int alpha){paint.setAlpha(alpha);}
+            @Override public void setColorFilter(android.graphics.ColorFilter filter){paint.setColorFilter(filter);}
+            @Override public int getOpacity(){return android.graphics.PixelFormat.TRANSLUCENT;}
+        };
+        ImageView star=new ImageView(this);
+        star.setImageDrawable(drawn);star.setScaleType(ImageView.ScaleType.FIT_XY);
         GradientDrawable disc=new GradientDrawable();
         disc.setShape(GradientDrawable.OVAL);disc.setColor(PAPER);
         star.setBackground(disc);
@@ -3435,6 +3955,8 @@ public final class MainActivity extends Activity {
 
     /** A note or folder set to send a help request has opened: fire it once per opening, not on every redraw (decision 113). */
     void helpOnOpened(final NoteStore.Branch.Kind kind,final String id) {
+        // Only a private space's own things send one now (decision 201): an ordinary note or folder never does.
+        if(true)return;
         if(id==null||id.isEmpty()||helpAlarm==null)return;
         long now=System.currentTimeMillis();
         if(id.equals(helpLastId)&&now-helpLastAt<1500)return;
@@ -3465,6 +3987,8 @@ public final class MainActivity extends Activity {
     }
 
     void menuFor(View anchor,NoteStore.Branch thing,boolean app,boolean room) {
+        // A share that waits: Accept, Refuse, See sender. Not the file's menu, and not the thing's (decision 127).
+        if(thing!=null&&thing.asking){arrival(anchor,thing);return;}
         // A file's menu is a file's: what can be done with the file, where it is (see HomeScreen.fileMenu).
         if(thing!=null&&thing.kind==NoteStore.Branch.Kind.FILE){homeScreen().fileMenu(anchor,thing);return;}
         // The keyboard goes first. A menu opened while writing was drawn into whatever was left above the
@@ -3484,6 +4008,7 @@ public final class MainActivity extends Activity {
         // Its look after its colour, as on the PC: Icon…, and Remove the picture while it wears one (decision 33).
         picker().rows(sheet,here);
         sheet.line();
+
         // First, because a thing you did not mean is looked for straight away and not hunted for. And
         // only there when there is something to put back: it used to sit greyed at the top of every menu
         // saying "Nothing to undo", which is a row spent telling somebody about a thing they cannot do.
@@ -3497,6 +4022,9 @@ public final class MainActivity extends Activity {
                 :here.kind==NoteStore.Branch.Kind.LIBRARY?"Home"
                 :here.kind==NoteStore.Branch.Kind.DROPS?"Drop box"
                 :here.kind==NoteStore.Branch.Kind.BIN?"Bin":"Here");
+        // In Recent: taken out of it, at the top of the thing's own rows (the owner, 2026-10-11; decision 154).
+        if(!room&&shelves&&homeScreen().folder.inRecent()&&(here.kind==NoteStore.Branch.Kind.PAGE||here.kind==NoteStore.Branch.Kind.COLLECTION))
+            sheet.row("Remove from Recent",()->background.submit(()->{store.outOfRecent(here.id);return null;},done->{refresh();toast("Removed from Recent");},e->alert("Could not change that. Nothing was changed.")));
         // What + makes there, first in the room's menu, as a right-click on the room offers it on the PC (decision 44); Home's
         // ⋮ is Home's room too.
         boolean atHome=here.kind==NoteStore.Branch.Kind.LIBRARY,another=false;
@@ -3504,14 +4032,14 @@ public final class MainActivity extends Activity {
             final String in=atHome?Things.HOME:here.id;
             sheet.row("New note",()->homeScreen().newNote(in));
             sheet.row("New folder",()->homeScreen().newCollection(in));
-            // And what someone else shows the code of, as every + offers it (the owner: "this is key").
-            sheet.row("From another device…",this::addFromSomeone);another=true;
+            // And what someone else shows the code of, as every + offers it (the owner: "this is key"), where ⋮ has no Sync
+            // and sharing rows of its own to say it.
+            if(!app){sheet.row("From another device…",this::addFromSomeone);}another=true;
         }
         if(atHome) {
             // Nothing is shared from here. Who receives what is decided on a collection or a note —
             // the things people actually mean — and "everything" was a way to mean all of them at once
             // without ever saying which. Sending is different: it is about what is owed, not about who.
-            sheet.row("Sync now",()->syncNow(here.kind,here.id,here.name));
             // Every page at once, where there is more than one; and back to the main one from another (decision 45).
             if(shelves&&homeScreen().pageCount()>1)sheet.row("All pages",()->homeScreen().zoomOut());
             if(shelves&&!homeScreen().onCentre())sheet.row("Back to the main page",()->homeScreen().go(0,0));
@@ -3519,7 +4047,7 @@ public final class MainActivity extends Activity {
         else if(here.kind==NoteStore.Branch.Kind.FAVOURITES||here.kind==NoteStore.Branch.Kind.INBOX) {
             // A place, and one with nothing to do to it: what is in it is changed from the thing itself.
         }
-        else if(here.kind==NoteStore.Branch.Kind.DROPS)sheet.row("Send files",this::sendFiles);
+        else if(here.kind==NoteStore.Branch.Kind.DROPS)sheet.row("Send files…",this::sendFiles);
         else if(here.kind==NoteStore.Branch.Kind.ARCHIVE||here.kind==NoteStore.Branch.Kind.BIN||Grid.place(here.kind)) {
             // Temp's own setting: how long what is let go on it stays (decision 79).
             if(here.kind==NoteStore.Branch.Kind.TEMP)tempRows(sheet);
@@ -3527,14 +4055,27 @@ public final class MainActivity extends Activity {
             if((Grid.tool(here.kind)||here.kind==NoteStore.Branch.Kind.SHARED)&&shelves)sheet.row("Hide from Home",()->setOnHome(here.id,false));
             // A place is not a thing: it cannot be renamed, moved, shared or put away, only emptied. The archive has nothing
             // to do to it at all - a row that only says so is a row spent on a thing nobody can do.
-            if(here.kind==NoteStore.Branch.Kind.BIN)sheet.row("Empty the bin",this::askEmptyBin);
+            if(here.kind==NoteStore.Branch.Kind.BIN)sheet.row("Empty the bin…",this::askEmptyBin);
         } else {
             // Nothing here renames anything: a note is named by its first line, and a collection by its own
             // name where it is written, under its tile or on its card.
-            if(here.kind==NoteStore.Branch.Kind.PAGE)sheet.row("Versions",()->versions(here));
+            // Sync now first, and its settings beside it under a name that says so (the owner, 2026-10-14: "we have to be able
+            // to access easily the sharing settings of it, like the update frequency ... call it Sync parameters, also there
+            // put sync now as the first object"). Sync now only on anything whose mark says it reaches somebody - the PC's
+            // rule: asked of the notebook, and the row taken out again for a thing only on this phone.
+            // Sync now, its parameters and Share… are in Sync and sharing, at the top (decision 185).
+            // The open note's tabs (decision 142): where it has none, the strip is not shown and they begin here.
+            if(here.kind==NoteStore.Branch.Kind.PAGE&&isOpen(NoteStore.Branch.Kind.PAGE,here.id)&&!readOnly)sheet.row("Add a tab",this::addTab);
+            // Into another language on this phone (docs/TRANSLATION.md): the tab on the screen.
+            if(here.kind==NoteStore.Branch.Kind.PAGE&&isOpen(NoteStore.Branch.Kind.PAGE,here.id))sheet.row("Translate…",this::translateTab);
             // A collection keeps files as a note does. The clip at the foot of its level went with the level, so a file is
             // added from here - or dropped on its pop-up from another app (docs/HOME.md, decision 23).
             if(here.kind==NoteStore.Branch.Kind.COLLECTION)sheet.row("Add a file…",()->attach(here.kind,here.id));
+            // Its pictures in a grid, to browse them large, or its icons as any folder's: this phone's view of it, which does not
+            // travel (the owner, 2026-10-19: "a type of folder specific for photos"; decision 217).
+            if(here.kind==NoteStore.Branch.Kind.COLLECTION){final boolean album=store.album(here.id);
+                if(album)sheet.row("Add photos…",()->addPhotos(here.id));
+                sheet.toggle("Show as an album",album,on->{store.showAsAlbum(here.id,on);refresh();});}
             // Every thing moves now: a note into any collection, a collection onto the top level or into any
             // collection that is not inside it (docs/HOME.md, decision 14). A collection on the top level had
             // nowhere to go when there were three levels, and so had no row.
@@ -3543,30 +4084,32 @@ public final class MainActivity extends Activity {
             // thing, so sharing a note meant knowing which of three words was the one. They all lead to
             // the same box now, which is the one the mark on the thing opens: who has it, the button
             // that syncs it, and how to add somebody.
-            sheet.row("Share…",()->aboutSharing(here));
-            // Sync now, on anything whose mark says it reaches somebody - the PC's rule: asked of the notebook, and the
-            // row taken out again for a thing only on this phone.
-            final TextView sync=sheet.dimRow("Sync now");
-            background.submit(()->store.markOf(here.kind,here.id)!=SyncMark.HERE,shared->{
-                if(Boolean.TRUE.equals(shared))sheet.wakeRow(sync,"Sync now",()->syncNow(here.kind,here.id,here.name));
-                else sheet.body().removeView(sync);},e->sheet.body().removeView(sync));
             final TextView hand=sheet.dimRow("Add to favourites");
-            // Under it, for a favourite in the dock, taking it out of the dock: it stays a favourite, in Favourites.
-            final TextView undock=sheet.dimRow("Remove from the dock");
-            background.submit(()->{
-                    boolean docked=false;
-                    for(NoteStore.Branch one:store.dock())if(one.id.equals(here.id))docked=true;
-                    return new boolean[]{store.favourite(here.kind,here.id),docked};
-                },
+            // Under it the dock, on its own (the owner, 2026-10-18: "we need a button, add to the dock and this should be
+            // independent of add the favourites"; decision 190). Only for a note or a folder: a file has no place in it.
+            final boolean dockable=here.kind==NoteStore.Branch.Kind.PAGE||here.kind==NoteStore.Branch.Kind.COLLECTION;
+            final TextView undock=sheet.dimRow("Add to the dock");
+            background.submit(()->new boolean[]{store.favourite(here.kind,here.id),store.inDock(here.kind,here.id)},
                 already->{sheet.wakeRow(hand,already[0]?"Remove from favourites":"Add to favourites",
                     ()->keepToHand(here,!already[0]));
-                    if(already[1])sheet.wakeRow(undock,"Remove from the dock",()->homeScreen().undock(here));
-                    else sheet.body().removeView(undock);},e->sheet.body().removeView(undock));
+                    if(!dockable)sheet.body().removeView(undock);
+                    else if(already[1])sheet.wakeRow(undock,"Remove from the dock",()->homeScreen().undock(here));
+                    else sheet.wakeRow(undock,"Add to the dock",()->homeScreen().dockAtEnd(here));},e->sheet.body().removeView(undock));
             sheet.row("Temporary…",()->temporaryBox(here));
+            // Lower down the list (the owner, 2026-10-14).
+            if(here.kind==NoteStore.Branch.Kind.PAGE)sheet.row("Versions…",()->versions(here));
+            // Its words as they are now, stamped on Minima, or looked for there (decision 199).
+            // Its stamp first where the open note has one, opening the stamp's box, as This note's on the PC (decision 224).
+            if(here.kind==NoteStore.Branch.Kind.PAGE&&stampShown!=null&&active!=null&&here.id.equals(active.id)){final long stampN=stampShown.n();
+                sheet.row("Stamped on Minima…",Integritas.noteLine(stampShown,stampChanged),()->PhoneStamp.show(this,stampN));}
+            if(here.kind==NoteStore.Branch.Kind.PAGE){sheet.row("Stamp on Minima…",()->PhoneStamp.note(this,here.id,here.name));sheet.row("Verify on Minima…",()->PhoneStamp.verifyNote(this,here.id,here.name));}
             sheet.row("Archive",()->putAway(here,false));
             sheet.row("Move to bin",()->putAway(here,true));
             // The help request's switch moved out of here into the owner's Profile, one clear place to control it (decision 115).
         }
+        // Sync and sharing, what Mininotes is for, just under what is in view, as on the PC (the owner, 2026-10-17: "Share
+        // should be just below Home and Sync now should be in the Share section"; decision 185).
+        syncAndSharing(sheet,here,app);
         // A place is not a thing: what is waiting in the archive or the bin is not copied out or sent on
         // from here. Whatever is in them can be put back first, and then it is a thing again.
         if(here.kind!=NoteStore.Branch.Kind.ARCHIVE&&here.kind!=NoteStore.Branch.Kind.BIN
@@ -3575,12 +4118,111 @@ public final class MainActivity extends Activity {
             sheet.line();
             // One way out, not two: a share sheet already offers the clipboard among everywhere else it can
             // go, and "copy all" at a collection never said what all of it would look like when it landed.
-            sheet.row("Send to another app",()->sendElsewhere(here));
+            sheet.row("Send to another app…",()->sendElsewhere(here));
         }
         if(app)appRows(sheet,!another,atHome);
         // Held, Home's menu has no app rows: what Home shows comes last in it all the same (decision 80).
         else if(atHome)onHomeRows(sheet);
         sheet.show(anchor);
+    }
+
+    /** Sync now, its parameters and Share… for the thing; in ⋮ the people it can go to and the way to add them (decision 185). */
+    private void syncAndSharing(final Sheet sheet,final NoteStore.Branch here,boolean app) {
+        boolean thingItself=here.kind==NoteStore.Branch.Kind.PAGE||here.kind==NoteStore.Branch.Kind.COLLECTION||here.kind==NoteStore.Branch.Kind.BOOK;
+        boolean homeItself=here.kind==NoteStore.Branch.Kind.LIBRARY;
+        if(!thingItself&&!homeItself&&!app)return;
+        sheet.line();
+        sheet.heading("Sync and sharing");
+        if(homeItself)sheet.row("Sync now",()->syncNow(here.kind,here.id,here.name));
+        if(thingItself) {
+            // Sync now only on anything whose mark says it reaches somebody: asked of the notebook, and taken out again for a
+            // thing only on this phone.
+            final TextView sync=sheet.dimRow("Sync now");
+            background.submit(()->store.markOf(here.kind,here.id)!=SyncMark.HERE,shared->{
+                if(Boolean.TRUE.equals(shared))sheet.wakeRow(sync,"Sync now",()->syncNow(here.kind,here.id,here.name));
+                else sheet.body().removeView(sync);},e->sheet.body().removeView(sync));
+            sheet.row("Sync parameters…",()->aboutSharing(here));
+            sheet.row("Share…",()->aboutSharing(here));
+        }
+        // Then the people, just above you (decision 200).
+        if(app){sheet.row("From another device…",this::addFromSomeone);sheet.row("People and devices…",this::addressBook);sheet.row("My profile…",this::profile);}
+    }
+
+    // ---- a contact in trouble, said at the top (decision 188; see Troubles) ------------------------------------------------
+
+    private LinearLayout troubles;private TextView troublesSaid;
+    private List<Troubles.Trouble> troublesShown=new ArrayList<>();private boolean troublesLooking;
+    private long troublesAt;private static final long TROUBLES_EVERY=60_000L;
+
+    /** The strip under Home's bar: the first trouble and how many more, What to do; not there while all is well. */
+    View troubleStrip() {
+        if(troubles!=null&&troubles.getParent()!=null)((android.view.ViewGroup)troubles.getParent()).removeView(troubles);
+        if(troubles==null) {
+            troubles=new LinearLayout(this);troubles.setGravity(Gravity.CENTER_VERTICAL);troubles.setPadding(dp(14),dp(8),dp(10),dp(8));
+            troublesSaid=label("",QUIET,INK);
+            troubles.addView(troublesSaid,new LinearLayout.LayoutParams(0,-2,1));
+            TextView what=label(Say.t("What to do"),QUIET,ACCENT);what.setTypeface(what.getTypeface(),android.graphics.Typeface.BOLD);what.setPadding(dp(10),dp(6),dp(6),dp(6));
+            troubles.addView(what);
+            troubles.setOnClickListener(v->troublesBox());
+        }
+        troubles.setBackgroundColor(mix(WARN,PAPER,0.88f));
+        troubles.setVisibility(troublesShown.isEmpty()?View.GONE:View.VISIBLE);
+        lookForTroubles();
+        return troubles;
+    }
+
+    /** Looked at again; trouble not seen before is tried again at once, by the app (the owner: "rectified by the app directly"). */
+    void lookForTroubles(){lookForTroubles(false);}
+
+    /**
+     * At most once a minute, unless coming back to the app (Graphene, 2026-10-17): asked on every drawing of Home, which
+     * came with every answer that arrived, it read every page's standing again and again on the worker notes wait on.
+     */
+    void lookForTroubles(boolean now) {
+        if(store==null||troublesLooking)return;
+        long at=System.currentTimeMillis();
+        if(!now&&at-troublesAt<TROUBLES_EVERY&&at>=troublesAt)return;
+        troublesLooking=true;troublesAt=at;
+        background.submit(()->Troubles.of(store),found->{
+            troublesLooking=false;
+            boolean fresh=false;
+            for(Troubles.Trouble t:found){boolean seen=false;for(Troubles.Trouble s:troublesShown)if(s.address().equals(t.address())&&s.kind()==t.kind())seen=true;fresh|=!seen;}
+            troublesShown=found;
+            if(troubles==null)return;
+            if(found.isEmpty()){troubles.setVisibility(View.GONE);return;}
+            troublesSaid.setText(Troubles.line(found)+"  ·  "+Say.t("Mininotes keeps trying"));
+            troubles.setVisibility(View.VISIBLE);
+            if(fresh)network.submit(()->{Post.again(this,store,keys());return null;},done->{},e->{});
+        },e->troublesLooking=false);
+    }
+
+    /** What is wrong with each, what Mininotes does, what the owner can do, and the buttons for it. */
+    private void troublesBox() {
+        LinearLayout body=inside();
+        for(final Troubles.Trouble t:troublesShown) {
+            TextView who=label(t.name(),READING,INK);who.setTypeface(who.getTypeface(),android.graphics.Typeface.BOLD);body.addView(who);
+            body.addView(label(t.wrong(),QUIET,INK));
+            body.addView(label(t.doing(),QUIET,MUTED));
+            body.addView(label(Say.t("What you can do: {0}",t.yours()),QUIET,INK));
+            body.addView(tapRow("Try now",()->{network.submit(()->{Post.again(this,store,keys());return null;},done->{},e->{});toast(Say.t("Trying again…"));}));
+            body.addView(tapRow("Their page",()->people().openPerson(t.address(),t.name())));
+            if(t.kind()==Troubles.Kind.STUCK||t.kind()==Troubles.Kind.LINKING)body.addView(tapRow("Scan their code…",this::addFromSomeone));
+        }
+        new Box().setTitle(Say.t("What to do")).setView(scrolling(body)).setPositiveButton(Say.t("Done"),null).show();
+    }
+
+    /**
+     * The Agent, beside ⋮ in every bar (the owner, 2026-10-18: "on mobile, also display the agent beside the menu 3 dots";
+     * decision 192): its symbol, a tap opens it.
+     */
+    View agentButton() {
+        android.widget.FrameLayout button=new android.widget.FrameLayout(this);
+        View face=new View(this);face.setBackground(IconFace.symbol(this,"bot-message-square",INK));
+        button.addView(face,new android.widget.FrameLayout.LayoutParams(dp(24),dp(24),Gravity.CENTER));
+        button.setBackgroundResource(borderlessFeedback());button.setContentDescription(Say.t("Agent"));
+        button.setOnClickListener(v->new AssistantBox(this).open());
+        button.setLayoutParams(new LinearLayout.LayoutParams(dp(44),dp(48)));
+        return button;
     }
 
     /** Whether favourites and the search show on Home (decision 47): Settings and Home's menu switch them. */
@@ -3619,6 +4261,9 @@ public final class MainActivity extends Activity {
         mark.setOnClickListener(v->{
             NoteStore.Branch what=followsThePage?openNoteAsThing(thing):thing;
             if(v.getTag()==SyncMark.WAITING)whatWaits(what.kind,what.id,what.name);
+            // Temp has no Share box: its mark is Sync now (the owner, 2026-10-14: "on top of folders like Temp, we should have
+            // an arrow there to sync now").
+            else if(what.kind==NoteStore.Branch.Kind.TEMP)syncNow(what.kind,what.id,what.name);
             else aboutSharing(what);
         });
         mark.setOnLongClickListener(v->{aboutSharing(followsThePage?openNoteAsThing(thing):thing);return true;});
@@ -3695,13 +4340,16 @@ public final class MainActivity extends Activity {
         final Sharing.Scope scope=thing.scope();
         background.submit(()->{
             int owed=store.owed(kind,id).size();
+            // Temp is not a folder: its mark is the worst of what is in it that reaches anybody (NoteStore.markOf).
+            final SyncMark temp=kind==NoteStore.Branch.Kind.TEMP?store.markOf(kind,id):null;
             // Shared itself, or holding anything that is: the same question its tile answers.
-            boolean shared=scope==null||scope==Sharing.Scope.LIBRARY
+            boolean shared=temp!=null?temp!=SyncMark.HERE
+                :scope==null||scope==Sharing.Scope.LIBRARY
                 ?!store.shares().isEmpty()
                 :store.sharedAtAll(kind,id);
             // Where everything under it stands with each device it reaches: the same reading as its tile - a collection
             // waiting for a device to be updated included (NoteStore.marksUnder).
-            List<SyncMark> all=store.marksUnder(kind,id);
+            List<SyncMark> all=temp!=null?java.util.List.of(temp):store.marksUnder(kind,id);
             return new Object[]{owed,shared,store.pausedHere(kind,id),SyncMark.worst(all)};
         },said->{
             if(mark.getParent()==null)return;
@@ -3761,7 +4409,7 @@ public final class MainActivity extends Activity {
         if(active==null)return;
         // Called what it is called everywhere else: its title, and its first line only where it has none.
         String name=active.title==null?"":active.title.trim();
-        if(name.isEmpty()){String text=page.getText().toString().trim();int first=text.indexOf('\n');name=(first<0?text:text.substring(0,first)).trim();}
+        if(name.isEmpty()){String text=whole().trim();int first=text.indexOf('\n');name=(first<0?text:text.substring(0,first)).trim();}
         menuFor(anchor,new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,active.id,active.book,
             name.isEmpty()?"This note":name,"",0,0,false,active.colour));
     }
@@ -3787,23 +4435,44 @@ public final class MainActivity extends Activity {
      * In the owner's order (decision 89): New (what is sent, since what is made is in Home's own rows), People, Find, the
      * places switched off Home, On Home, Backup, and Mininotes itself.
      */
+    /** The languages there is a list for, each in its own words, and the phone's own first; picked, the app says it at once. */
+    void chooseLanguage() {
+        final List<String> codes=new ArrayList<>();final List<String> names=new ArrayList<>();
+        codes.add(Say.SYSTEM);names.add(Say.t("The phone's language"));
+        for(Map.Entry<String,String> one:Say.LANGUAGES.entrySet()){codes.add(one.getKey());names.add(one.getValue());}
+        String now=getSharedPreferences("settings",MODE_PRIVATE).getString("language",Say.SYSTEM);
+        LinearLayout body=inside();final AlertDialog[] box={null};
+        for(int at=0;at<codes.size();at++) {
+            final String code=codes.get(at);
+            View line=row((code.equals(now)?"\u2713  ":"     ")+names.get(at),"",()->{if(box[0]!=null)box[0].dismiss();setLanguage(code);});
+            body.addView(line);
+        }
+        box[0]=new Box().setTitle("Language").setView(scrolling(body)).create();
+        box[0].show();
+    }
+    /** Kept, and the app drawn again in it. */
+    void setLanguage(String code) {
+        getSharedPreferences("settings",MODE_PRIVATE).edit().putString("language",code).apply();
+        Say.use(Say.resolve(code,java.util.Locale.getDefault()));
+        recreate();
+    }
+
     private void appRows(Sheet sheet,boolean another,boolean atHome) {
         // Files straight to another device, belonging to no note. The ones that came that way are on Home, new until they
         // are opened; what went from here is listed under Sent files, now there is no drop box (decision 20).
         sheet.line();
-        sheet.heading("New");
-        sheet.row("Send files",this::sendFiles);
-        sheet.row("Sent files",()->homeScreen().sentFiles());
-        sheet.line();
-        sheet.heading("People");
-        sheet.row("People and devices",this::addressBook);
-        // Somebody's code read with this phone's own camera, or their link pasted - a note, a collection, or a device of
-        // theirs: every ⋮ has it, as every + does (the owner: "this is key"), named as the PC names it. Not twice: where
-        // the menu offers it among what is made there, it is not repeated here.
-        if(another)sheet.row("From another device…",this::addFromSomeone);
+        // Named for what is in it (the owner, 2026-10-12: "instead of Create it should be Send, instead of People, Contacts").
+        sheet.heading("Send");
+        sheet.row("Send files…",this::sendFiles);
+        sheet.row("Sent files…",()->homeScreen().sentFiles());
+        // Everything stamped on Minima from here, in its own page; the key is set in My profile (decision 210).
+        sheet.row("Stamped on Minima…",()->PhoneStamp.list(this));
+        // People and devices, and From another device…, are in Sync and sharing, at the top (decision 185).
         sheet.line();
         sheet.heading("Find");
-        sheet.row("Search",this::searching);
+        sheet.row("Search…",this::searching);
+        // A question, or something to do, said in words, answered on this phone (decision 191).
+        sheet.row("Agent…",()->new AssistantBox(this).open());
         sheet.row("Tree",this::wholeTree);
         // Home's places switched off Home are here instead (decision 78): one way to each, not two.
         if(!onHome(NoteStore.ARCHIVE)||!onHome(NoteStore.BIN)||shelves&&(!onHome(NoteStore.TEMP)||!onHome(NoteStore.RECENT)||!onHome(NoteStore.SHARED))) {
@@ -3820,18 +4489,23 @@ public final class MainActivity extends Activity {
         if(atHome)onHomeRows(sheet);
         sheet.line();
         sheet.heading("Backup");
-        sheet.row("Export backup",this::exportBackup);
-        sheet.row("Add from backup",()->pick(IMPORT));
+        sheet.row("Export backup…",this::exportBackup);
+        sheet.row("Add from backup…",()->pick(IMPORT));
         sheet.line();
         sheet.heading("Mininotes");
+        // The language, where nobody has to look for it (the owner, 2026-10-12: "the languages selection should be put
+        // directly in the menu"; decision 160): its name, and the one in use in its own words.
+        // Share Mininotes first, Version just above About (the owner, 2026-10-14).
+        sheet.row("Share Mininotes…",this::shareApp);
+        sheet.row("Language",Say.t("Language")+"  ·  "+Say.LANGUAGES.getOrDefault(Say.language(),"English"),()->chooseLanguage());
         // A newer build, for as long as this phone has heard of one and is not it; absent the rest of the time.
         final String newer=newerKnown();
         if(!newer.isEmpty())sheet.row("Update to v"+newer,()->announce(newer));
-        sheet.row("Share Mininotes",this::shareApp);
-        sheet.row("Feedback",this::feedback);
+        sheet.row("Feedback…",this::feedback);
         sheet.row(PhoneLock.locked(this)?"Settings  ·  🔒":"Settings",this::settings);
-        sheet.row("Profile",this::profile);
-        sheet.row("About",this::about);
+        // Which build this is; tapped, it looks for a newer one.
+        sheet.row("Version",Say.t("Version")+"  ·  v"+version(),this::checkForUpdate);
+        sheet.row("About…",this::about);
     }
 
     /**
@@ -3839,6 +4513,19 @@ public final class MainActivity extends Activity {
      * rather than a popup one, because a phone's desktop lets you keep moving: the finger that opened this
      * still belongs to the tile underneath, so sliding away from it picks the tile up instead.
      */
+    /**
+     * A row's symbol before its words (decision 157): the glyph Symbols gives those words, the size of a line, in the ink of
+     * the text. Nothing where the words have none.
+     */
+    void symbol(TextView row,String words) {
+        String glyph=Symbols.of(words);
+        if(glyph==null||!Icons.known(glyph)){row.setCompoundDrawablesRelative(null,null,null,null);return;}
+        android.graphics.drawable.Drawable face=IconFace.symbol(this,glyph,INK);
+        int side=dp(22);face.setBounds(0,0,side,side);
+        row.setCompoundDrawablesRelative(face,null,null,null);
+        row.setCompoundDrawablePadding(dp(16));
+    }
+
     final class Sheet {
         private final LinearLayout body=column();
         /** The menu can be longer than the room left for it, so it is a thing you can scroll to the end of. */
@@ -3858,10 +4545,11 @@ public final class MainActivity extends Activity {
                 if(heldTile==null||dragging!=null)return false;
                 float moved=Math.max(Math.abs(event.getRawX()-heldFrom[0]),
                                      Math.abs(event.getRawY()-heldFrom[1]));
-                if(moved<=ViewConfiguration.get(MainActivity.this).getScaledTouchSlop())return false;
+                if(moved<=ViewConfiguration.get(MainActivity.this).getScaledTouchSlop()*2)return false;
                 View tile=heldTile;NoteStore.Branch what=heldBranch;
                 heldTile=null;heldBranch=null;
                 close();
+                dragPoint[0]=event.getRawX();dragPoint[1]=event.getRawY();
                 lift(tile,what);
                 return true;
             });
@@ -3887,7 +4575,7 @@ public final class MainActivity extends Activity {
 
         /** A section's name: small, quiet, in capitals, and not something to tap. */
         void heading(String words) {
-            TextView head=label(words.toUpperCase(java.util.Locale.ROOT),QUIET,MUTED);
+            TextView head=label(Say.t(words).toUpperCase(java.util.Locale.ROOT),QUIET,MUTED);
             head.setTypeface(null,android.graphics.Typeface.BOLD);head.setLetterSpacing(0.06f);
             head.setPadding(dp(20),dp(12),dp(20),dp(2));head.setTag("heading");
             body.addView(head,new LinearLayout.LayoutParams(-1,-2));
@@ -3897,12 +4585,16 @@ public final class MainActivity extends Activity {
         void toggle(String words,boolean on,Consumer<Boolean> changed) {
             View row=switchRow(words,on,changed);
             row.setPadding(dp(20),dp(4),dp(20),dp(4));
+            if(row instanceof LinearLayout line&&line.getChildCount()>0&&line.getChildAt(0) instanceof TextView said)symbol(said,words);
             body.addView(row,new LinearLayout.LayoutParams(-1,-2));
         }
 
-        void row(String words,Runnable does) {
-            TextView row=label(words,READING,INK);
+        void row(String words,Runnable does){row(words,null,does);}
+        /** A row whose symbol is found from its English words and which shows other words: its own, already said. */
+        void row(String words,String shown,Runnable does) {
+            TextView row=label(shown==null?words:shown,READING,INK);
             row.setPadding(dp(20),dp(14),dp(20),dp(14));
+            symbol(row,words);
             row.setBackgroundResource(touchFeedback());
             row.setOnClickListener(v->{close();does.run();});
             body.addView(row,new LinearLayout.LayoutParams(-1,-2));
@@ -3916,6 +4608,7 @@ public final class MainActivity extends Activity {
         TextView dimRow(String words) {
             TextView row=label(words,READING,MUTED);
             row.setPadding(dp(20),dp(14),dp(20),dp(14));
+            symbol(row,words);
             body.addView(row,new LinearLayout.LayoutParams(-1,-2));
             return row;
         }
@@ -4304,6 +4997,41 @@ public final class MainActivity extends Activity {
         },e->alert("Could not put that version back. Nothing was changed."));
     }
 
+    /** The open note's stamped line, its stamps, the one it stands by, and whether its text changed since (decision 218). */
+    private TextView stampLine;private java.util.List<NoteStore.StampRow> noteStamps=java.util.List.of();private NoteStore.StampRow stampShown;private boolean stampChanged;
+    /** A note's stamps read, and its text compared with them. */
+    private void askStamps(final String id,final String body) {
+        background.submit(()->store.stampsOf(id),all->{if(active==null||!id.equals(active.id))return;noteStamps=all;compareStamps(body);},e->{});
+    }
+    /**
+     * The line under a stamped note's title (the owner, 2026-10-19: "there should be a mention at the top of the note for all
+     * this, and as soon as there is a change, this should be notified"; decision 218): stamped and where, waiting for Minima, or
+     * changed since, toned down, a tap then stamping this version.
+     */
+    private void compareStamps(String body) {
+        if(stampLine==null)return;
+        if(noteStamps.isEmpty()){stampShown=null;stampLine.setVisibility(View.GONE);return;}
+        String now;try{now=Integritas.hashOfText(body);}catch(Exception never){return;}
+        stampShown=Integritas.standing(noteStamps,now);stampChanged=!stampShown.hash().equals(now);
+        String said=Integritas.noteLine(stampShown,stampChanged);
+        stampLine.setText("⛓ "+(stampChanged?said+"  ·  "+Say.t("Stamp this version…"):said));
+        stampLine.setTextColor(stampChanged?MUTED:stampShown.confirmed()?mix(ACCENT,INK,0.15f):stampShown.waiting()?ACCENT:MUTED);
+        stampLine.setVisibility(View.VISIBLE);
+    }
+    /** Read again: after a stamp, a look that landed, a verification. */
+    void stampLineAgain(){if(active!=null)askStamps(active.id,kept==null?active.body:kept);}
+    /**
+     * A note's stamped version put back as its text (decision 218), as Versions puts one back: what it says now kept first.
+     */
+    void putStampedBack(final NoteStore.StampRow row) {
+        if(active!=null&&active.id.equals(row.id()))save();
+        background.submit(()->store.putStampedBack(row.n()),done->{
+            if(!done){alert("Read only. This note is somebody else's to change.");return;}
+            PhoneStamp.notice(this,Say.t("The stamped version is put back. The text it replaced is kept as a version."));
+            if(active!=null&&active.id.equals(row.id()))open(row.id());else refresh();
+        },e->alert("Could not put that version back. Nothing was changed."));
+    }
+
     /** A time today as the time alone, and any other day with its date. */
     String shortWhen(long at) {
         java.util.Calendar then=java.util.Calendar.getInstance(),now=java.util.Calendar.getInstance();then.setTimeInMillis(at);
@@ -4604,7 +5332,8 @@ public final class MainActivity extends Activity {
         // Somebody scanned the code this phone showed. Showing it was the decision, so it is not asked
         // again: they are paired back, and handed what was offered if the code went up a short while ago
         // and they are not claiming more than it offered. An old or unknown offer is still asked about.
-        if(them.target.isEmpty()){pairBack(them);return;}
+        // A plain code, offering nothing: an invitation, Accept or Ignore (decision 163), but for a device added already.
+        if(them.target.isEmpty()){invited(them);return;}
         // A build from before quotes back the scope the code gave it, with the level after it: see Pairing.scopeIn.
         final Sharing.Scope scope=scopeNamed(Pairing.scopeIn(them.scope));
         if(scope==null)return;
@@ -4624,6 +5353,39 @@ public final class MainActivity extends Activity {
                 .setPositiveButton("Give it to them",(d,w)->giveItTo(them,scope))
                 .show();
         },e->{});
+    }
+
+    /**
+     * Somebody scanned this phone's plain code (decision 163: "let's make that as an invitation, for contact and for
+     * elements, all this needs to be accepted or ignored"): one already added is answered as before; one ignored, nothing;
+     * anybody else waits to be accepted, asked now.
+     */
+    private void invited(final Hello.Said them) {
+        background.submit(()->Invites.known(store,them)?1:Invites.ignored(this,them)?2:Invites.add(this,them)?3:4,how->{
+            if(how==1){pairBack(them);return;}
+            if(how==2)return;
+            askInvite(them);
+        },e->{});
+    }
+
+    /** The invitations asked about this time in front, each once; the rest wait in the settings for the next time. */
+    private final java.util.Set<String> invitesAsked=new java.util.HashSet<>();
+
+    /** One invitation: Accept adds them and answers; Ignore tells nobody; Later leaves it to be asked again. */
+    private void askInvite(final Hello.Said them) {
+        if(!invitesAsked.add(them.address))return;
+        codeSays("",Say.t("{0} scanned it",them.name));
+        new Box().setTitle(Say.t("{0} wants to add you",them.name))
+            .setMessage(Say.t("Accept, and you can share notes and files with {0}. Ignore, and {0} is told nothing.",them.name))
+            .setPositiveButton(Say.t("Accept"),(d,w)->background.submit(()->{Invites.done(this,them,false);return null;},done->pairBack(them),e->{}))
+            .setNegativeButton(Say.t("Ignore"),(d,w)->background.submit(()->{Invites.done(this,them,true);return null;},done->toast(Say.t("Ignored")),e->{}))
+            .setNeutralButton(Say.t("Later"),(d,w)->invitesAsked.remove(them.address)).show();
+    }
+
+    /** What waits to be accepted or ignored, asked when the pad is in front again. */
+    private void askInvites() {
+        if(store==null||lockedOut)return;
+        background.submit(()->Invites.waiting(this),waiting->{for(Hello.Said one:waiting)askInvite(one);},e->{});
     }
 
     /** The line under a code that is up, saying what it waits for, and which thing the code offers. */
@@ -4670,7 +5432,7 @@ public final class MainActivity extends Activity {
             NoteStore.Contact saved=store.address(them.address);
             try{Post.helloBack(this,keys(),them,yourName(),mine,saved==null?null:saved.contact);}catch(Exception notNow){/* they send again until they hear */}
             return null;
-        },done->{askToSaySo();busyDone(job,"Paired with "+them.name);refresh();},
+        },done->{askToSaySo();busyDone(job,Say.t("{0} is added",them.name));refresh();},
             e->{busyDone(job,null);alert("Could not pair with "+them.name+". Nothing was changed.");});
     }
 
@@ -4716,6 +5478,7 @@ public final class MainActivity extends Activity {
 
         final Runnable look=()->{
             final String term=word.getText().toString().trim();
+            searchedFor=term;
             found.removeAllViews();
             if(term.isEmpty()){none.setText("");atHand(found,box);return;}
             if(term.length()<2){none.setText("");return;}
@@ -4752,6 +5515,43 @@ public final class MainActivity extends Activity {
             if(again!=null)again.showSoftInput(word,0);
         },150);
     }
+
+    /** What was last looked for in Search, for the note a hit opens (decision 216). */
+    private String searchedFor="";
+    private android.widget.PopupWindow findBar;
+
+    /**
+     * The words looked for, in the note a search opened: the first place they are chosen and brought into view, and a small
+     * bar over the page with how many there are and the way to the next and the one before (the owner, 2026-10-19: "the
+     * note should open where the first occurrence of what we were looking for is, and in the note we should have a search
+     * window open letting us browse through all occurrences"; decision 216). Waits for the note to be on the page.
+     */
+    void findInPage(final String note,final String term) {
+        final long until=System.currentTimeMillis()+4000;
+        handler.postDelayed(new Runnable(){public void run(){
+            if(page==null||active==null||!note.equals(active.id)||page.length()==0){if(System.currentTimeMillis()<until)handler.postDelayed(this,80);return;}
+            String text=page.getText().toString().toLowerCase(java.util.Locale.ROOT),look=term.toLowerCase(java.util.Locale.ROOT);
+            final List<int[]> at=new ArrayList<>();
+            for(int from=text.indexOf(look);from>=0;from=text.indexOf(look,from+look.length()))at.add(new int[]{from,from+look.length()});
+            if(at.isEmpty()){toast(Say.t("Not found"));return;}
+            closeFindBar();
+            LinearLayout bar=new LinearLayout(MainActivity.this);bar.setGravity(Gravity.CENTER_VERTICAL);bar.setPadding(dp(10),dp(4),dp(4),dp(4));
+            GradientDrawable back=new GradientDrawable();back.setColor(CARD);back.setCornerRadius(dp(12));back.setStroke(Math.max(1,dp(1)),LINE);bar.setBackground(back);
+            final TextView count=label("",QUIET,MUTED);bar.addView(count);
+            final int[] now={0};
+            final Runnable show=()->{int[] one=at.get(now[0]);
+                if(one[1]<=page.length()){page.setSelection(one[0],one[1]);page.bringPointIntoView(one[0]);}
+                count.setText(Say.t("{0} of {1}",String.valueOf(now[0]+1),String.valueOf(at.size())));};
+            bar.addView(tap("▲",Say.t("Previous match"),18,INK,v->{now[0]=Math.floorMod(now[0]-1,at.size());show.run();}));
+            bar.addView(tap("▼",Say.t("Next match"),18,INK,v->{now[0]=Math.floorMod(now[0]+1,at.size());show.run();}));
+            bar.addView(tap("×",Say.t("Close"),20,MUTED,v->closeFindBar()));
+            for(int i=1;i<bar.getChildCount();i++)bar.getChildAt(i).setPadding(dp(12),dp(6),dp(12),dp(6));
+            findBar=new android.widget.PopupWindow(bar,-2,-2,false);findBar.setElevation(dp(6));
+            findBar.showAtLocation(page,Gravity.TOP|Gravity.END,dp(12),dp(150));
+            show.run();
+        }},80);
+    }
+    void closeFindBar(){if(findBar!=null){try{findBar.dismiss();}catch(RuntimeException gone){/* already */}findBar=null;}}
 
     /** The last search asked for, so a fast typist asks the notebook once rather than once a letter. */
     private Runnable looking;
@@ -4802,7 +5602,7 @@ public final class MainActivity extends Activity {
         }
         row.addView(words,new LinearLayout.LayoutParams(0,-2,1));
         row.setContentDescription("Open "+hit.name);
-        row.setOnClickListener(v->{box.dismiss();goTo(hit);});
+        row.setOnClickListener(v->{box.dismiss();goTo(hit);if(hit.kind==NoteStore.Branch.Kind.PAGE&&!searchedFor.isEmpty())findInPage(hit.id,searchedFor);});
         row.setOnLongClickListener(v->{menuFromBox(box,hit);return true;});
         return row;
     }
@@ -4813,7 +5613,8 @@ public final class MainActivity extends Activity {
      */
     private void goTo(NoteStore.Branch thing) {
         // A file opens in whatever opens it, and is no longer new.
-        if(thing.kind==NoteStore.Branch.Kind.FILE){homeScreen().openFile(thing);return;}
+        // New, from the New list: what it is and what to do with it first, not opened (the owner, 2026-10-16).
+        if(thing.kind==NoteStore.Branch.Kind.FILE){if(thing.fresh)homeScreen().fileMenu(getWindow().getDecorView(),thing);else homeScreen().openFile(thing);return;}
         // Found from Home, a note goes back to Home as it was; a collection opens as its pop-up over it.
         boolean onHome=home!=null&&home.showing();
         if(thing.kind==NoteStore.Branch.Kind.PAGE){if(onHome)home.openNote(thing.id);else open(thing.id);return;}
@@ -4877,7 +5678,7 @@ public final class MainActivity extends Activity {
         Sheet sheet=new Sheet();
         sheet.row("Put back",()->background.submit(()->{store.restore(thing.kind,thing.id);return null;},
             done->{toast("Put back");refresh();},e->alert("Could not put that back. Nothing was changed.")));
-        if(bin)sheet.row("Delete for good",()->askErase(thing));
+        if(bin)sheet.row("Delete for good…",()->askErase(thing));
         else sheet.row("Move to the bin",()->background.submit(()->{
                 store.putAway(thing.kind,thing.id,false,false);store.putAway(thing.kind,thing.id,true,true);return null;},
             done->{toast("In the bin");refresh();},e->alert("Could not move that. Nothing was changed.")));
@@ -5504,8 +6305,8 @@ public final class MainActivity extends Activity {
      * still, which is why the menu is drawn in this window rather than a popup one. The lines of the list
      * are held the same way as the tiles: a hold used only to lift a line, and its menu was a ⋮ away.
      */
-    // The listener never consumes anything: it watches the gesture and returns false, so the tile's own
-    // click and long click still run and a screen reader still reaches both.
+    // A tap and a long click still run, and a screen reader still reaches both. A small slide is kept, so the hold is
+    // not cancelled by it, and that slide is not a tap (decision 130).
     @android.annotation.SuppressLint("ClickableViewAccessibility")
     void grabbable(final View tile,final NoteStore.Branch branch) {
         tile.setTag(branch);
@@ -5513,28 +6314,43 @@ public final class MainActivity extends Activity {
         // away before it could lift anything.
         tile.setOnLongClickListener(v->{heldTile=v;heldBranch=branch;
             if(v.getParent()!=null)v.getParent().requestDisallowInterceptTouchEvent(true);
+            v.animate().scaleX(1.04f).scaleY(1.04f).translationY(-dp(3)).setDuration(120);
             heldFor(v,branch);return true;});
+        final boolean[] wobble={false};
         tile.setOnTouchListener((v,event)->{
+            dragPoint[0]=event.getRawX();dragPoint[1]=event.getRawY();
+            int slop=ViewConfiguration.get(MainActivity.this).getScaledTouchSlop();
+            float moved=Math.max(Math.abs(event.getRawX()-heldFrom[0]),Math.abs(event.getRawY()-heldFrom[1]));
             switch(event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     heldFrom[0]=event.getRawX();heldFrom[1]=event.getRawY();
-                    heldTile=null;heldBranch=null;
-                    break;
+                    heldTile=null;heldBranch=null;wobble[0]=false;pressing=true;
+                    return false;
                 // Where the tile is still the one hearing the finger - before the menu is up, or where a
                 // long press never happened - the same movement lifts it.
                 case MotionEvent.ACTION_MOVE:
-                    if(heldTile==null||dragging!=null)break;
-                    float moved=Math.max(Math.abs(event.getRawX()-heldFrom[0]),
-                                         Math.abs(event.getRawY()-heldFrom[1]));
-                    if(moved>ViewConfiguration.get(MainActivity.this).getScaledTouchSlop()) {
+                    if(heldTile!=null&&dragging==null&&moved>slop*2) {
                         heldTile=null;heldBranch=null;
                         if(showing!=null)showing.close();
                         lift(v,branch);
+                        return true;
                     }
-                    break;
-                default: heldTile=null;heldBranch=null;break;
+                    // A small slide would cancel the hold. It stays a hold. Home's pages do not take that slide either
+                    // (Layout.pageTakes). A parent that scrolls, the dock included, can still take a clearer one.
+                    if(heldTile==null&&dragging==null&&moved>slop&&moved<=slop*Layout.ICON_SLOP) {
+                        wobble[0]=true;
+                        return true;
+                    }
+                    return false;
+                default:
+                    // A small slide that never became a hold is not a tap, and the hold does not arrive after the finger has lifted.
+                    boolean eat=wobble[0]&&dragging==null&&heldTile==null;
+                    if(eat){v.cancelLongPress();v.setPressed(false);}
+                    heldTile=null;heldBranch=null;wobble[0]=false;pressing=false;
+                    if(dragging==null)releaseHold(v);
+                    if(home!=null)home.refitNow();
+                    return eat;
             }
-            return false;
         });
     }
 
@@ -5730,14 +6546,38 @@ public final class MainActivity extends Activity {
 
     /** The thing a finger is holding, and where it first went down: a press that may yet become a drag. */
     View heldTile;
+    /** A finger is down on a thing that can be carried. Home does not lay its grid out again until it lifts. */
+    boolean pressing;
     private NoteStore.Branch heldBranch;
     private final float[] heldFrom=new float[2];
+    private final float[] dragPoint=new float[2];
+
+    void releaseHold(View tile) {
+        tile.animate().cancel();
+        tile.animate().scaleX(1f).scaleY(1f).translationY(0).setDuration(160);
+    }
 
     /** The row lifts off the list and leaves its gap behind, which then follows the finger. */
     private void lift(View row,NoteStore.Branch branch) {
+        int[] at=new int[2];row.getLocationOnScreen(at);
+        final float scale=1.06f;
+        final int touchX=Math.round(Math.max(0,Math.min(row.getWidth(),dragPoint[0]-at[0]))*scale);
+        final int touchY=Math.round(Math.max(0,Math.min(row.getHeight(),dragPoint[1]-at[1]))*scale);
+        row.animate().cancel();row.setScaleX(1f);row.setScaleY(1f);row.setTranslationY(0);
+        row.cancelLongPress();row.setPressed(false);
+        if(row.getBackground()!=null)row.getBackground().jumpToCurrentState();
         dragging=branch;lifted=row;
-        row.startDragAndDrop(null,new View.DragShadowBuilder(row),null,0);
-        row.setVisibility(View.INVISIBLE);
+        boolean started=row.startDragAndDrop(null,new View.DragShadowBuilder(row){
+            @Override public void onProvideShadowMetrics(android.graphics.Point size,android.graphics.Point touch) {
+                size.set(Math.max(1,Math.round(row.getWidth()*scale)),Math.max(1,Math.round(row.getHeight()*scale)));
+                touch.set(touchX,touchY);
+            }
+            @Override public void onDrawShadow(android.graphics.Canvas canvas) {
+                canvas.save();canvas.scale(scale,scale);row.draw(canvas);canvas.restore();
+            }
+        },null,0);
+        if(started){row.setVisibility(View.INVISIBLE);row.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);}
+        else {dragging=null;lifted=null;pressing=false;releaseHold(row);}
     }
 
     private boolean dragOver(View list,DragEvent event) {
@@ -5757,7 +6597,7 @@ public final class MainActivity extends Activity {
                 return true;
             case DragEvent.ACTION_DRAG_ENDED:
                 markOnto(null);
-                if(lifted!=null)lifted.setVisibility(View.VISIBLE);
+                if(lifted!=null){lifted.setVisibility(View.VISIBLE);releaseHold(lifted);}
                 dragging=null;lifted=null;
                 // Let go of it anywhere but the level itself and nothing was rearranged, so it is read back.
                 if(!event.getResult())refresh();
@@ -6092,6 +6932,74 @@ public final class MainActivity extends Activity {
     volatile Map<String,String> parlonsBook=new HashMap<>();
 
     /** What the line that contacts somebody says: Contact on Parlons! where their address is known, or asks for it. */
+    /**
+     * Wherever somebody is shown: Chat on Parlons! where their address is known; where it is not, said missing, in grey,
+     * with the row that adds it (the owner, 2026-10-10: "when the Parlons address is not specified ... presented as missing").
+     */
+    void parlonsRows(Sheet sheet,final String address) {
+        if(address==null)return;
+        if(parlonsBook.containsKey(address))sheet.row(Parlons.CONTACT,()->contactOnParlons(address));
+        // Missing, said as such, and the row itself is the way to add it (the owner, 2026-10-10: "this should be clickable").
+        else sheet.row(Parlons.MISSING,()->contactOnParlons(address));
+    }
+
+    /** A Parlons! address on the clipboard, as copied from Parlons! or a message with it in, or empty. */
+    String copiedParlons() {
+        try {
+            ClipboardManager board=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+            if(board==null||!board.hasPrimaryClip()||board.getPrimaryClip()==null||board.getPrimaryClip().getItemCount()==0)return "";
+            CharSequence text=board.getPrimaryClip().getItemAt(0).coerceToText(this);
+            return text==null?"":Parlons.address(text.toString());
+        } catch(RuntimeException notOne){return "";}
+    }
+
+    /**
+     * Your own Parlons! address (the owner, 2026-10-11; decision 147): set once, here, and sent by itself to everybody you are
+     * paired with, so on their Mininotes Chat on Parlons! reaches you in one tap. Open Parlons! to copy it; back here it is
+     * already in the field. Removing it tells them too.
+     */
+    void myParlonsBox() {
+        background.submit(()->store.myParlons(),mine->{
+            final AlertDialog[] box={null};
+            LinearLayout body=inside();
+            body.addView(label("Set it once: it is sent to everybody you are paired with, so they can chat with you on Parlons! in one tap.",QUIET,MUTED));
+            final EditText input=field(Parlons.HINT,2000);
+            input.setText(mine);
+            String copied=copiedParlons();
+            if(!copied.isEmpty()&&!copied.equals(mine)){input.setText(copied);body.addView(label("Filled in from what you copied.",QUIET,MUTED));}
+            body.addView(input);
+            final TextView wrong=label("",QUIET,INK);wrong.setVisibility(View.GONE);body.addView(spaced(wrong));
+            // Not copied yet: Parlons! opened, to copy it there and come back.
+            body.addView(tapRow("Open Parlons! to copy it",()->{
+                Intent open=getPackageManager().getLaunchIntentForPackage(Parlons.PACKAGE);
+                if(open!=null&&started(open)){toast("Copy your address in Parlons!, then come back");return;}
+                new Box().setTitle("Parlons! is not on this phone").setMessage("Get Parlons!, then copy your address in it and come back.")
+                    .setPositiveButton("Get Parlons!",(d,w)->openAddress(Parlons.RELEASES)).show();
+            }));
+            if(!mine.isEmpty())body.addView(tapRow("Remove it",()->{box[0].dismiss();saveMyParlons("");}));
+            box[0]=new Box().setTitle("Your Parlons! address").setView(scrolling(body)).setPositiveButton("Save",null).create();
+            box[0].setOnShowListener(d->box[0].getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+                try {
+                    String kept=Parlons.address(input.getText().toString());
+                    if(kept.isEmpty())throw new IllegalArgumentException("Paste your Parlons! address first.");
+                    box[0].dismiss();saveMyParlons(kept);
+                } catch(IllegalArgumentException wrongly){wrong.setText(wrongly.getMessage());wrong.setVisibility(View.VISIBLE);}
+            }));
+            box[0].show();
+            // Back from Parlons! with it copied: filled in then.
+            input.setOnFocusChangeListener((v,has)->{if(has&&input.getText().toString().trim().isEmpty()){String now=copiedParlons();if(!now.isEmpty())input.setText(now);}});
+        },e->alert(READ_FAILED));
+    }
+
+    /** Kept here, then sent to everybody paired whose Mininotes takes it: said on the strip, from start to how it ended. */
+    private void saveMyParlons(final String value) {
+        final int job=busy(value.isEmpty()?"Removing your Parlons! address\u2026":"Saving your Parlons! address\u2026");
+        background.submit(()->{store.setMyParlons(value);return null;},done->network.submit(()->Post.sendMyParlons(this,store,keys(),true),
+            sent->busyDone(job,(value.isEmpty()?"Removed":"Saved")+(sent>0?", and sent to "+sent+(sent==1?" device":" devices"):". It goes to your contacts as they come online")),
+            e->busyDone(job,value.isEmpty()?"Removed here":"Saved here. It goes to your contacts as they come online")),
+            e->{busyDone(job,null);alert(e instanceof IllegalArgumentException&&e.getMessage()!=null?e.getMessage():"That address could not be kept.");});
+    }
+
     private String parlonsWords(String address){return address!=null&&parlonsBook.containsKey(address)?Parlons.CONTACT:Parlons.ADD;}
 
     /**
@@ -6148,9 +7056,14 @@ public final class MainActivity extends Activity {
             final AlertDialog[] box={null};
             LinearLayout body=inside();
             if(backTo!=null)body.addView(people().backTo(backTo,()->{if(box[0]!=null)box[0].dismiss();}));
-            body.addView(label("Their address, as Parlons! shows it. A whole message with it in will do: the address is found in it.",QUIET,MUTED));
-            final EditText input=field("MxG18HGG\u2026@78.141.237.9:9501",2000);
+            // What happens by itself first, then the one thing to do (the owner, 2026-10-11: "easy and intuitive").
+            if(who.parlons.isEmpty()&&who.paired()&&!who.mine)body.addView(label("When "+who.name+" sets their Parlons! address in Mininotes, it arrives here by itself. Or paste it now:",QUIET,MUTED));
+            else body.addView(label("Their address, as Parlons! shows it. A whole message with it in will do: the address is found in it.",QUIET,MUTED));
+            final EditText input=field(Parlons.HINT,2000);
             input.setText(who.parlons);
+            // Copied from Parlons! a moment ago: already in the field.
+            String copied=who.parlons.isEmpty()?copiedParlons():"";
+            if(!copied.isEmpty()){input.setText(copied);body.addView(label("Filled in from what you copied.",QUIET,MUTED));}
             body.addView(input);
             final TextView wrong=label("",QUIET,INK);wrong.setVisibility(View.GONE);body.addView(spaced(wrong));
             // Where it goes: a choice of three, dropping down; Choose devices\u2026 shows a switch for each of mine.
@@ -6243,7 +7156,7 @@ public final class MainActivity extends Activity {
             return said.isEmpty()?"":Pairing.link(keys().line(yourName(),said));
         },link->{
             if(((String)link).isEmpty()){alert("No address yet, so there is nothing to share. Wait until this phone is connected.");return;}
-            Intent send=new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT,"Connect with me on Mininotes")
+            Intent send=new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT,Say.t("Connect with me on Mininotes"))
                 .putExtra(Intent.EXTRA_TEXT,Pairing.invite(yourName(),(String)link,DOWNLOAD));
             started(Intent.createChooser(send,"Share my link"));
         },e->alert(READ_FAILED)));
@@ -6392,46 +7305,51 @@ public final class MainActivity extends Activity {
      * message, a mail, somebody passing it along — could have been changed on the way, and for that there
      * are six digits taken from the keys themselves: if the two screens disagree, the line was altered.
      */
-    private void readPairing(String said,boolean scanned){readPairing(said,scanned,false);}
+    private void readPairing(String said,boolean scanned){readPairing(said,scanned,false,null);}
+    private void readPairing(String said,boolean scanned,boolean outside){readPairing(said,scanned,outside,null);}
 
     /**
      * @param outside opened from outside the app rather than read by the scanner in it. Scanning in here
      *                is somebody saying "this device"; a camera that opened the app on its own account is
      *                not, so nothing it brings is kept without being asked about first.
      */
-    private void readPairing(String said,boolean scanned,boolean outside) {
+    /**
+     * @param then where a plain code, once paired, leads instead of People and devices: the Share with box it was scanned
+     *             from, so the note being shared is not forgotten (the connect review, 2026-10-14); null for People
+     */
+    private void readPairing(String said,boolean scanned,boolean outside,Runnable then) {
         final Pairing.Said them;
         try{them=Pairing.read(said);}catch(IllegalArgumentException e){alert(e.getMessage());return;}
         if(scanned) {
-            if(them.offer.isEmpty()&&outside){pairOrAccept(them,"");return;}
-            if(them.offer.isEmpty()){keepPairing(them);return;}
-            pairOrAccept(them,"");
+            if(them.offer.isEmpty()&&outside){pairOrAccept(them,"",then);return;}
+            if(them.offer.isEmpty()){keepPairing(them,then);return;}
+            pairOrAccept(them,"",then);
             return;
         }
         // Pasted, or a link from somewhere else: taken as a scanned code is (the owner, 2026-10-02: a pasted code that asked
         // for six digits the other phone never showed was a dead end). What a paste cannot prove - that nothing changed
         // it on the way - is said, with the six digits both phones show for each other under People and devices.
         background.submit(()->Envelope.code(keys().signing().getPublic(),Keys.publicKey(them.signing)),
-            digits->pairOrAccept(them,digits),e->alert("That line's keys could not be read. Nothing was saved."));
+            digits->pairOrAccept(them,digits,then),e->alert("That line's keys could not be read. Nothing was saved."));
     }
 
     /**
      * The one box for a code, scanned or pasted: pair with a device, or accept what somebody shares. A pasted one says so,
      * and the six digits to check: the same on both phones, under People and devices, means nothing came between them.
      */
-    private void pairOrAccept(final Pairing.Said them,String digits) {
+    private void pairOrAccept(final Pairing.Said them,String digits,final Runnable then) {
         String pasted=digits.isEmpty()?"":"\n\nPasted, not scanned. To be sure nobody changed it on the way, open People and devices"
             +" on both phones afterwards: each shows six digits for the other, and they must be the same. Here: "+digits+".";
         if(them.offer.isEmpty()) {
-            new Box().setTitle("Pair with "+them.name+"?").setMessage("It will be able to share notes with this phone."+pasted)
-                .setPositiveButton("Pair",(d,w)->keepPairing(them)).show();
+            new Box().setTitle("Add "+them.name+"?").setMessage("It will be able to share notes with this phone."+pasted)
+                .setPositiveButton("Pair",(d,w)->keepPairing(them,then)).show();
             return;
         }
         new Box().setTitle(them.name+" is sharing with you")
             .setMessage(Sharing.shown(them.offer)+"\n\n"+them.level.words()+": "+them.level.does()
                 +(them.writes?" What you write goes back to them.":" Writing in it stays on this phone.")
                 +"\n\n"+"It will appear on Home when it arrives."+pasted)
-            .setPositiveButton("Accept",(d,w)->keepPairing(them))
+            .setPositiveButton("Accept",(d,w)->keepPairing(them,then))
             .show();
     }
 
@@ -6447,7 +7365,7 @@ public final class MainActivity extends Activity {
      * Wi-Fi: said so, with the one way to reach them offered there and then - helpers, switched on, and the pairing
      * finished (the owner, 2026-10-02: "make sure we can share with everybody"). Not now, and it is kept, and told again.
      */
-    private void helpersFor(final Pairing.Said said) {
+    private void helpersFor(final Pairing.Said said,final Runnable then) {
         new Box().setTitle(said.name+" is on another network")
             .setMessage("This phone sends notes only between your devices, on the same Wi-Fi, so it cannot reach "+said.name
                 +". Helpers can: relays that pass sealed notes on, which they cannot read. Their phone needs them too, if it"
@@ -6455,23 +7373,25 @@ public final class MainActivity extends Activity {
             .setPositiveButton("Use helpers",(d,w)->{
                 final int job=busy("Connecting to your relays\u2026");
                 background.submit(()->{Node.onlyMine(this,false);return null;},
-                    done->{busyDone(job,"Helpers carry notes when needed now");keepPairing(said);},
+                    done->{busyDone(job,"Helpers carry notes when needed now");keepPairing(said,then);},
                     e->busyDone(job,"That could not be changed"));
             })
             .setNegativeButton("Not now",(d,w)->toast(said.name+" is saved. This phone tells them again each time it is opened."))
             .show();
     }
 
-    private void keepPairing(Pairing.Said said) {
+    private void keepPairing(Pairing.Said said,final Runnable then) {
         final int job=busy("Saving "+said.name+"\u2026");
         final String[] unreached={null};
         // A code from another network, while notes go only between the owner's devices: saved, and said plainly.
         final boolean[] elsewhere={false};
         network.submit(()->{
-            // Only a code offering everything - "Connect my other device" - is one of the owner's own devices;
+            // Only a code offering everything - "Add my device" - is one of the owner's own devices;
             // anybody else's code, or a plain one, is somebody until the switch in People says otherwise.
             boolean own=Sharing.Scope.LIBRARY.name().equals(said.scope);
             store.pairedWith(said.address,said.name,own,said.agreement,said.signing);
+            // Scanning their code is wanting them: ignoring them before is forgotten.
+            Invites.unignore(this,said.signing);
             if(own)store.setMine(said.address,true);
             // And introduce the two nodes, so what was scanned is the last address either of them has to
             // be told by hand. A failure here is not a failure to pair: the keys are saved either way, and
@@ -6494,7 +7414,7 @@ public final class MainActivity extends Activity {
                 store.acceptingOffer(said.address,said.offer);
                 // An earlier copy of it put in the bin or the archive here comes back out: accepting is wanting it.
                 if(!said.target.isEmpty())store.acceptedBack(said.address,said.target);
-                busySay(job,said.target.isEmpty()?"Telling "+said.name+" you paired\u2026":"Telling "+said.name+" you accepted\u2026");
+                busySay(job,said.target.isEmpty()?Say.t("Asking {0} to accept\u2026",said.name):"Telling "+said.name+" you accepted\u2026");
                 // Not reaching them is not a failure to pair, and is not reported as one: it used to land
                 // in "Could not save that device. Nothing was changed.", after the device had been saved.
                 // What was accepted is kept, and said again every time this opens until they answer.
@@ -6507,12 +7427,14 @@ public final class MainActivity extends Activity {
             background.submit(()->{Listening.settle(this);return null;},settled->askToSaySo(),e->{});
             if(elsewhere[0]) {
                 busyDone(job,null);
-                helpersFor(said);
+                helpersFor(said,then);
                 return;
             }
             if(said.offer.isEmpty()){
-                busyDone(job,unreached[0]!=null?"Paired. "+said.name+" is told when it is next reachable":"Paired. "+said.name+" is asked to pair back");
-                addressBook();return;
+                busyDone(job,unreached[0]!=null?Say.t("Added. {0} is asked when it is next reachable",said.name):Say.t("Waiting for {0} to accept",said.name));
+                // Back to what it was scanned for, where it was a Share with box: they are in its list now, to be given it.
+                if(then!=null)then.run();else addressBook();
+                return;
             }
             if(unreached[0]!=null) {
                 busyDone(job,null);
@@ -6551,6 +7473,67 @@ public final class MainActivity extends Activity {
      */
     String thisDevice(){return Node.deviceHere(this);}
 
+    /** What this phone is called in People and devices (decision 124). */
+    Called.Choice deviceName() {
+        android.content.SharedPreferences kept=getSharedPreferences("settings",MODE_PRIVATE);
+        return new Called.Choice(thisDevice(),kept.getString(Called.PREF_PICKED,""),kept.getInt(Called.PREF_SHOW,0)==1,kept.getInt(Called.PREF_HERE,0)==1);
+    }
+
+    /** The name this phone shows for itself: the one we pick where that was chosen, otherwise the one it shares. */
+    String deviceShown(){Called.Choice name=deviceName();return Called.display(name.shared,name.picked,name.showOurs);}
+
+    /**
+     * The name we pick for somebody, and which name is shown, kept here and sent to every device of ours unless it stays
+     * on this phone (decision 124). All my devices is the choice {@code onlyHere} false stands for.
+     */
+    void saveCalled(final NoteStore.Contact who,final String picked,final boolean showOurs,final boolean onlyHere,final Runnable after) {
+        final int job=busy("Saving the name…");
+        final long now=System.currentTimeMillis();
+        background.submit(()->{
+            store.setCalled(who.address,picked,showOurs,onlyHere,now);
+            List<String> to=new ArrayList<>();
+            if(!onlyHere)for(NoteStore.Contact one:store.addresses())if(one.mine&&one.paired())to.add(one.address);
+            return to;
+        },to->{
+            if(after!=null)after.run();refresh();
+            @SuppressWarnings("unchecked") List<String> own=(List<String>)to;
+            if(own.isEmpty()){busyDone(job,Called.said(Post.here(),new ArrayList<>(),new ArrayList<>(),new ArrayList<>()));return;}
+            busySay(job,"Sending to my devices…");
+            network.submit(()->Post.sendCalled(this,store,keys(),who.address,own,Post.here()),said->busyDone(job,said),
+                e->{busyDone(job,null);alert("Saved on this phone. Nothing was sent.");});
+        },e->{busyDone(job,null);alert(e instanceof IllegalStateException&&e.getMessage()!=null?e.getMessage()+" Nothing was changed.":"Could not save that name. Nothing was changed.");});
+    }
+
+    /** The same for this phone: the name it shares stays what your devices are told, and the name we pick is the one shown here. */
+    void saveThisCalled(final String picked,final boolean showOurs,final boolean onlyHere,final Runnable after) {
+        final int job=busy("Saving the name…");
+        final long now=System.currentTimeMillis();
+        final String ours=Called.clip(picked);
+        final boolean show=showOurs&&!ours.isEmpty();
+        background.submit(()->{
+            getSharedPreferences("settings",MODE_PRIVATE).edit().putString(Called.PREF_PICKED,ours).putInt(Called.PREF_SHOW,show?1:0)
+                .putInt(Called.PREF_HERE,onlyHere?1:0).putLong(Called.PREF_AT,now).apply();
+            List<String> to=new ArrayList<>();
+            if(!onlyHere)for(NoteStore.Contact one:store.addresses())if(one.mine&&one.paired())to.add(one.address);
+            return to;
+        },to->{
+            if(after!=null)after.run();
+            @SuppressWarnings("unchecked") List<String> own=(List<String>)to;
+            if(own.isEmpty()){busyDone(job,Called.said(Post.here(),new ArrayList<>(),new ArrayList<>(),new ArrayList<>()));return;}
+            busySay(job,"Sending to my devices…");
+            network.submit(()->Post.sendCalled(this,store,keys(),null,own,Post.here()),said->busyDone(job,said),
+                e->{busyDone(job,null);alert("Saved on this phone. Nothing was sent.");});
+        },e->{busyDone(job,null);alert("Could not save that name. Nothing was changed.");});
+    }
+
+    /** What this phone shares as its own name among your devices. Other people still see your name. */
+    void renameSharedDevice(final String said,final Runnable after) {
+        final String name=said==null?"":said.trim();
+        background.submit(()->{Node.chooseDevice(this,name);return null;},
+            done->{if(after!=null)after.run();toast(name.isEmpty()?"Back to the phone's own name":"Your devices call this one "+thisDevice());},
+            e->alert("Could not keep that. Nothing was changed."));
+    }
+
     private void keepYourName(String said) {
         final String name=said==null?"":said.trim();
         final int job=busy("Telling the network\u2026");
@@ -6584,7 +7567,7 @@ public final class MainActivity extends Activity {
             int paired=0,known=0;
             for(NoteStore.Contact contact:store.addresses()){known++;if(contact.paired())paired++;}
             int owed=store.owed(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING).size();
-            return new Object[]{said,known,paired,owed,keys().line(yourName(),said),Node.home(),Node.hereLines(this)};
+            return new Object[]{said,known,paired,owed,keys().line(yourName(),said),Node.home(),Node.hereLines(this),store.myParlons()};
         },ready->{
             final Object[] got=(Object[])ready;
             final String address=(String)got[0];
@@ -6604,6 +7587,8 @@ public final class MainActivity extends Activity {
             // Two names, each changed where it is: the one other people see, and the one your own devices
             // know this phone by. Until the first is chosen the phone's own name stands in, and it says so.
             final boolean chosen=Node.nameChosen(this);
+            // Your picture, big, first, where you have one (the owner, 2026-10-12: "it should be displayed on the profile page").
+            bigFace(body,body.getChildCount(),null);
             body.addView(part("Your name"));
             final TextView called=nameLine(yourName(),"Change your name");
             body.addView(called);
@@ -6615,6 +7600,22 @@ public final class MainActivity extends Activity {
                 body.addView(inkRow(Writers.ME),new LinearLayout.LayoutParams(-1,-2));
                 body.addView(under("Everybody sees your round, and your writing, in it."));
             }
+            // Your picture, on your round everywhere you are paired (decision 158).
+            body.addView(part("Your picture"));final String you=yourName()==null?"":yourName();
+            LinearLayout mine=new LinearLayout(this);mine.setGravity(Gravity.CENTER_VERTICAL);mine.setMinimumHeight(dp(64));
+            final View myFace=disc(you.isEmpty()?"?":new String(Character.toChars(you.codePointAt(0))).toUpperCase(java.util.Locale.ROOT),false);
+            mine.addView(myFace);
+            TextView pick=label("Choose a picture",READING,INK);mine.addView(pick,new LinearLayout.LayoutParams(0,-2,1));
+            mine.addView(label("\u203a",READING,MUTED));
+            mine.setBackgroundResource(touchFeedback());
+            mine.setOnClickListener(v->faceMenu(v,null,you));
+            wearFace(myFace,null);
+            body.addView(mine);
+            // Your Parlons! address, set once and sent by itself to your contacts (decision 147).
+            body.addView(part("Your Parlons! address"));
+            final String myParlons=(String)got[7];
+            body.addView(row(myParlons.isEmpty()?"Not set":Parlons.shortened(myParlons),myParlons.isEmpty()?"Set it":"Change",()->{if(over[0]!=null)over[0].dismiss();myParlonsBox();}));
+            body.addView(under("Your contacts get it by themselves, so they can chat with you in one tap."));
             body.addView(part("This device"));
             final TextView device=nameLine(thisDevice(),"Change what your devices call this phone");
             body.addView(device);
@@ -6666,13 +7667,15 @@ public final class MainActivity extends Activity {
             // As the PC's Profile has them. The code that offers the whole pad is the one that makes two devices one owner's at
             // both ends; it was the Everything card of the old shelves, and went with them (docs/HOME.md, decision 27).
             final AlertDialog[] up={null};
+            // One way in to people and devices, managed in their own place (decision 202).
             body.addView(part("People and devices"));
-            body.addView(tapRow("Connect my other device…",()->{if(up[0]!=null)up[0].dismiss();shareSheet(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,"Everything");}));
-            body.addView(tapRow("From another device…",()->{if(up[0]!=null)up[0].dismiss();addFromSomeone();}));
             // Over this box, which is still here when that one is closed (decision 103: always a way back).
-            body.addView(tapRow("People and devices",()->{if(backTo!=null){if(over[0]!=null)over[0].dismiss();}else addressBook();}));
-            body.addView(part("Help request"));
-            body.addView(tapRow("Help request\u2026",this::helpRequestSetup));
+            body.addView(tapRow("Manage…",()->{if(backTo!=null){if(over[0]!=null)over[0].dismiss();}else addressBook();}));
+            // Integritas, all of it in one place (decision 203): the account and everything stamped.
+            body.addView(part("Integritas"));
+            // The API key typed here, as the Parlons! address could be, and sent to the owner's own devices chosen (decision 210).
+            final LinearLayout integritas=column();body.addView(integritas);integritasPart(integritas);
+            // The help request is no longer here, in plain sight: it is set inside a private space alone (decision 201).
             body.addView(under("Send your location to people you choose the moment a note or folder you set opens. For when you may be in danger."));
             body.addView(part("BACKUP"));
             body.addView(under("One file holding every folder, note and attachment on this phone."));
@@ -6683,7 +7686,7 @@ public final class MainActivity extends Activity {
             both.addView(pill("Import",()->pick(IMPORT)),new LinearLayout.LayoutParams(0,-2,1f));
             body.addView(both);
 
-            final AlertDialog box=new Box().setTitle("Profile")
+            final AlertDialog box=new Box().setTitle("My profile")
                 .setView(scrolling(body)).create();
             up[0]=box;over[0]=box;
             // Left as it was, a name is not chosen again: that would say it was decided now, on every device.
@@ -6741,6 +7744,47 @@ public final class MainActivity extends Activity {
     /** The quiet line under something, saying what it is. One indent for all of them, so a page lines up. */
     private TextView selectable(TextView words){words.setTextIsSelectable(true);return words;}
 
+    /**
+     * My profile's Integritas part: the API key in place, Save, and a switch for each of the owner's own paired devices that
+     * gets it, sealed for it, when Save is pressed (the owner, 2026-10-19; decision 210). What was stamped is in the menu.
+     */
+    private void integritasPart(final LinearLayout into) {
+        background.submit(()->{List<NoteStore.Contact> own=new ArrayList<>();for(NoteStore.Contact one:store.addresses())if(one.mine&&one.paired())own.add(one);
+            return new Object[]{store.secret(PhoneStamp.KEY),own};},got->{
+            into.addView(under("Stamp files and notes on the Minima blockchain through your own Integritas account, to prove later that they existed then, unchanged."));
+            final EditText key=field("Integritas API key",400);key.setText((String)got[0]);
+            key.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            into.addView(key);
+            final TextView help=under("Paste the API key from your profile at integritas.technology. It is kept in your notebook on this phone, locked with it, and sent only to Integritas and to the devices you choose below.");
+            into.addView(help);
+            into.addView(tapRow("integritas.technology",()->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(Integritas.SITE)));}catch(Exception none){toast(Integritas.SITE);}}));
+            @SuppressWarnings("unchecked") final List<NoteStore.Contact> own=(List<NoteStore.Contact>)got[1];
+            // The devices it goes to, remembered, and one switched on gets the key at once (decision 223).
+            final java.util.Set<String> chosen=Post.keyGoesTo(this,PhoneStamp.KEY);
+            if(!own.isEmpty()) {
+                into.addView(under("Also on my devices"));
+                for(final NoteStore.Contact one:own)into.addView(switchRow(one.name,chosen.contains(one.address),on->{
+                    if(on)chosen.add(one.address);else chosen.remove(one.address);
+                    Post.keyGoesTo(this,PhoneStamp.KEY,chosen);
+                    if(on&&key.getText().toString().trim().length()>0)network.submit(()->Post.sendKey(this,store,keys(),PhoneStamp.KEY,java.util.Set.of(one.address)),said->toast(said.isEmpty()?Say.t("Sent"):said),e->{});
+                }));
+                into.addView(under("Those switched on receive the key, sealed for them, as soon as they are switched on and whenever it is saved."));
+            }
+            into.addView(tapRow("Save",()->{
+                final String typed=key.getText().toString().trim();
+                if(!typed.isEmpty()&&!Integritas.looksLikeAKey(typed)){help.setText(Say.t("That does not look like an Integritas API key."));return;}
+                final java.util.Set<String> to=new java.util.HashSet<>(chosen);
+                final int job=busy(Say.t(typed.isEmpty()?"Integritas is unlinked":"Integritas is linked"));
+                background.submit(()->{store.setSecret(PhoneStamp.KEY,typed);store.setSecret(PhoneStamp.KEY+".at",String.valueOf(System.currentTimeMillis()));return null;},done->{
+                    // Said in the middle of the screen (decision 218).
+                    if(to.isEmpty()){busyDone(job,null);PhoneStamp.notice(this,Say.t(typed.isEmpty()?"Integritas is unlinked":"Integritas is linked"));return;}
+                    busySay(job,Say.t("Sending to my devices…"));
+                    network.submit(()->Post.sendKey(this,store,keys(),PhoneStamp.KEY,to),said->busyDone(job,said),e->{busyDone(job,null);alert(READ_FAILED);});
+                },e->{busyDone(job,null);alert(READ_FAILED);});
+            }));
+        },e->{});
+    }
+
     TextView under(String said) {
         TextView t=label(said,QUIET,MUTED);
         // Explanations are read, and sometimes passed on: they can be held and copied.
@@ -6778,7 +7822,10 @@ public final class MainActivity extends Activity {
      *                screen, or null where pasting is not offered. It sits on this screen because being
      *                asked which of the two you meant, before you can do either, is the thing to avoid.
      */
-    private void scanning(final Consumer<String> said,final Runnable orPaste) {
+    private void scanning(final Consumer<String> said,final Runnable orPaste){scanning(said,orPaste,null);}
+
+    /** @param back where the back swipe, or a tap beside the camera, goes; null to close. */
+    private void scanning(final Consumer<String> said,final Runnable orPaste,final Runnable back) {
         if(!Lens.allowed(this)){Lens.ask(this);waitingToScan=true;waitingFor=said;waitingPaste=orPaste;return;}
         // Square, taken from whatever width it is actually given rather than a number decided in advance:
         // asking for a fixed size got a box the dialog then squeezed sideways, and a window that is not the
@@ -6793,6 +7840,7 @@ public final class MainActivity extends Activity {
         AlertDialog.Builder asking=new Box().setTitle("Scan their code").setView(body);
         if(orPaste!=null)asking.setNeutralButton("Paste instead",(d,w)->orPaste.run());
         final AlertDialog showing=asking.create();
+        if(back!=null)showing.setOnCancelListener(d->back.run());
         final Lens[] lens={null};
         showing.setOnDismissListener(d->{if(lens[0]!=null)lens[0].close();});
         lens[0]=new Lens(this,looking,read->{
@@ -6904,7 +7952,12 @@ public final class MainActivity extends Activity {
     private void openAddress(String address) {
         Uri where=Uri.parse(address);
         boolean mail="mailto".equalsIgnoreCase(where.getScheme());
-        if(mail&&started(new Intent(Intent.ACTION_SENDTO,where)))return;
+        // Which mail app writes it, asked each time (the owner, 2026-10-12: "when we click an email address we should be proposed
+        // the email app to use"): the phone's own chooser, listing every app that writes mail.
+        if(mail) {
+            Intent write=new Intent(Intent.ACTION_SENDTO,where);
+            if(!getPackageManager().queryIntentActivities(write,0).isEmpty()&&started(Intent.createChooser(write,Say.t("Write with"))))return;
+        }
         if(started(new Intent(Intent.ACTION_VIEW,where)))return;
         alert(mail?"No mail app on this phone offered to write to that address."
                   :"Nothing on this phone can open that address.");
@@ -7377,12 +8430,30 @@ public final class MainActivity extends Activity {
 
 
     void forgetAddress(NoteStore.Contact contact) {
+        // A person, not a device of mine: Remove this person (decision 163), off what was shared, told, then out of my people.
+        if(!contact.mine){removePerson(contact);return;}
         new Box().setTitle("Forget this address?").setMessage(contact.name+"\n\n"+contact.address
             +"\n\nAnything already shared with it stays shared; this only removes it from the list you pick from.")
             .setPositiveButton("Forget",(d,w)->background.submit(()->{store.removeAddress(contact.address);
                     // With nobody left to hear from there is nothing to stay up for.
                     Listening.settle(this);return null;},
                 done->{toast("Forgotten");addressBook();},e->alert("Could not change that."))).show();
+    }
+
+    /**
+     * Remove this person (decision 163: "off everything I shared with them, out of my people, and they are told; with a
+     * question"). What they have from a group stays the group's, said in the question.
+     */
+    private void removePerson(NoteStore.Contact who) {
+        new Box().setTitle(Say.t("Remove {0}?",who.name))
+            .setMessage(Say.t("{0} is taken off everything you shared with them, told so where they can be reached, and taken out of your people. What they already have stays with them. What they have through a group stays until you take them out of it.",who.name))
+            .setPositiveButton(Say.t("Remove"),(d,w)->{
+                final int job=busy(Say.t("Removing {0}…",who.name));
+                network.submit(()->Post.removePerson(this,store,keys(),who.address),off->{
+                    busyDone(job,off==0?Say.t("{0} is removed",who.name):Say.t("{0} is removed and taken off {1} things",who.name,String.valueOf(off)));
+                    Listening.settle(this);refresh();addressBook();
+                },e->{busyDone(job,null);alert("Could not change that.");});
+            }).setNegativeButton(Say.t("Cancel"),null).show();
     }
 
     // ---- who each element is shared with -----------------------------------------------------------------
@@ -7401,19 +8472,25 @@ public final class MainActivity extends Activity {
      * code, and a way to copy it. Who already has what is a list, and a list is not what you are holding a
      * phone up for - it lives on its own row in the menu.
      */
-    void shareSheet(final Sharing.Scope scope,final String target,final String name) {
+    void shareSheet(final Sharing.Scope scope,final String target,final String name){shareSheet(scope,target,name,null);}
+
+    /** @param back where the back swipe, or a tap beside the code, goes: the box it was opened from; null to close. */
+    void shareSheet(final Sharing.Scope scope,final String target,final String name,final Runnable back) {
         if(scope==null)return;
         final String offer=Sharing.travelling(scope,name);
-        withAddress(()->drawShareCode(scope,target,name,offer));
+        withAddress(()->drawShareCode(scope,target,name,offer,back));
     }
 
     private void drawShareCode(final Sharing.Scope scope,final String target,final String name,
-                               final String offer) {
+                               final String offer,final Runnable back) {
         background.submit(()->{
             String said=getSharedPreferences("settings",MODE_PRIVATE).getString("address","");
             // Only what this phone may give: the owner Admin, Can write or Can read; an admin the last two.
             List<Sharing.Level> may=store.mayGive(scope,target);
             if(may.isEmpty())throw new IllegalStateException("Only its owner or an admin can share this.");
+            // Add my device: everything, Can write or only Can read; never Admin, which says nothing between one owner's
+            // devices (decision 163: "it might have a reason to only read").
+            if(scope==Sharing.Scope.LIBRARY){List<Sharing.Level> mine=new ArrayList<>();for(Sharing.Level one:may)if(one==Sharing.Level.WRITE||one==Sharing.Level.READ)mine.add(one);if(!mine.isEmpty())may=mine;}
             // What was offered last, where it may be given; else Can write, else Can read.
             if(!may.contains(offerLevel))offerLevel=may.contains(Sharing.Level.WRITE)?Sharing.Level.WRITE:may.contains(Sharing.Level.READ)?Sharing.Level.READ:may.get(0);
             // Remembered with the time it went up: whoever scans it in the next quarter of an hour is
@@ -7427,11 +8504,11 @@ public final class MainActivity extends Activity {
             LinearLayout body=inside();
             // The one thing to decide, first (decision 91): the roles this phone may give, each over what it lets them do.
             // Choosing redraws the code, because the code is what carries it.
-            TextView ask=label("Rights",QUIET,MUTED);ask.setPadding(0,0,0,dp(4));
+            TextView ask=label(scope==Sharing.Scope.LIBRARY?"What it may do":"Rights",QUIET,MUTED);ask.setPadding(0,0,0,dp(4));
             body.addView(ask);
             final AlertDialog[] box={null};
             for(final Sharing.Level one:may)
-                body.addView(levelPick(one,one==offerLevel,()->{offerLevel=one;if(box[0]!=null)box[0].dismiss();shareSheet(scope,target,name);}));
+                body.addView(levelPick(one,one==offerLevel,()->{offerLevel=one;if(box[0]!=null)box[0].dismiss();shareSheet(scope,target,name,back);}));
             View gap=new View(this);body.addView(gap,new LinearLayout.LayoutParams(1,dp(12)));
             body.addView(codeView(line));
             // What this phone is doing while the code is up, which is waiting - and it says when it stops.
@@ -7455,7 +8532,7 @@ public final class MainActivity extends Activity {
                     if(box[0]!=null)box[0].dismiss();
                     final int job=busy("Connecting to your relays\u2026");
                     background.submit(()->{Node.onlyMine(this,false);return null;},
-                        done->{busyDone(job,"Helpers carry notes when needed now");shareSheet(scope,target,name);},
+                        done->{busyDone(job,"Helpers carry notes when needed now");shareSheet(scope,target,name,back);},
                         e->busyDone(job,"That could not be changed"));
                 }));
             }
@@ -7463,13 +8540,15 @@ public final class MainActivity extends Activity {
             // focus, and the code's top corners went under the title, where no camera can read them (seen 2026-10-02).
             ScrollView up=scrolling(body);
             up.setDescendantFocusability(android.view.ViewGroup.FOCUS_BEFORE_DESCENDANTS);up.setFocusableInTouchMode(true);
-            box[0]=new Box().setTitle("Share "+Sharing.shortly(scope,name)).setView(up)
+            box[0]=new Box().setTitle(scope==Sharing.Scope.LIBRARY?Say.t("Add my device"):"Share "+Sharing.shortly(scope,name)).setView(up)
                 .setNeutralButton("Add someone",(d,w)->typeAddress(scope,target,name))
                 .setPositiveButton("Copy",(d,w)->{
                     ClipboardManager board=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
                     if(board!=null)board.setPrimaryClip(ClipData.newPlainText("Mininotes",line));
                     toast("Code copied");
-                }).show();
+                })
+                // Back, by the swipe or a tap beside it: to the box it was opened from, not out of sharing altogether.
+                .setOnCancelListener(d->{if(back!=null)back.run();}).show();
         },e->alert(e instanceof IllegalStateException?e.getMessage():"Could not prepare this device's keys. Nothing was changed."));
     }
 
@@ -7541,9 +8620,13 @@ public final class MainActivity extends Activity {
         }
         int wide=Math.min(dp(320),getResources().getDisplayMetrics().widthPixels-dp(32));
         down[0]=new android.widget.PopupWindow(scrolling(list),wide,-2,true);
+        // A window with no paper of its own does not take a tap: the tap falls through onto the Share box under it, so
+        // the roles are shown and none of them can be chosen (decision 120). The paper is what makes a tap land.
+        down[0].setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(CARD));
         down[0].setElevation(dp(8));
         down[0].setOutsideTouchable(true);
-        down[0].showAsDropDown(anchor,0,0,Gravity.END);
+        // Opened on the next beat, so the tap that asked for the list does not also count as a tap outside it.
+        anchor.post(()->{if(anchor.isAttachedToWindow()&&down[0]!=null)down[0].showAsDropDown(anchor,0,0,Gravity.END);});
     }
 
     /** A role that is not being changed here, on a tap: what it lets them do, in the same drop-down, to read. */
@@ -7557,9 +8640,11 @@ public final class MainActivity extends Activity {
         one.setBackground(ground);
         int wide=Math.min(dp(320),getResources().getDisplayMetrics().widthPixels-dp(32));
         android.widget.PopupWindow down=new android.widget.PopupWindow(one,wide,-2,true);
+        // The same paper as a role that can be changed: without it a tap falls through (decision 120).
+        down.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(CARD));
         down.setElevation(dp(8));down.setOutsideTouchable(true);
         one.setOnClickListener(v->down.dismiss());
-        down.showAsDropDown(anchor,0,0,Gravity.END);
+        anchor.post(()->{if(anchor.isAttachedToWindow())down.showAsDropDown(anchor,0,0,Gravity.END);});
     }
 
     /** A person's line whose role is only shown: a tap says what it lets them do. */
@@ -7642,7 +8727,8 @@ public final class MainActivity extends Activity {
                 // And whose Parlons! address is known, for what a person's line offers when held (decision 101).
                 parlonsBook=store.parlonsBook(),
                 // And who refused it, with their words (decision 109).
-                store.refusalsOn(kind,target)};
+                store.refusalsOn(kind,target),
+                store.waitsAcceptance(kind,target)};
         },found->drawShare(scope,target,name,found),e->alert(READ_FAILED));
     }
 
@@ -7708,6 +8794,7 @@ public final class MainActivity extends Activity {
         for(Object one:(List<?>)found[19])groupNames.put(((Groups.Group)one).id,((Groups.Group)one).name);
         // Who refused it when it was first shared with them, with their words (decision 109).
         final List<NoteStore.RefusedBy> refusedIt=(List<NoteStore.RefusedBy>)found[21];
+        final boolean accepting=(Boolean)found[22];
         // An admin of somebody else's thing may do with its people what its owner may.
         final boolean admin=mayDo!=null&&mayDo.shares();
         final int pause=(Integer)found[8];
@@ -7747,7 +8834,7 @@ public final class MainActivity extends Activity {
         TextView means=label(which==SyncMark.HERE?"Only on this phone"
             :which==SyncMark.PAUSED?"Paused \u00b7 not receiving"
             :which==SyncMark.WAITING?(uploading?"Uploading · it goes to them once it is up":"Waiting to send")
-            :which==SyncMark.SENT?"Sent · waiting for them to confirm"
+            :which==SyncMark.SENT?(accepting?"Sent · waiting for them to accept":"Sent · waiting for them to confirm")
             :which==SyncMark.STUCK?"A device has not been heard from for days":"Up to date",READING,INK);
         means.setPadding(dp(12),0,0,0);
         stands.addView(means);
@@ -7802,7 +8889,8 @@ public final class MainActivity extends Activity {
                     NoteStore.Contact them=null;
                     for(NoteStore.Contact one:known)if(one.address.equals(rule.address))them=one;
                     // An admin changes the people who write and read; the owner's admins are the owner's to change.
-                    if(owners.contains(rule.address))body.addView(person(roleShown(who,Sharing.OWNER,Sharing.OWNER_DOES),who,rule.address));
+                    if(them!=null&&them.mine)body.addView(person(ownDeviceRow(them),who,rule.address));
+                    else if(owners.contains(rule.address))body.addView(person(roleShown(who,Sharing.OWNER,Sharing.OWNER_DOES),who,rule.address));
                     else if(them!=null&&changes.contains(rule.address))body.addView(person(roleRow(scope,target,name,them,rule,0,give),who,rule.address));
                     else body.addView(person(roleShown(who,rule.level.words(),rule.level.does()),who,rule.address));
                 }
@@ -7817,7 +8905,8 @@ public final class MainActivity extends Activity {
                     final int behind=waiting.containsKey(contact.address)?waiting.get(contact.address):0;
                     // Through something that holds this, it is changed where it was given.
                     Sharing.Level reached=Boolean.TRUE.equals(reaching.get(contact.address))?Sharing.Level.WRITE:Sharing.Level.READ;
-                    if(owners.contains(contact.address))body.addView(person(roleShown(contact.name,Sharing.OWNER,Sharing.OWNER_DOES),contact.name,contact.address));
+                    if(contact.mine)body.addView(person(ownDeviceRow(contact),contact.name,contact.address));
+                    else if(owners.contains(contact.address))body.addView(person(roleShown(contact.name,Sharing.OWNER,Sharing.OWNER_DOES),contact.name,contact.address));
                     else if(rule==null)body.addView(person(roleShown(contact.name,reached.words(),reached.does()),contact.name,contact.address));
                     else body.addView(person(roleRow(scope,target,name,contact,rule,behind,give),contact.name,contact.address));
                 }
@@ -7900,6 +8989,9 @@ public final class MainActivity extends Activity {
     void closeShareBox(){if(shareBox!=null&&shareBox.isShowing())shareBox.dismiss();}
 
     /** Somebody, rather than something to do: the line begins with the round initial a phone gives a person. */
+    /** A line that is a person: the round, and nothing that opens a page. */
+    View personLook(View line,String name){return person(line,name);}
+
     private View person(View line,String name) {
         String called=name==null?"":name.trim();
         String first=called.isEmpty()?"?":new String(Character.toChars(called.codePointAt(0)))
@@ -7918,8 +9010,17 @@ public final class MainActivity extends Activity {
         round.setContentDescription("Colour of "+(name==null?"":name.trim()));
         // In their colour, as their round under a note's title is: two people with the same initial are told apart by it.
         background.submit(()->{Writers.Palette now=store.palette();return now.colourOf(address==null?Writers.ME:store.writerOf(address));},
-            colour->wear(round,(Integer)colour),e->{});
-        round.setOnClickListener(v->inkBox(name,null,address));
+            colour->{wear(round,(Integer)colour);wearFace(round,address);},e->{});
+        round.setOnClickListener(v->{
+            if(address==null){inkBox(name,null,null);return;}
+            Sheet sheet=new Sheet();sheet.heading(name==null?"":name.trim());
+            bigFace(sheet.body(),1,address);
+            sheet.row("Picture…",()->faceMenu(v,address,name==null?"":name.trim()));
+            sheet.row((name==null?"Their":name.trim()+"'s")+" page…",()->people().openPerson(address,name==null?"":name.trim()));
+            parlonsRows(sheet,address);
+            sheet.row("Writing colour…",()->inkBox(name,null,address));
+            sheet.show(v);
+        });
         // Held, the line offers the same; a line that says what they may do has its own menu already (see roleRow).
         if(!line.isLongClickable())line.setOnLongClickListener(v->{
             if(address==null)heldMenu(v,null,"Writing colour",(Runnable)()->inkBox(name,null,address));
@@ -7939,17 +9040,19 @@ public final class MainActivity extends Activity {
     void inkBox(final String name,final String standing,final String address) {
         background.submit(()->new Object[]{address==null?Writers.ME:store.writerOf(address),store.palette(),address==null?"":store.parlons(address)},got->{
             palette=(Writers.Palette)got[1];
-            final boolean reaches=!((String)got[2]).isEmpty();
             final String writer=(String)got[0];
             final boolean you=Writers.ME.equals(palette.person(writer));
             LinearLayout body=inside();
-            body.addView(label(you?"Your colour, which everybody sees":"Their colour, on this phone",QUIET,MUTED),new LinearLayout.LayoutParams(-1,-2));
-            body.addView(inkRow(writer),new LinearLayout.LayoutParams(-1,-2));
+            // One of your own devices writes as you: its colour is yours, set in Profile, not on its round, where it changed every
+            // one of your devices' rounds at once (the owner, 2026-10-17: "it changes colors of both").
+            if(you&&address!=null)body.addView(label("One of your devices. It writes in your colour, which you set in Profile.",QUIET,MUTED),new LinearLayout.LayoutParams(-1,-2));
+            else {
+                body.addView(label(you?"Your colour, which everybody sees":"Their colour, on this phone",QUIET,MUTED),new LinearLayout.LayoutParams(-1,-2));
+                body.addView(inkRow(writer),new LinearLayout.LayoutParams(-1,-2));
+            }
             Box box=new Box();box.setTitle(name==null||name.trim().isEmpty()?"A paired device":name.trim());
             if(standing!=null&&!standing.isEmpty())box.setMessage(standing);
-            // Contact on Parlons!, the one button (the owner, 2026-10-05; decision 101); where their address is not known,
-            // it asks for it, in the box People and devices opens on their card.
-            if(address!=null&&!you)box.setPositiveButton(reaches?Parlons.CONTACT:Parlons.ADD,(d,w)->contactOnParlons(address));
+            // No Parlons! here (the owner, 2026-10-17: "we don't need discuss on Parlons! here"): it is on their page.
             box.setView(body).show();
         },e->alert(READ_FAILED));
     }
@@ -7960,6 +9063,20 @@ public final class MainActivity extends Activity {
      * thing's colours is the paper; for anybody else, their own colour, the one every device gives them, set in a dot
      * of paper because it is theirs rather than a choice. A tap is the choice, kept on this phone and drawn at once.
      */
+    /**
+     * The colours somebody's writing can be drawn in, for their page (decision 185): the dots, chosen at once; for one of your
+     * own devices, which writes as you, a line saying it is your colour, set in Profile.
+     */
+    void inkRowFor(final String address,final java.util.function.Consumer<View> then) {
+        background.submit(()->new Object[]{store.writerOf(address),store.palette()},got->{
+            palette=(Writers.Palette)got[1];final String writer=(String)got[0];
+            LinearLayout box=column();
+            if(Writers.ME.equals(palette.person(writer)))box.addView(label("One of your devices. It writes in your colour, which you set in Profile.",QUIET,MUTED));
+            else{box.addView(label("Writing colour",QUIET,MUTED));box.addView(inkRow(writer),new LinearLayout.LayoutParams(-1,-2));}
+            then.accept(box);
+        },e->{});
+    }
+
     private View inkRow(final String writer) {
         final boolean you=Writers.ME.equals(palette.person(writer));
         final String who=you?Writers.ME:palette.person(writer);
@@ -8031,6 +9148,112 @@ public final class MainActivity extends Activity {
             }).show();
     }
 
+    // ---- a person's picture on their round (decision 158) -----------------------------------------------------------
+
+    /** A picture drawn into a round, cut to the circle: a person's face where their initial was. */
+    static final class RoundPicture extends android.graphics.drawable.Drawable {
+        private final android.graphics.Bitmap picture;private final android.graphics.Paint paint=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG|android.graphics.Paint.FILTER_BITMAP_FLAG);
+        private final boolean round;private final float corner;
+        RoundPicture(android.graphics.Bitmap picture,boolean round,float corner){this.picture=picture;this.round=round;this.corner=corner;}
+        @Override public void draw(android.graphics.Canvas canvas) {
+            android.graphics.Rect b=getBounds();if(b.isEmpty())return;
+            android.graphics.BitmapShader shader=new android.graphics.BitmapShader(picture,android.graphics.Shader.TileMode.CLAMP,android.graphics.Shader.TileMode.CLAMP);
+            float scale=Math.max(b.width()/(float)picture.getWidth(),b.height()/(float)picture.getHeight());
+            android.graphics.Matrix m=new android.graphics.Matrix();m.setScale(scale,scale);
+            m.postTranslate(b.left+(b.width()-picture.getWidth()*scale)/2f,b.top+(b.height()-picture.getHeight()*scale)/2f);
+            shader.setLocalMatrix(m);paint.setShader(shader);
+            if(round)canvas.drawOval(new android.graphics.RectF(b),paint);else canvas.drawRoundRect(new android.graphics.RectF(b),corner,corner,paint);
+        }
+        @Override public void setAlpha(int alpha){paint.setAlpha(alpha);}
+        @Override public void setColorFilter(android.graphics.ColorFilter filter){paint.setColorFilter(filter);}
+        @Override public int getOpacity(){return android.graphics.PixelFormat.TRANSLUCENT;}
+    }
+
+    /** The picture bytes as a bitmap, or null. */
+    static android.graphics.Bitmap faceBitmap(byte[] bytes) {
+        if(bytes==null||bytes.length==0)return null;
+        try{return android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.length);}catch(RuntimeException unreadable){return null;}
+    }
+
+    /** A round wearing the person's picture, where they have one here; their initial stays where they have none. Null: you. */
+    /**
+     * The rounds and big pictures on the screen now, with whose they are and how a round looked before: drawn again the
+     * moment a picture is set or taken off (the owner, 2026-10-12: "when we remove a profile picture it should be reflected
+     * right away, not that we have to close the menu and reopen"). Each is {view, address, its look before or its box, place}.
+     */
+    private final java.util.List<Object[]> facesShown=new java.util.ArrayList<>();
+    private void showingFace(Object[] one) {
+        for(Object[] was:facesShown)if(was[0]==one[0])return;
+        facesShown.add(one);
+    }
+    void wearFace(final View round,final String address) {
+        if(store==null)return;
+        showingFace(new Object[]{round,address,round.getBackground(),round instanceof TextView said?said.getText():null});
+        background.submit(()->faceBitmap(store.faceOf(address)),picture->{
+            if(picture==null)return;
+            round.setBackground(new RoundPicture(picture,true,0));
+            if(round instanceof TextView said)said.setText("");
+        },e->{});
+    }
+
+    /**
+     * The person's picture in big, at the top of what a tap on their round opens (the owner, 2026-10-12: "when we click a
+     * contact we should see their picture in big"). Nothing where they have none. A tap shows it over everything.
+     */
+    void bigFace(final LinearLayout into,final int at,final String address) {
+        background.submit(()->faceBitmap(store.faceOf(address)),picture->{
+            if(picture==null)return;
+            View face=new View(this);face.setBackground(new RoundPicture(picture,false,dp(24)));
+            int side=Math.min(dp(220),Math.round(getResources().getDisplayMetrics().widthPixels*0.6f));
+            LinearLayout.LayoutParams place=new LinearLayout.LayoutParams(side,side);place.gravity=Gravity.CENTER_HORIZONTAL;place.setMargins(0,dp(8),0,dp(8));
+            face.setOnClickListener(v->wholeFace(picture));
+            face.setContentDescription("Picture");
+            into.addView(face,Math.min(at,into.getChildCount()),place);
+            showingFace(new Object[]{face,address,into,at});
+        },e->{});
+    }
+
+    /** A picture over everything, as big as the screen lets it; a tap anywhere puts it away. */
+    void wholeFace(android.graphics.Bitmap picture) {
+        android.app.Dialog over=new android.app.Dialog(this,android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        android.widget.ImageView shown=new android.widget.ImageView(this);
+        shown.setImageBitmap(picture);shown.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);shown.setBackgroundColor(0xFF000000);
+        shown.setOnClickListener(v->over.dismiss());shown.setContentDescription("Picture. Tap to close.");
+        over.setContentView(shown);over.show();
+    }
+
+    /** Picture…: choose one, or take off the one picked here. For you (null): yours, which goes to everybody paired. */
+    void faceMenu(View anchor,final String address,final String name) {
+        background.submit(()->new boolean[]{address==null?store.myFace()!=null:store.faceIsPickedHere(address)},has->{
+            if(has[0])heldMenu(anchor,null,"Choose a picture",(Runnable)()->picker().chooseFace(address,name),"Remove the picture",(Runnable)()->removeFace(address));
+            else picker().chooseFace(address,name);
+        },e->alert(READ_FAILED));
+    }
+    void removeFace(final String address) {
+        background.submit(()->{if(address==null)store.setMyFace(null);else store.setFaceHere(address,null);return null;},
+            done->{toast("Picture removed");faceChanged(address);},e->alert("Could not remove the picture. Nothing was changed."));
+    }
+    /** A picture set or taken off: yours goes to everybody paired; every screen that shows a round is drawn again. */
+    void faceChanged(String address) {
+        if(address==null)network.submit(()->Post.sendMyFace(this,store,keys(),true),done->{},e->{});
+        // What is on the screen now, a box included: each round as it was, then wearing the picture if there is one; each
+        // big picture taken away, and put back if there is one.
+        for(Object[] one:new java.util.ArrayList<>(facesShown)) {
+            View view=(View)one[0];
+            if(!view.isAttachedToWindow()){facesShown.remove(one);continue;}
+            if(!java.util.Objects.equals(one[1],address))continue;
+            if(one[2] instanceof LinearLayout into) {
+                facesShown.remove(one);into.removeView(view);bigFace(into,(Integer)one[3],address);
+            } else {
+                view.setBackground((android.graphics.drawable.Drawable)one[2]);
+                if(view instanceof TextView said&&one[3]!=null)said.setText((CharSequence)one[3]);
+                wearFace(view,address);
+            }
+        }
+        refresh();
+        if(active!=null&&!shelves)askWhatIsOwed();
+    }
+
     /** A person's round washed in their colour, the initial in it in ink that reads on it; left as it is for no colour. */
     private void wear(View round,int colour) {
         if(!Tint.known(colour)||!(round instanceof TextView))return;
@@ -8052,6 +9275,24 @@ public final class MainActivity extends Activity {
         size.setMargins(0,0,dp(12),0);
         round.setLayoutParams(size);
         return round;
+    }
+
+    /**
+     * One of my own devices on a Share box: what it may do with everything, Can write or Can read, changed here, or its bond
+     * ended with Remove (the owner, 2026-10-17: "Owner should be in a dropdown ... the possibility to remove someone";
+     * decision 189). One with no bond yet is given one at what is chosen.
+     */
+    private View ownDeviceRow(final NoteStore.Contact device) {
+        Sharing.Rule found=null;
+        for(Sharing.Rule rule:store.shares())if(rule.scope==Sharing.Scope.LIBRARY&&rule.address.equals(device.address)&&rule.level!=Sharing.Level.GONE)found=rule;
+        final Sharing.Rule bond=found;
+        final Sharing.Level now=bond==null?Sharing.Level.WRITE:bond.level;
+        java.util.function.Consumer<Sharing.Level> set=to->background.submit(()->{
+            if(bond==null){if(to!=Sharing.Level.GONE)store.give(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,device.address,to,device.name);}
+            else store.decide(bond,to,System.currentTimeMillis());return null;
+        },done->{toast(Say.t("Access updated"));refresh();network.submit(()->Post.send(this,store,keys(),NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING),v->{},e->{});},e->alert("Could not change that. Nothing was changed."));
+        return roleRow(device.name,now.words(),now,java.util.List.of(Sharing.Level.WRITE,Sharing.Level.READ),set,()->set.accept(Sharing.Level.GONE),
+            ()->inkBox(device.name,null,device.address),device.address);
     }
 
     /** One person and what they may do, which drops down to the roles this phone may give them. */
@@ -8077,10 +9318,16 @@ public final class MainActivity extends Activity {
         entry.setGravity(Gravity.CENTER_VERTICAL);
         entry.setMinimumHeight(dp(52));
         entry.setPadding(0,dp(6),0,dp(6));
-        entry.addView(label(left,READING,INK),new LinearLayout.LayoutParams(0,-2,1));
-        final TextView set=label(shown+"  \u25be",QUIET,MUTED);
-        set.setPadding(dp(12),dp(8),0,dp(8));set.setGravity(Gravity.END);
-        entry.addView(set);
+        // Its name on the left, and what it is set to with the ▾ that says it drops down on the right, on one line, where a
+        // switch row has its switch (the owner, 2026-10-18: "we have to better align the Things stay, one hour here"; decision
+        // 157 kept: ▾ is choose). Both in the middle of the row's height.
+        TextView name=label(left,READING,INK);
+        entry.addView(name,new LinearLayout.LayoutParams(0,-2,1));
+        final TextView set=label(shown+"  ▾",QUIET,MUTED);
+        set.setMaxLines(2);set.setEllipsize(TextUtils.TruncateAt.END);set.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);
+        set.setPadding(dp(12),0,0,0);
+        LinearLayout.LayoutParams right=new LinearLayout.LayoutParams(-2,-2);right.gravity=Gravity.CENTER_VERTICAL;
+        entry.addView(set,right);
         entry.setBackgroundResource(touchFeedback());
         entry.setContentDescription(left+", "+shown+". "+now.does()+" Tap to change.");
         // A role this phone may not give - an admin looking at somebody it made a reader, say - is still where the
@@ -8115,10 +9362,16 @@ public final class MainActivity extends Activity {
         entry.setGravity(Gravity.CENTER_VERTICAL);
         entry.setMinimumHeight(dp(52));
         entry.setPadding(0,dp(6),0,dp(6));
-        entry.addView(label(left,READING,INK),new LinearLayout.LayoutParams(0,-2,1));
-        final TextView set=label(shown+"  \u25be",QUIET,MUTED);
-        set.setPadding(dp(12),dp(8),0,dp(8));set.setGravity(Gravity.END);
-        entry.addView(set);
+        // Its name on the left, and what it is set to with the ▾ that says it drops down on the right, on one line, where a
+        // switch row has its switch (the owner, 2026-10-18: "we have to better align the Things stay, one hour here"; decision
+        // 157 kept: ▾ is choose). Both in the middle of the row's height.
+        TextView name=label(left,READING,INK);
+        entry.addView(name,new LinearLayout.LayoutParams(0,-2,1));
+        final TextView set=label(shown+"  ▾",QUIET,MUTED);
+        set.setMaxLines(2);set.setEllipsize(TextUtils.TruncateAt.END);set.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);
+        set.setPadding(dp(12),0,0,0);
+        LinearLayout.LayoutParams right=new LinearLayout.LayoutParams(-2,-2);right.gravity=Gravity.CENTER_VERTICAL;
+        entry.addView(set,right);
         entry.setBackgroundResource(touchFeedback());
         entry.setContentDescription(left+", "+shown+". Tap to change.");
         // What it says follows what was picked, where the box it is in is not drawn again for it.
@@ -8153,14 +9406,108 @@ public final class MainActivity extends Activity {
      * to press. It used to send at once and say nothing, and a mark that stayed amber after it left the owner asking why.
      */
     private void whatWaits(final NoteStore.Branch.Kind kind,final String id,final String name) {
-        background.submit(()->SyncStatus.waits(store,kind,id),said->{
-                Box box=new Box();box.setTitle(Waits.TITLE).setMessage(said);
+        background.submit(()->new Object[]{SyncStatus.waits(store,kind,id),SyncStatus.waitingThings(store,kind,id)},got->{
+                final String said=(String)got[0];
+                @SuppressWarnings("unchecked") final List<NoteStore.Branch> things=(List<NoteStore.Branch>)got[1];
+                // Who it waits for, then what, each a tap from being opened (the owner, 2026-10-14: "clicking the yellow arrow
+                // showing that something is not fully synced should give us the list of what they are").
+                LinearLayout body=inside();
+                body.addView(label(said,READING,INK));
+                final AlertDialog[] shown={null};
+                if(!things.isEmpty()) {
+                    body.addView(part("What waits"));
+                    for(final NoteStore.Branch one:things)body.addView(row(one.name==null||one.name.isBlank()?"Untitled":one.name,"",
+                        ()->{if(shown[0]!=null)shown[0].dismiss();goTo(one);}));
+                }
+                Box box=new Box();box.setTitle(Waits.TITLE).setView(scrolling(body));
                 // Where all that waits, waits for a device to be updated - "Ana's phone needs to update Mininotes to
                 // receive this" - sending changes nothing, so there is nothing to press: it is said, and put down.
                 if(!Looks.onlyUpdates(said))box.setPositiveButton(Waits.SEND,(d,w)->syncNow(kind,id,name));
-                box.show();
+                shown[0]=box.show();
             },
             e->syncNow(kind,id,name));
+    }
+
+    /**
+     * What is new here, each a tap from being opened: what "new" at the top of Home opens (the owner, 2026-10-14). Opening one
+     * is what makes it not new.
+     */
+    /**
+     * New: what arrived or changed and was not opened yet, each with what it is, whom it came from, when, and where it is,
+     * and Open, Show where it is and Mark as seen; Mark all as seen at its foot (decision 187, as on the PC).
+     */
+    void whatIsNew() {
+        background.submit(()->{
+            List<Object[]> out=new ArrayList<>();
+            for(NoteStore.Branch one:store.whatIsNew()) {
+                String who="",kind;long when=0;
+                if(one.kind==NoteStore.Branch.Kind.FILE) {
+                    NoteStore.Held held=store.file(one.id);
+                    kind=held==null?Say.t("File"):Say.t("File")+"  ·  "+Attachment.size(held.bytes);
+                    NoteStore.Standing standing=store.standing(one.id);
+                    if(standing!=null&&!standing.from.isEmpty()){who=standing.fromName;when=standing.at;}
+                    else if(held!=null)when=held.added;
+                } else {
+                    kind=Say.t("Note");
+                    NoteStore.Note n=store.get(one.id);
+                    if(n!=null){when=n.updated;if(!n.origin.isEmpty())who=store.nameFor(n.origin);}
+                }
+                StringBuilder place=new StringBuilder(Say.t("Home"));
+                List<String> path=one.kind==NoteStore.Branch.Kind.FILE?store.filePath(one.id):store.pathOf(one.id);
+                String folder=null;
+                for(String id:path){if(id.equals(one.id))continue;
+                    NoteStore.Note n=store.get(id);if(n!=null){place.append(" › ").append(n.heading());continue;}
+                    String name=store.collectionName(id);if(name!=null&&!name.isEmpty()){place.append(" › ").append(name);folder=id;}}
+                out.add(new Object[]{one,kind,who,when,place.toString(),folder});
+            }
+            return out;
+        },got->{
+            @SuppressWarnings("unchecked") final List<Object[]> items=(List<Object[]>)got;
+            LinearLayout body=inside();
+            final AlertDialog[] shown={null};
+            if(items.isEmpty())body.addView(label("Nothing is new.",READING,MUTED));
+            else body.addView(label("What arrived or changed since you last looked. Open it, see where it is, or mark it seen.",QUIET,MUTED));
+            final List<NoteStore.Branch> all=new ArrayList<>();
+            for(Object[] item:items) {
+                final NoteStore.Branch one=(NoteStore.Branch)item[0];all.add(one);
+                final String folder=(String)item[5];
+                LinearLayout card=column();card.setPadding(0,dp(14),0,dp(4));
+                TextView name=label(one.name==null||one.name.isBlank()?Say.t("Untitled"):one.name,READING,INK);name.setTypeface(name.getTypeface(),android.graphics.Typeface.BOLD);
+                card.addView(name);
+                StringBuilder said=new StringBuilder((String)item[1]);
+                if(!((String)item[2]).isEmpty())said.append("  ·  ").append(Say.t("from {0}",(String)item[2]));
+                if((Long)item[3]>0)said.append("  ·  ").append(shortWhen((Long)item[3]));
+                card.addView(label(said.toString(),QUIET,MUTED));
+                card.addView(label((String)item[4],QUIET,MUTED));
+                card.addView(tapRow("Open",()->{if(shown[0]!=null)shown[0].dismiss();openNewThing(one);}));
+                card.addView(tapRow("Show where it is",()->{if(shown[0]!=null)shown[0].dismiss();if(folder==null)homeScreen().go(0,0);else openCollection(folder);}));
+                final View seen=tapRow("Mark as seen",null);
+                seen.setOnClickListener(v->background.submit(()->{markSeen(one);return null;},done->{seen.setEnabled(false);seen.setAlpha(0.45f);toast(Say.t("Seen"));refresh();},e->{}));
+                card.addView(seen);
+                body.addView(card);
+            }
+            Box box=new Box();box.setTitle("New").setView(scrolling(body));
+            if(!items.isEmpty())box.setPositiveButton(Say.t("Mark all as seen"),(d,w)->background.submit(()->{for(NoteStore.Branch one:all)markSeen(one);return null;},done->{refresh();toast(Say.t("Nothing is new."));},e->{}));
+            box.setNegativeButton(Say.t("Close"),null);
+            shown[0]=box.show();
+        },e->alert(READ_FAILED));
+    }
+    /** No longer new: a file as opened, a note as seen. Blocking. */
+    private void markSeen(NoteStore.Branch one){if(one.kind==NoteStore.Branch.Kind.FILE)store.opened(one.id);else store.seen(one.id);}
+    /** Opened from New: a file as its card says (decision 181), a note as it is. */
+    private void openNewThing(NoteStore.Branch one){goTo(one);}
+
+    /** Temp's sync mark on its tile: the same ring as a folder's; amber, a tap says what waits; otherwise it syncs now. */
+    View placeMark(final NoteStore.Branch place,int px) {
+        final SyncMark which=place.standing;
+        Mark.PAPER_HOLE=PAPER;
+        Mark drawn=new Mark(which,inkOf(which));drawn.sized(px);
+        ImageView mark=new ImageView(this);
+        mark.setImageDrawable(drawn);mark.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        GradientDrawable disc=new GradientDrawable();disc.setShape(GradientDrawable.OVAL);disc.setColor(PAPER);mark.setBackground(disc);
+        mark.setContentDescription(which.said("this phone"));
+        mark.setOnClickListener(v->{if(which==SyncMark.WAITING)whatWaits(place.kind,place.id,place.name);else syncNow(place.kind,place.id,place.name);});
+        return mark;
     }
 
     private void syncNow(final NoteStore.Branch.Kind kind,final String id,final String name) {
@@ -8302,13 +9649,16 @@ public final class MainActivity extends Activity {
      * arrives is either a whole pairing line — an address and the keys to seal with — or a bare address,
      * and each is taken for what it is.
      */
-    void typeAddress(final Sharing.Scope scope,final String target,final String name) {
+    void typeAddress(final Sharing.Scope scope,final String target,final String name){typeAddress(scope,target,name,null);}
+
+    /** @param back where the back swipe, or a tap beside the camera, goes: the box it was opened from; null to close. */
+    void typeAddress(final Sharing.Scope scope,final String target,final String name,final Runnable back) {
         // Straight to the camera, with pasting offered on it. There used to be a card in the way first:
         // two sentences saying that a code can be scanned or pasted, and then a button for each - a screen
         // asking which of two things you meant before letting you do either, when one of them is the
         // camera and the camera is the answer almost every time. The paste is on the scanner, for anybody
         // who was sent a line in a message rather than shown a screen.
-        scanning(said->tookAddress(scope,target,name,said,true),()->pasted(scope,target,name));
+        scanning(said->tookAddress(scope,target,name,said,true),()->pasted(scope,target,name),back);
     }
 
     /**
@@ -8336,24 +9686,15 @@ public final class MainActivity extends Activity {
     private void tookAddress(final Sharing.Scope scope,final String target,final String name,String said,boolean scanned) {
         // The line, whether it was read as itself or as the link the code is dressed as.
         final String taken=Pairing.line(said);
-        if(taken.startsWith(Pairing.MARK)||taken.startsWith(Pairing.MARK_1)){readPairing(taken,scanned);return;}
-        if(taken.length()<8||taken.contains(" ")||taken.contains("\n")) {
-            alert("That does not look like a Minima address or a pairing code. Nothing was saved.");
+        // Scanned from a Share with box: once paired, back to it, so the thing being shared is not forgotten (the connect
+        // review, 2026-10-14: it only paired, and the note had to be shared again from the start). As the PC does.
+        if(taken.startsWith(Pairing.MARK)||taken.startsWith(Pairing.MARK_1)) {
+            readPairing(taken,scanned,false,scope==null?null:()->people().with(scope,target,name,true));
             return;
         }
-        // Saved as somebody else's, which is the careful way round; the list carries a toggle for the other.
-        final String called=taken.length()>8?taken.substring(0,8)+"…":taken;
-        keepAddress(scope,target,name,called,taken,false);
-    }
-
-    private void keepAddress(Sharing.Scope scope,String target,String name,String typedName,String typedAddress,boolean mine) {
-        final String address=typedAddress.trim();
-        final String called=typedName.trim().isEmpty()?(mine?"My device":"Contact"):typedName.trim();
-        // A blank or obviously wrong address is refused here rather than stored and silently never used.
-        if(address.length()<8||address.contains(" ")){alert("That does not look like a Minima address. Paste the whole address.");return;}
-        background.submit(()->{store.addAddress(address,called,mine);return null;},
-            done->{if(scope==null){toast("Saved");addressBook();}else saveShare(scope,target,name,address,mine);},
-            e->alert("Could not save that. Nothing was changed."));
+        // Anything else is not somebody: a bare address has no keys, so nothing could ever be sealed for it, and any other
+        // picture of a code (a web address, a ticket) was kept as a contact that could never be reached (the connect review).
+        alert("That is not a Mininotes code. Nothing was kept.");
     }
 
     /** One person's standing in one thing, set and sent. */
@@ -8373,17 +9714,6 @@ public final class MainActivity extends Activity {
                 sendAfterSharing(scope,target);
             },
             e->alert(e instanceof IllegalStateException?e.getMessage()+" Nothing was changed.":"Could not save that. Nothing was changed."));
-    }
-
-    private void saveShare(Sharing.Scope scope,String target,String name,String address,boolean mine) {
-        final Sharing.Rule rule=new Sharing.Rule(scope,target,address,mine);
-        background.submit(()->{store.give(scope,target,address,rule.level,null);return null;},
-            done->{
-                toast(mine?"Reads and writes it":"Reads it");
-                refresh();sharedWith(scope,target,name);
-                sendAfterSharing(scope,target);
-            },
-            e->alert("Could not save that. Nothing was changed."));
     }
 
     /**
@@ -8445,7 +9775,7 @@ public final class MainActivity extends Activity {
      */
     EditText field(String hint,int max) {
         EditText input=new EditText(this);
-        input.setHint(hint);input.setContentDescription(hint);input.setSingleLine(true);
+        input.setHint(Say.t(hint));input.setContentDescription(Say.t(hint));input.setSingleLine(true);
         input.setTextSize(Math.max(12,Math.round(READING*reading())));
         input.setTextColor(INK);input.setHintTextColor(MUTED);
         GradientDrawable box=new GradientDrawable();
@@ -8490,11 +9820,36 @@ public final class MainActivity extends Activity {
     final class Box extends AlertDialog.Builder {
         Box(){super(MainActivity.this);}
 
+        // Its words in the language chosen (decision 160), looked up by their English.
+        @Override public AlertDialog.Builder setTitle(CharSequence title){return super.setTitle(title==null?null:Say.t(title.toString()));}
+        @Override public AlertDialog.Builder setMessage(CharSequence message){return super.setMessage(message==null?null:Say.t(message.toString()));}
+        @Override public AlertDialog.Builder setPositiveButton(CharSequence text,android.content.DialogInterface.OnClickListener l){return super.setPositiveButton(text==null?null:Say.t(text.toString()),l);}
+        @Override public AlertDialog.Builder setNegativeButton(CharSequence text,android.content.DialogInterface.OnClickListener l){return super.setNegativeButton(text==null?null:Say.t(text.toString()),l);}
+        @Override public AlertDialog.Builder setNeutralButton(CharSequence text,android.content.DialogInterface.OnClickListener l){return super.setNeutralButton(text==null?null:Say.t(text.toString()),l);}
+
+        /** The first field to type in, in a box's views, or null. */
+        private EditText firstField(View in) {
+            if(in instanceof EditText field&&field.isEnabled()&&field.getVisibility()==View.VISIBLE)return field;
+            if(in instanceof android.view.ViewGroup group)for(int i=0;i<group.getChildCount();i++){EditText found=firstField(group.getChildAt(i));if(found!=null)return found;}
+            return null;
+        }
         /** Its words can be held and copied, like any text worth passing on. */
         @Override public AlertDialog show() {
             AlertDialog shown=super.show();
             TextView said=shown.findViewById(android.R.id.message);
             if(said!=null)said.setTextIsSelectable(true);
+            // A box with something to type in it opens with the keyboard up, on that field (the owner, 2026-10-12: "when we
+            // add a tab, the title is ready to be changed but the keyboard is not displayed").
+            EditText typing=shown.getWindow()==null?null:firstField(shown.getWindow().getDecorView());
+            if(typing!=null) {
+                shown.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+                typing.requestFocus();
+                typing.postDelayed(()->{
+                    if(!typing.isAttachedToWindow())return;
+                    InputMethodManager keys=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
+                    if(keys!=null)keys.showSoftInput(typing,0);
+                },150);
+            }
             return shown;
         }
 
@@ -8795,13 +10150,46 @@ public final class MainActivity extends Activity {
      */
     private void attach(){attach(holding(),holdingId());}
 
+    /**
+     * The phone's own camera, writing one picture that is then kept where it was asked for and deleted from the cache
+     * (decision 123). Nothing is kept if the photo is not taken.
+     */
+    private void takePhoto(NoteStore.Branch.Kind kind,String id) {
+        if(id==null||id.isEmpty()){toast("There is nothing here to keep a photo with.");attachingPlace=null;return;}
+        attachingTo=kind;attachingToId=id;
+        String name="Photo "+new java.text.SimpleDateFormat("yyyy-MM-dd HHmm",java.util.Locale.US).format(new java.util.Date())+".jpg";
+        try{Shot.prepare(this,name);}catch(java.io.IOException e){toast("The photo could not be started. Nothing was kept.");attachingPlace=null;return;}
+        Uri uri=Shot.of();
+        Intent take=new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+        take.putExtra(android.provider.MediaStore.EXTRA_OUTPUT,uri);
+        take.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        take.setClipData(android.content.ClipData.newRawUri(name,uri));
+        java.util.List<android.content.pm.ResolveInfo> who=getPackageManager().queryIntentActivities(take,android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+        if(who.isEmpty()){Shot.clear(this);attachingPlace=null;toast("There is no camera app on this phone.");return;}
+        for(android.content.pm.ResolveInfo one:who)
+            grantUriPermission(one.activityInfo.packageName,uri,Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        try{startActivityForResult(take,SHOT);}
+        catch(Exception none){Shot.clear(this);revokeUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);attachingPlace=null;toast("The camera could not be opened. Nothing was kept.");}
+    }
+
+    /** What the picker needs to take several files: said as it opens. */
+    static final String MANY_FILES="To pick several, hold the first one, then tap the others";
+
     /** The same, for a thing named outright: a collection's Add a file…, from its menu wherever it is opened. */
-    private void attach(NoteStore.Branch.Kind kind,String id) {
+    private void attach(NoteStore.Branch.Kind kind,String id){attach(kind,id,"*/*");}
+    /** Add photos…, on an album (decision 217): the phone's own picker, pictures only, several at once, kept in the folder. */
+    void addPhotos(String where){attachingPlace=null;attach(NoteStore.Branch.Kind.COLLECTION,where,"image/*");}
+    /** @param type what the picker offers: anything, or pictures only */
+    private void attach(NoteStore.Branch.Kind kind,String id,String type) {
         if(id==null||id.isEmpty()){toast("There is nothing here to keep a file with.");return;}
         // Which thing it is kept with is settled now, not when the picker comes back: by then the reader
         // may have walked somewhere else, and a file landing on the wrong thing is worse than none.
         attachingTo=kind;attachingToId=id;
-        startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*")
+        // Several at once, said as the picker opens: Android's picker takes one on a tap and closes, and takes several only when
+        // the first is held (the owner, 2026-10-14: "we can attach multiple files at once, not that the window closes as soon
+        // as we pick one item").
+        toast(MANY_FILES);
+        startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType(type)
             .addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true),ATTACH);
     }
 
@@ -8826,6 +10214,10 @@ public final class MainActivity extends Activity {
      *
      * @param refused lines for files already turned away before any copying, said with the rest
      */
+    /** Run once the copies have finished, then forgotten. A photo uses it to delete the cache copy (decision 123). */
+    private Runnable afterKeep;
+    private void ranAfter(){Runnable after=afterKeep;afterKeep=null;if(after!=null)try{after.run();}catch(RuntimeException ignored){}}
+
     void keepFiles(final NoteStore.Branch.Kind kind,final String what,final List<Uri> from,final List<String> refused) {
         keepFiles(kind,what,from,refused,null);
     }
@@ -8835,13 +10227,14 @@ public final class MainActivity extends Activity {
      *               them in the cell they were let go in (docs/HOME.md, decision 39) - or null
      */
     void keepFiles(final NoteStore.Branch.Kind kind,final String what,final List<Uri> from,final List<String> refused,final Consumer<List<String>> placed) {
-        if(what==null||what.isEmpty()||(from.isEmpty()&&refused.isEmpty()))return;
+        if(what==null||what.isEmpty()||(from.isEmpty()&&refused.isEmpty())){ranAfter();return;}
         final int job=from.isEmpty()?0:busy(Given.adding(from.size()));
         background.submit(()->{
             List<String> turned=new ArrayList<>(refused),ids=new ArrayList<>();String only=null;int kept=0;
             for(Uri one:from)try{NoteStore.Held held=keepOne(kind,what,one);only=held.name;ids.add(held.id);kept++;}catch(Refused no){turned.add(no.getMessage());}
             // Kept they are, whatever placing them says: failing, they stand in the first free cells.
             if(placed!=null&&!ids.isEmpty())try{placed.accept(ids);}catch(RuntimeException unplaced){/* kept, in the first free cells */}
+            ranAfter();
             return new Object[]{kept,only,turned};
         },done->{
             int kept=(Integer)done[0];
@@ -8850,7 +10243,7 @@ public final class MainActivity extends Activity {
             // On Home a file kept with Home or a collection is one of its icons, so Home is drawn again with it.
             if(kept>0){showFiles();filesChanged(kind,what);if(shelves)refresh();}
             if(!turned.isEmpty())alert(Given.refusals(turned));
-        },e->{if(job!=0)busyDone(job,"Could not add the files");alert("Could not keep those files. Nothing was changed.");});
+        },e->{ranAfter();if(job!=0)busyDone(job,"Could not add the files");alert("Could not keep those files. Nothing was changed.");});
     }
 
     /** One file copied into the pad's own folder, then its row. Returns it as it is kept: its id, and the name it is kept under. */
@@ -8922,9 +10315,9 @@ public final class MainActivity extends Activity {
         final String what=holdingId();
         if(what.isEmpty())return;
         background.submit(()->{
-            List<NoteStore.Held> held=store.filesReaching(kind,what);
+            List<NoteStore.Held> held=store.notAway(store.filesReaching(kind,what));
             java.util.Map<String,android.graphics.Bitmap> faces=new java.util.HashMap<>();
-            for(NoteStore.Held file:held)if(picture(file))try{android.graphics.Bitmap face=thumbnail(file);if(face!=null)faces.put(file.id,face);}catch(Exception unreadable){/* shown by its kind */}
+            for(NoteStore.Held file:held)if(picture(file)||Peek.previewed(file.name,file.kind,file.bytes))try{android.graphics.Bitmap face=thumbnail(file);if(face!=null)faces.put(file.id,face);}catch(Exception unreadable){/* shown by its kind */}
             // Where each of a note's own files is, while it is still going anywhere.
             java.util.Map<String,String> states=kind==NoteStore.Branch.Kind.PAGE?store.fileStates(what,Node.onlyMine(this)):new java.util.HashMap<String,String>();
             // How long each sound is, read from its own bytes, so the card says it before ▶ is pressed.
@@ -8932,13 +10325,17 @@ public final class MainActivity extends Activity {
             for(NoteStore.Held file:held)if(Recording.audio(file.name,file.kind)&&file.bytes<=Attachment.LIMIT)try{
                 ByteArrayOutputStream all=new ByteArrayOutputStream();PhoneLock.copyOut(store.fileFor(file.id),all);lengths.put(file.id,Recording.millis(all.toByteArray()));
             }catch(Exception unreadable){/* no length said */}
-            return new Object[]{held,faces,states,lengths};
+            // Which are stamped on Minima, and how far, for the mark on their cards (decision 224).
+            java.util.Map<String,NoteStore.StampRow> stamped=new java.util.HashMap<>();
+            for(NoteStore.Held file:held){List<NoteStore.StampRow> all=store.stampsOf(file.id);if(!all.isEmpty())stamped.put(file.id,all.get(0));}
+            return new Object[]{held,faces,states,lengths,stamped};
         },loaded->{
             if(attached==null||!what.equals(holdingId())||kind!=holding())return;
             @SuppressWarnings("unchecked") List<NoteStore.Held> held=(List<NoteStore.Held>)loaded[0];
             @SuppressWarnings("unchecked") java.util.Map<String,android.graphics.Bitmap> faces=(java.util.Map<String,android.graphics.Bitmap>)loaded[1];
             @SuppressWarnings("unchecked") java.util.Map<String,String> states=(java.util.Map<String,String>)loaded[2];
             @SuppressWarnings("unchecked") java.util.Map<String,Long> lengths=(java.util.Map<String,Long>)loaded[3];
+            @SuppressWarnings("unchecked") java.util.Map<String,NoteStore.StampRow> stamped=(java.util.Map<String,NoteStore.StampRow>)loaded[4];
             attached.removeAllViews();
             String going=null;boolean stillPlaying=false;
             for(NoteStore.Held file:held) {
@@ -8947,7 +10344,7 @@ public final class MainActivity extends Activity {
                 Long length=lengths.get(file.id);
                 // Borrowed is kept with something else: by its id, since a collection's own files and those of the
                 // collection it sits in are both a collection's, and the kind alone no longer tells them apart.
-                attached.addView(chip(file,file.held!=kind||!what.equals(file.note),faces.get(file.id),state,length==null?-1:length));
+                attached.addView(chip(file,file.held!=kind||!what.equals(file.note),faces.get(file.id),state,length==null?-1:length,stamped.get(file.id)));
                 if(file.id.equals(playingId))stillPlaying=true;
             }
             // A sound playing goes on while its card is drawn again; taken out, it stops.
@@ -8986,7 +10383,7 @@ public final class MainActivity extends Activity {
     void preview(final String file,final Consumer<android.graphics.Bitmap> then) {
         background.submit(()->{
             NoteStore.Held held=store.file(file);
-            return held!=null&&picture(held)?thumbnail(held):null;
+            return held!=null&&(picture(held)||Peek.previewed(held.name,held.kind,held.bytes))?thumbnail(held):null;
         },made->{if(made!=null){previews.put(file,made);then.accept(made);}},e->{});
     }
 
@@ -8996,11 +10393,53 @@ public final class MainActivity extends Activity {
         ByteArrayOutputStream bytes=new ByteArrayOutputStream();
         PhoneLock.copyOut(store.fileFor(file.id),bytes);
         byte[] all=bytes.toByteArray();
+        // A document: its first page, or its first words on a small page (decision 208).
+        if(!picture(file))return page(all,file);
         android.graphics.BitmapFactory.Options size=new android.graphics.BitmapFactory.Options();size.inJustDecodeBounds=true;
         android.graphics.BitmapFactory.decodeByteArray(all,0,all.length,size);
         int sample=1;while(size.outWidth/(sample*2)>=dp(150)&&size.outHeight/(sample*2)>=dp(80))sample*=2;
         android.graphics.BitmapFactory.Options small=new android.graphics.BitmapFactory.Options();small.inSampleSize=sample;
         return android.graphics.BitmapFactory.decodeByteArray(all,0,all.length,small);
+    }
+
+    /**
+     * A document's card face: a PDF's first page drawn by the phone's own PdfRenderer from a copy in this app's cache, deleted
+     * at once; anything else whose words can be read, those words on a small white page. Null where there is nothing to draw.
+     */
+    private android.graphics.Bitmap page(byte[] all,NoteStore.Held file) {
+        int w=dp(144),h=dp(76);
+        if(Peek.pdf(file.name,file.kind)) {
+            java.io.File copy=null;
+            try {
+                copy=java.io.File.createTempFile("peek",".pdf",getCacheDir());
+                try(java.io.FileOutputStream out=new java.io.FileOutputStream(copy)){out.write(all);}
+                try(android.os.ParcelFileDescriptor fd=android.os.ParcelFileDescriptor.open(copy,android.os.ParcelFileDescriptor.MODE_READ_ONLY);
+                    android.graphics.pdf.PdfRenderer pdf=new android.graphics.pdf.PdfRenderer(fd)) {
+                    if(pdf.getPageCount()==0)return null;
+                    try(android.graphics.pdf.PdfRenderer.Page first=pdf.openPage(0)) {
+                        int pw=w,ph=Math.max(1,Math.round((float)first.getHeight()*w/Math.max(1,first.getWidth())));
+                        android.graphics.Bitmap drawn=android.graphics.Bitmap.createBitmap(pw,ph,android.graphics.Bitmap.Config.ARGB_8888);
+                        drawn.eraseColor(android.graphics.Color.WHITE);
+                        first.render(drawn,null,null,android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
+                        android.graphics.Bitmap top=android.graphics.Bitmap.createBitmap(drawn,0,0,pw,Math.min(ph,h));
+                        return top;
+                    }
+                }
+            } catch(Throwable unreadable){return null;}
+            finally{if(copy!=null&&!copy.delete())copy.deleteOnExit();}
+        }
+        java.util.List<String> lines=Peek.lines(all,file.name,file.kind,7);
+        if(lines.isEmpty())return null;
+        android.graphics.Bitmap paper=android.graphics.Bitmap.createBitmap(w,h,android.graphics.Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas canvas=new android.graphics.Canvas(paper);canvas.drawColor(android.graphics.Color.WHITE);
+        android.graphics.Paint ink=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);ink.setColor(0xFF3C4043);ink.setTextSize(dp(8));
+        float x=dp(7),y=dp(6)-ink.ascent(),room=w-2*x;
+        for(String line:lines) {
+            String said=line;while(said.length()>1&&ink.measureText(said+"…")>room)said=said.substring(0,said.length()-1);
+            canvas.drawText(said.length()<line.length()?said+"…":said,x,y,ink);y+=ink.getFontSpacing();
+            if(y>h)break;
+        }
+        return paper;
     }
 
     /**
@@ -9011,7 +10450,10 @@ public final class MainActivity extends Activity {
      * it is kept, so it reads as borrowed rather than as one of this thing's own - and so that taking one
      * out is plainly a thing that happens somewhere else as well.
      */
-    private View chip(final NoteStore.Held file,final boolean fromAbove,final android.graphics.Bitmap face,final String going,final long length) {
+    /** The attachments drawn again as they stand: a stamp sent, landed or found shows on its file's card (decision 224). */
+    void filesAgain(){showFiles();}
+
+    private View chip(final NoteStore.Held file,final boolean fromAbove,final android.graphics.Bitmap face,final String going,final long length,final NoteStore.StampRow stamp) {
         LinearLayout chip=column();
         chip.setPadding(dp(8),dp(8),dp(4),dp(6));
         // What ▶ does, on a sound's card: its menu offers it wherever the card is held.
@@ -9060,6 +10502,13 @@ public final class MainActivity extends Activity {
         // Where it is, while it has not reached everybody the note is shared with: said small, in the accent,
         // and gone once it has.
         if(going!=null&&!going.isEmpty())words.addView(label(going,HEADING,ACCENT));
+        // Stamped on Minima: a small stamp before its name, saying how far, a tap on it opening the stamp's box (decision 224).
+        if(stamp!=null) {
+            View mark=new View(this);mark.setBackground(IconFace.symbol(this,"stamp",ACCENT));mark.setContentDescription(Integritas.noteLine(stamp,false));
+            mark.setOnClickListener(v->PhoneStamp.show(this,stamp.n()));
+            LinearLayout.LayoutParams small=new LinearLayout.LayoutParams(dp(18),dp(18));small.setMargins(0,0,dp(6),0);
+            foot.addView(mark,small);
+        }
         foot.addView(words,new LinearLayout.LayoutParams(0,-2,1));
         TextView cross=tap("\u00d7","Take "+file.name+" out",20,MUTED,v->askDropFile(file));
         cross.setPadding(dp(8),0,dp(8),0);
@@ -9069,6 +10518,7 @@ public final class MainActivity extends Activity {
         place.setMargins(dp(4),dp(2),dp(4),dp(8));
         chip.setLayoutParams(place);
         chip.setContentDescription("Open "+file.name+", "+Attachment.size(file.bytes)
+            +(stamp!=null?", "+Integritas.noteLine(stamp,false):"")
             +(fromAbove?", kept with a folder it is in":"")
             +(going!=null&&!going.isEmpty()?", "+going.toLowerCase(java.util.Locale.ROOT):""));
         chip.setOnClickListener(v->openFile(file));
@@ -9083,12 +10533,41 @@ public final class MainActivity extends Activity {
      * @param play what ▶ on a sound's card does, or null for a card that has none
      */
     private void fileMenu(View card,final NoteStore.Held file,Runnable play) {
+        // Its stamps and whether this phone may change it, read first, so each row says what it will do.
+        background.submit(()->new Object[]{store.stampsOf(file.id),store.mayChangeFile(file.id)},got->{
+            @SuppressWarnings("unchecked") List<NoteStore.StampRow> stamps=(List<NoteStore.StampRow>)got[0];
+            fileMenu(card,file,play,stamps.isEmpty()?null:stamps.get(0),(Boolean)got[1]);},e->alert(READ_FAILED));
+    }
+    /**
+     * Everything a file has elsewhere that an attachment can use (the owner, 2026-10-19: "A right click on an attachment should
+     * also bring as many functionalities as possible, including stamping on Minima. And the file should be marked as stamped
+     * when done, and all the details should be accessible again from the right click"; decision 224), each Home's file menu's
+     * own: its stamp first where it has one, opening the stamp's box.
+     */
+    private void fileMenu(View card,final NoteStore.Held file,Runnable play,NoteStore.StampRow stamp,boolean changes) {
         Sheet sheet=new Sheet();
+        if(stamp!=null){sheet.row("Stamped on Minima…",Integritas.noteLine(stamp,false),()->PhoneStamp.show(this,stamp.n()));sheet.line();}
         if(play!=null)sheet.row(file.id.equals(playingId)&&player!=null&&player.isPlaying()?"Pause":"Play",play);
-        sheet.row("Open",()->openFile(file));
-        sheet.row("Send to a device",()->chooseDevice(java.util.Collections.singletonList(Lending.of(file.id)),new ArrayList<>()));
+        sheet.row("Open",openLine(file),()->openFile(file));
+        sheet.row("Open with…",()->openFileWith(file));
+        // Written in like a note, by whoever may (decision 93): the same file, by the same id, for everybody who has it.
+        NoteStore.Branch line=new NoteStore.Branch(NoteStore.Branch.Kind.FILE,file.id,file.note,file.name,"",0,0,false);
+        if(changes){sheet.row("Rename…",()->renameFile(line));sheet.row("Replace with another file…",()->replaceFile(line));}
+        // Copied as the file itself, to paste in another app, with nothing saved first (the owner, 2026-10-18; decision 207).
+        sheet.row("Copy",()->copyFile(file.id,file.name));
+        sheet.row("Send with another app…",()->sendWithApp(file.id,file.name,file.kind));
+        // Several of the note's files ticked at once, then sent or put in the bin together (decision 208).
+        sheet.row("Choose several…",()->chooseFiles(file));
+        // One way out to the phone, where its own picker says (the owner, 2026-10-18: combine Download and Save a copy; decision 200).
+        sheet.row("Save on my phone…",()->saveCopyOf(file.id,file.name,file.kind));
+        sheet.row("Send to a device…",()->chooseDevice(java.util.Collections.singletonList(Lending.of(file.id)),new ArrayList<>()));
+        // On Minima, through the person's own Integritas account (decision 199).
+        sheet.row("Stamp on Minima…",()->PhoneStamp.file(this,file));
+        sheet.row("Verify on Minima…",()->PhoneStamp.verifyFile(this,file));
+        // Into another note, as Put in a note… does on Home: the note picked keeps it from then on.
+        sheet.row("Move to another note…",()->putInNote(new NoteStore.Loose(file.id,"","",file.name,file.kind,file.bytes,"",true,false,0,0)));
         sheet.line();
-        sheet.row("Remove",()->askDropFile(file));
+        sheet.row("Move to bin",()->askDropFile(file));
         sheet.show(card);
     }
 
@@ -9137,21 +10616,170 @@ public final class MainActivity extends Activity {
         pageFace.setBackground(IconFace.of(this,face));
     }
 
-    /** Hands one kept file to whatever app can open it, for as long as that app is open. */
-    void openFile(NoteStore.Held file) {
-        Uri lent=Lending.of(file.id);
-        Intent look=new Intent(Intent.ACTION_VIEW).setDataAndType(lent,file.kind)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_ACTIVITY_NEW_TASK);
-        try{startActivity(look);}
-        catch(Exception e){alert("Nothing on this phone can open "+file.name+".");}
+    /**
+     * The one Open, named by the app it opens in: the phone's own choice for the kind, else plain Open (the owner,
+     * 2026-10-15: "we should have only one open ... the app used to open it should be presented there in the menu").
+     */
+    String openLine(NoteStore.Held file) {
+        try {
+            android.content.pm.ResolveInfo app=getPackageManager().resolveActivity(new Intent(Intent.ACTION_VIEW).setDataAndType(Lending.of(file.id),file.kind),
+                android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+            if(app==null||app.activityInfo==null||"android".equals(app.activityInfo.packageName))return Say.t("Open");
+            return Say.t("Open in {0}",String.valueOf(app.loadLabel(getPackageManager())));
+        } catch(RuntimeException unknown){return Say.t("Open");}
     }
 
-    /** Taking a file out of a note deletes the copy the note was keeping, so it says so first. */
+    /**
+     * Open: where this phone may change the file (decision 93), a working copy lent that the app may save into (see
+     * Editing), what it saves taken in when Mininotes is in front again; else the file itself, read only. Nothing saved,
+     * nothing changes. {@code choose}: the phone's own list of apps, for Open with….
+     */
+    private void openKept(NoteStore.Held file,boolean choose) {
+        background.submit(()->{
+            if(!store.mayChangeFile(file.id))return null;
+            Editing.start(this,store,file);return Editing.of(file.id);
+        },lent->{
+            Uri at=lent==null?Lending.of(file.id):lent;
+            int flags=Intent.FLAG_GRANT_READ_URI_PERMISSION|(lent==null?0:Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            Intent open=new Intent(Intent.ACTION_VIEW).setDataAndType(at,file.kind).addFlags(flags);
+            open.setClipData(android.content.ClipData.newRawUri(file.name,at));
+            try{startActivity(choose?Intent.createChooser(open,Say.t("Open {0} with",file.name)):open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));}
+            catch(Exception none){alert("Nothing on this phone can open "+file.name+".");}
+        },e->alert("Could not open "+file.name+"."));
+    }
+
+    /** Open with…: the phone's own list of the apps that open this kind; "Always" there sets the phone's own choice. */
+    void openFileWith(NoteStore.Held file){openKept(file,true);}
+
+    /** What was saved into a working copy lent by Open to edit: taken in, sent to whoever has it, and said. */
+    private void takeInEdits() {
+        if(store==null)return;
+        background.submit(()->{
+            List<String> taken=Editing.takeIn(this,store);
+            List<String> names=new ArrayList<>();for(String id:taken){NoteStore.Held h=store.file(id);if(h!=null)names.add(h.name);}
+            return new Object[]{taken,names};
+        },got->{
+            @SuppressWarnings("unchecked") List<String> taken=(List<String>)got[0];
+            @SuppressWarnings("unchecked") List<String> names=(List<String>)got[1];
+            if(taken.isEmpty())return;
+            for(String id:taken)previews.remove(id);
+            refresh();
+            final int job=busy(names.size()==1?Say.t("Taken in from {0}",names.get(0)):Say.t("{0} files taken in",String.valueOf(names.size())));
+            network.submit(()->{for(String id:taken)Post.fileChanged(this,store,keys(),id);return null;},
+                done->{busyDone(job,"Sent");refreshOwed();},e->busyDone(job,"Could not send it"));
+        },e->{});
+    }
+
+    /** Hands one kept file to the app it opens in (see openKept). */
+    void openFile(NoteStore.Held file){openKept(file,false);}
+
+    /**
+     * A kept file handed to any app on the phone - mail, a chat, a drive - through the phone's own share sheet (the owner,
+     * 2026-10-10). Not "Share…", which is people and their rights (decision 92). Lent read-only, as Open lends it.
+     */
+    /**
+     * The files kept with the same note, ticked in a list, the one held ticked already: then sent with another app all at once,
+     * or put in the bin together (the owner, 2026-10-18: "when wanting to share with another app multiple attachments, we
+     * should be able to select many at once on mobile"; decision 208). Select all is the list's first line.
+     */
+    private void chooseFiles(final NoteStore.Held held) {
+        background.submit(()->store.notAway(store.filesOf(store.keptWith(held.note),held.note)),files->{
+            if(files.isEmpty())return;
+            final CharSequence[] names=new CharSequence[files.size()+1];final boolean[] ticked=new boolean[files.size()+1];
+            names[0]=Say.t("Select all");
+            for(int i=0;i<files.size();i++){names[i+1]=files.get(i).name+"  ·  "+Attachment.size(files.get(i).bytes);ticked[i+1]=files.get(i).id.equals(held.id);}
+            final java.util.function.Supplier<List<NoteStore.Held>> chosen=()->{List<NoteStore.Held> out=new ArrayList<>();for(int i=1;i<ticked.length;i++)if(ticked[i])out.add(files.get(i-1));return out;};
+            final AlertDialog[] box={null};
+            box[0]=new Box().setTitle("Choose files")
+                .setMultiChoiceItems(names,ticked,(d,which,on)->{
+                    ticked[which]=on;
+                    if(which==0){android.widget.ListView list=box[0].getListView();for(int i=1;i<ticked.length;i++){ticked[i]=on;list.setItemChecked(i,on);}}
+                    else{boolean every=true;for(int i=1;i<ticked.length;i++)every&=ticked[i];ticked[0]=every;box[0].getListView().setItemChecked(0,every);}
+                })
+                .setPositiveButton("Send with another app…",(d,w)->{List<NoteStore.Held> them=chosen.get();if(!them.isEmpty())sendWithApp(them);})
+                .setNeutralButton("Move to bin",(d,w)->{List<NoteStore.Held> them=chosen.get();if(them.isEmpty())return;
+                    background.submit(()->{for(NoteStore.Held one:them)store.putAway(NoteStore.Branch.Kind.FILE,one.id,true,true);return null;},
+                        done->{showFiles();toast(them.size()==1?Say.t("“{0}” is in the bin",them.get(0).name):Say.t("{0} files are in the bin",String.valueOf(them.size())));refresh();},
+                        e->alert("Could not move those files to the bin. Nothing was changed."));})
+                .setNegativeButton("Cancel",null).create();
+            box[0].show();
+        },e->{});
+    }
+
+    /** Several files at once to another app, as one share: the phone's own chooser, each lent as one alone is. */
+    void sendWithApp(List<NoteStore.Held> files) {
+        if(files.size()==1){NoteStore.Held one=files.get(0);sendWithApp(one.id,one.name,one.kind);return;}
+        ArrayList<Uri> lent=new ArrayList<>();String kind=null;android.content.ClipData clip=null;
+        for(NoteStore.Held one:files) {
+            Uri at=Lending.of(one.id);lent.add(at);
+            String k=one.kind==null||one.kind.isEmpty()?"application/octet-stream":one.kind;
+            // One kind where they share it, the family where they share that, anything otherwise.
+            kind=kind==null?k:kind.equals(k)?kind:kind.substring(0,kind.indexOf('/')).equals(k.substring(0,k.indexOf('/')))?kind.substring(0,kind.indexOf('/'))+"/*":"*/*";
+            if(clip==null)clip=android.content.ClipData.newRawUri(one.name,at);else clip.addItem(new android.content.ClipData.Item(at));
+        }
+        Intent send=new Intent(Intent.ACTION_SEND_MULTIPLE).setType(kind).putParcelableArrayListExtra(Intent.EXTRA_STREAM,lent).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        send.setClipData(clip);
+        try{startActivity(Intent.createChooser(send,Say.t("Send {0} files with",String.valueOf(files.size()))));}
+        catch(Exception e){alert("Nothing on this phone can take these files.");}
+    }
+
+    /** A file on the clipboard as the file itself, lent as Send with another app lends it, for another app to paste. */
+    void copyFile(String id,String name) {
+        try {
+            android.content.ClipboardManager clip=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+            clip.setPrimaryClip(android.content.ClipData.newUri(getContentResolver(),name,Lending.of(id)));
+            toast("Copied");
+        } catch(Exception e){alert(Say.t("{0} could not be copied.",name));}
+    }
+
+    void sendWithApp(String id,String name,String kind) {
+        Uri lent=Lending.of(id);
+        Intent send=new Intent(Intent.ACTION_SEND).setType(kind==null||kind.isEmpty()?"application/octet-stream":kind)
+            .putExtra(Intent.EXTRA_STREAM,lent).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        send.setClipData(android.content.ClipData.newRawUri(name,lent));
+        try{startActivity(Intent.createChooser(send,"Send "+name+" with"));}
+        catch(Exception e){alert("Nothing on this phone can take "+name+".");}
+    }
+
+    /** Save a copy: the phone's own picker asks where, and the copy goes there. */
+    void saveCopyOf(String id,String name,String kind) {
+        savingCopy=new NoteStore.Loose(id,"","",name,kind,0,"",true,false,0,0);
+        startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+            .setType(kind==null||kind.isEmpty()?"application/octet-stream":kind).putExtra(Intent.EXTRA_TITLE,name),SAVE_COPY);
+    }
+
+    /**
+     * Download: a copy in the phone's Downloads, where every files app finds it, with nothing asked (the owner, 2026-10-10).
+     * Before Android 10 there is no Downloads to write to without a permission, so the picker asks where instead.
+     */
+    void download(final String id,final String name,final String kind) {
+        if(android.os.Build.VERSION.SDK_INT<29){saveCopyOf(id,name,kind);return;}
+        final int job=busy("Downloading "+name+"…");
+        background.submit(()->{
+            android.content.ContentResolver resolver=getContentResolver();
+            android.content.ContentValues about=new android.content.ContentValues();
+            about.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME,name);
+            about.put(android.provider.MediaStore.MediaColumns.MIME_TYPE,kind==null||kind.isEmpty()?"application/octet-stream":kind);
+            about.put(android.provider.MediaStore.MediaColumns.IS_PENDING,1);
+            Uri made=resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,about);
+            if(made==null)throw new IllegalStateException("Downloads refused the file");
+            try(OutputStream out=resolver.openOutputStream(made,"w")) {
+                if(out==null)throw new IllegalStateException("No output stream");
+                PhoneLock.copyOut(store.fileFor(id),out);
+            } catch(Exception failed){resolver.delete(made,null,null);throw failed;}
+            about.clear();about.put(android.provider.MediaStore.MediaColumns.IS_PENDING,0);
+            resolver.update(made,about,null,null);
+            return made;
+        },made->busyDone(job,name+" is in Downloads"),e->{busyDone(job,null);alert("Could not download "+name+". Nothing was saved.");});
+    }
+
+    /**
+     * A file taken out of a note goes into the bin, with no question, and comes back into the note from there (the owner,
+     * 2026-10-18: "no need for this confirmation, it goes in the bin"; decision 193). Gone for good when the bin is emptied.
+     */
     private void askDropFile(final NoteStore.Held file) {
-        new Box().setTitle("Remove "+file.name+"?")
-            .setMessage(Attachment.size(file.bytes)+"\n\nThe copy this note is keeping is deleted. Whatever you attached it from is untouched.")
-            .setPositiveButton("Remove",(d,w)->background.submit(()->{store.drop(file.id);return null;},
-                done->{showFiles();toast("Removed");filesChanged(file.held,file.note);},e->alert("Could not remove that file. Nothing was changed."))).show();
+        background.submit(()->{store.putAway(NoteStore.Branch.Kind.FILE,file.id,true,true);return null;},
+            done->{showFiles();toast(Say.t("“{0}” is in the bin",file.name));refresh();},e->alert("Could not move that file to the bin. Nothing was changed."));
     }
     // ---- files sent straight to another device, belonging to no note: see Drop ------------------------------
 
@@ -9163,7 +10791,38 @@ public final class MainActivity extends Activity {
     }
 
     /** Send files: the files picked first, then where they go. */
+    /** Files picked to go to one device straight away, from that person's page: their address, or null for the list. */
+    String sendingToward;
+    /** Send files…, from a person's page: the files picked, then straight to them. */
+    void sendFilesTo(String address){sendingToward=address;sendFiles();}
+
+    /** The people known here and not paired yet: shown in the list greyed, a tap to pair (decision 146). */
+    private List<NoteStore.Contact> notPairedYet() {
+        List<NoteStore.Contact> out=new ArrayList<>();
+        for(NoteStore.Contact one:store.addresses())if(!one.paired()&&!one.mine&&one.name!=null&&!one.name.trim().isEmpty())out.add(one);
+        return out;
+    }
+
+    /**
+     * The end of every list somebody is chosen from (the owner, 2026-10-10: "we should have our contacts but also the
+     * possibility to send to a new person; in every path we should be able to do everything"; decision 146): those known
+     * and not paired yet, greyed, a tap to pair; then New person…, the same four ways as People and devices' +.
+     */
+    void newPersonRows(LinearLayout body,List<NoteStore.Contact> unpaired,boolean nobody) {
+        if(nobody)body.addView(label("Nobody added yet. Add someone, then files and messages can go straight to them.",QUIET,MUTED));
+        for(final NoteStore.Contact one:unpaired) {
+            final View[] row={null};
+            row[0]=row(one.name,"Not paired yet",()->connectWithSomeone(row[0]));
+            ((TextView)((LinearLayout)row[0]).getChildAt(0)).setTextColor(MUTED);
+            body.addView(row[0]);
+        }
+        final View[] anew={null};
+        anew[0]=row("+  New person\u2026","",()->connectWithSomeone(anew[0]));
+        body.addView(anew[0]);
+    }
+
     private void sendFiles() {
+        toast(MANY_FILES);
         startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*")
             .addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true),SEND_FILES);
     }
@@ -9179,10 +10838,13 @@ public final class MainActivity extends Activity {
             for(Uri one:files)try(Cursor about=getContentResolver().query(one,new String[]{android.provider.OpenableColumns.SIZE},null,null,null)) {
                 if(about!=null&&about.moveToFirst()&&!about.isNull(0))bytes+=Math.max(0,about.getLong(0));
             } catch(Exception unsaid){/* counted as it is copied */}
-            return new Object[]{bytes,devices()};
+            return new Object[]{bytes,devices(),notPairedYet()};
         },found->{
             @SuppressWarnings("unchecked") final List<Drop.Device> devices=(List<Drop.Device>)found[1];
-            if(devices.isEmpty()){alert("No devices paired yet. Pair one in People and devices, and files can go straight to it.");return;}
+            @SuppressWarnings("unchecked") final List<NoteStore.Contact> unpaired=(List<NoteStore.Contact>)found[2];
+            // Straight to them, where the person's page asked for it (decision 146): no list, the one they are.
+            if(sendingToward!=null){String toward=sendingToward;sendingToward=null;
+                for(Drop.Device one:devices)if(one.address.equals(toward)){sendTo(files,refused,one);return;}}
             LinearLayout body=inside();
             long bytes=(Long)found[0];
             body.addView(label(Drop.files(files.size())+(bytes>0?"  ·  "+Attachment.size(bytes):""),READING,INK));
@@ -9191,6 +10853,8 @@ public final class MainActivity extends Activity {
             final AlertDialog[] box={null};
             for(final Drop.Device one:devices)
                 body.addView(row(one.name,one.under(),()->{box[0].dismiss();sendTo(files,refused,one);}));
+            // Everybody, and somebody new, wherever somebody is chosen (the owner, 2026-10-10; decision 146).
+            newPersonRows(body,unpaired,devices.isEmpty());
             box[0]=new Box().setTitle("Send files").setView(scrolling(body)).create();
             box[0].show();
         },e->alert(READ_FAILED));
@@ -9358,6 +11022,17 @@ public final class MainActivity extends Activity {
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(lockedOut)return;
         // What the private screen asked Android's picker for (decision 111), whatever came back.
         if(request==PrivateScreen.ADD||request==PrivateScreen.SAVE){if(result!=RESULT_OK||data==null)privately.notPicked();else if(request==PrivateScreen.ADD)privately.picked(data);else privately.saved(data);return;}
+        // The camera writes the picture itself and often comes back with no data. Kept only when a picture is there.
+        if(request==SHOT) {
+            Uri uri=Shot.of();
+            revokeUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            final String place=attachingPlace;attachingPlace=null;
+            if(result==RESULT_OK&&Shot.taken(this)&&attachingToId!=null&&!attachingToId.isEmpty()) {
+                afterKeep=()->Shot.clear(this);
+                keepFiles(attachingTo,attachingToId,java.util.Collections.singletonList(uri),new ArrayList<>(),ids->{if(place!=null)for(String one:ids)intoPlaceNow(NoteStore.Branch.Kind.FILE,one,place);});
+            } else Shot.clear(this);
+            return;
+        }
         if(result!=RESULT_OK||data==null)return;
         if(request==ATTACH){final String place=attachingPlace;attachingPlace=null;
             keepFiles(attachingTo,attachingToId,picked(data),new ArrayList<>(),place==null?null:ids->{for(String id:ids)intoPlaceNow(NoteStore.Branch.Kind.FILE,id,place);});return;}
@@ -9557,9 +11232,23 @@ public final class MainActivity extends Activity {
         }
         return back;
     }
-    @Override protected void onSaveInstanceState(Bundle state){if(lockedOut){super.onSaveInstanceState(state);return;}save();background.flush(FLUSH_TIMEOUT);if(active!=null)state.putString("note",active.id);super.onSaveInstanceState(state);}
+    private Bundle readingPosition;
+    @Override protected void onSaveInstanceState(Bundle state) {
+        if(lockedOut){super.onSaveInstanceState(state);return;}
+        save();background.flush(FLUSH_TIMEOUT);
+        if(home!=null)home.keepViewport(state);
+        if(active!=null&&!shelves) {
+            state.putString("note",active.id);
+            if(page!=null){Bundle position=page.position();position.putBoolean("keyboard",noteKeyboard);state.putBundle("readingPosition",position);}
+        }
+        super.onSaveInstanceState(state);
+    }
     @Override public void onBackPressed() {
         if(lockedOut){super.onBackPressed();return;}
+        // Back cancels what is in the hand before it leaves the screen underneath.
+        if(dragging!=null&&lifted!=null){lifted.cancelDragAndDrop();return;}
+        // A picture shown large closes before the album under it, once a menu over it has gone (decision 217).
+        if(showing==null&&viewer!=null&&viewer.close())return;
         // The private screen first: back a level, and at its top it closes (decision 111).
         if(privately!=null&&privately.back())return;
         // On Home: a menu, then the overview, then a pop-up a level at a time (see HomeScreen.back).
@@ -9593,8 +11282,12 @@ public final class MainActivity extends Activity {
         super.onResume();
         if(lockedOut)return;
         if(sleepSwitch!=null)sleepSaid();
-        // In front again: what waits for an answer and was not said yet is asked now (decision 109).
-        askWaiting();
+        // In front again: what waits for an answer and was not said yet is asked now (decision 109), invitations too.
+        askWaiting();askInvites();
+        // And whether a contact is in trouble, said at the top (decision 188).
+        lookForTroubles(true);
+        // And what was saved in another app into a file lent by Open to edit is taken in.
+        takeInEdits();
     }
 
     // ---- shared with me for the first time: the pop-up, Accept and Refuse (decision 109) -----------------------------
@@ -9647,17 +11340,48 @@ public final class MainActivity extends Activity {
     }
 
     /**
-     * Accepted (decision 109): a note or a folder is on Home from now on, in the first free cell; a file is where files shared
-     * with you go (Settings, decision 94). Said on the strip while it works and once it is done; then it goes to my other
+     * Accepted (decision 109): shown from now on, in Shared with me where it was put as it arrived (decision 122), or on Home
+     * where that is where it was kept. Said on the strip while it works and once it is done; then it goes to my other
      * devices as anything of mine does.
      */
+    /**
+     * A share that waits, tapped (decision 127): Accept, Refuse, and See sender. The icon is the same as any other.
+     * Block sender is on See sender, and only when they are not already in People and devices.
+     */
+    void arrival(View anchor,NoteStore.Branch thing) {
+        Sheet sheet=new Sheet();
+        sheet.row(FirstShare.ACCEPT,()->acceptWaiting(thing));
+        sheet.row(FirstShare.REFUSE,()->refuseWaiting(thing));
+        sheet.row(FirstShare.SEE_SENDER,()->seeSender(thing));
+        sheet.show(anchor);
+    }
+
+    /** See sender: their name. Block sender where they are not a contact. What is already kept stays. */
+    void seeSender(final NoteStore.Branch thing) {
+        final String origin=thing.origin==null?"":thing.origin;
+        background.submit(()->{
+            String name=origin.isEmpty()?"Somebody":store.nameFor(origin);
+            if(name==null||name.isBlank())name="Somebody";
+            boolean block=!origin.isEmpty()&&store.address(origin)==null;
+            return new Object[]{name,Boolean.valueOf(block)};
+        },got->{
+            String name=(String)got[0];boolean block=Boolean.TRUE.equals(got[1]);
+            AlertDialog.Builder asking=new Box().setTitle(name);
+            if(block)asking.setPositiveButton(FirstShare.BLOCK,(d,w)->background.submit(()->{store.blockSender(origin,name);return null;},
+                done->{toast(FirstShare.BLOCKED_SAID);people().again();},e->alert("Could not block that sender. Nothing was changed.")));
+            else asking.setPositiveButton("Close",null);
+            AlertDialog box=asking.create();
+            box.show();
+            if(block){android.widget.Button yes=box.getButton(AlertDialog.BUTTON_POSITIVE);if(yes!=null)yes.setTextColor(WARN);}
+        },e->alert(READ_FAILED));
+    }
+
     void acceptWaiting(final NoteStore.Branch thing) {
         final int job=busy("Accepting “"+thing.name+"”…");
-        background.submit(()->{
-            store.acceptShared(thing.kind,thing.id);
-            if(thing.kind!=NoteStore.Branch.Kind.FILE&&thing.kind!=NoteStore.Branch.Kind.WAITING)return "Home";
-            String to=store.sharedWithMe();return to.isEmpty()?"Home":NoteStore.SHARED.equals(to)?NoteStore.SHARED_WITH_ME:store.collectionName(to);
-        },where->{busyDone(job,FirstShare.accepted(thing.name,where));refresh();refreshOwed();askWhatIsOwed();},
+        background.submit(()->{store.acceptShared(thing.kind,thing.id);return store.acceptedWhere(thing.kind,thing.id);
+        },where->{busyDone(job,FirstShare.accepted(thing.name,where));refresh();refreshOwed();askWhatIsOwed();
+            // And to whoever was told it waits here, that it is accepted: their tick can say "everybody has it" now.
+            background.submit(()->{Post.acceptedNow(this,store,keys());return null;},done->{},e->{});},
             e->{busyDone(job,null);alert("Could not accept that. Nothing was changed.");});
     }
 
@@ -9732,6 +11456,9 @@ public final class MainActivity extends Activity {
         beenAway=false;
         // A pad that is never closed, only left, would otherwise look once in its life.
         lookQuietly();
+        // And it catches up both ways: what it owes goes, and the others are asked for what they have, which a phone
+        // that slept through their sending missed. Sync now did both, and only Sync now (the owner, 2026-10-10).
+        catchUp();
         if(active!=null&&!shelves)changedUnderneath(active.id);
         else refresh();
     }
@@ -9815,10 +11542,14 @@ public final class MainActivity extends Activity {
 
     /** What came, read once: its words, the files the pad will read, and a line for each it will not. */
     private static final class Handed {
-        String subject="", text="", firstName="", what="";
+        String subject="", text="", firstName="", what="", type="";
         final List<Uri> files=new ArrayList<>();
         final List<String> refused=new ArrayList<>();
         boolean empty(){return text.isEmpty()&&subject.isEmpty()&&files.isEmpty();}
+        /** Files and no words: kept as files where they are put, rather than in a new note. */
+        // A subject alone only names the files (a screenshot comes as "Screenshot (date)"): still files only, so Temp and Put it
+        // here keep the picture as a file rather than making a note of its name (the owner, 2026-10-11).
+        boolean filesOnly(){return text.isEmpty()&&!files.isEmpty();}
     }
 
     /** The box, while it is up, so a second share replaces it rather than stacking on it. */
@@ -9861,6 +11592,10 @@ public final class MainActivity extends Activity {
                     new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)) {
                 if(about!=null&&about.moveToFirst()&&!about.isNull(0))came.firstName=about.getString(0);
             } catch(Exception unsaid){/* named by its text, or Shared */}
+            // Where the app that lent them did not say, the kind the share itself said: a screenshot is a picture.
+            String typed=intent.getType()==null?"":intent.getType();
+            for(int at=0;at<kinds.size();at++)if(kinds.get(at)==null&&!typed.isEmpty()&&!typed.endsWith("/*"))kinds.set(at,typed);
+            came.type=!kinds.isEmpty()&&kinds.get(0)!=null?kinds.get(0):typed;
             came.what=Given.what(kinds);
             List<NoteStore.Branch> lately=store.lately(Given.RECENT*3);
             List<String> ids=new ArrayList<>();java.util.Set<String> reads=new java.util.HashSet<>();
@@ -9899,8 +11634,10 @@ public final class MainActivity extends Activity {
     private void handedDone(){setIntent(new Intent(this,MainActivity.class));handedBox=null;}
 
     /**
-     * Where it goes. One thing to press - a new note - and under it the few notes most likely to be
-     * collecting things, for adding to instead. Back, or a tap outside, and nothing is made or changed.
+     * Where it goes (the owner, 2026-10-11: "too confusing ... it must be really simple, it must be possible to attach the file
+     * to anything, it must be beautiful"; decision 156): what came, in a card of its own; one thing to press, a new note; and
+     * three ways, each a line with its icon, its name and what it does under it: Temp, a folder or a note (any, or a new one),
+     * and someone. Back, or a tap outside, and nothing is made or changed.
      */
     private void askWhereItGoes(final Handed came,final List<NoteStore.Branch> offered,final List<Drop.Device> devices) {
         if(handedBox!=null&&handedBox.isShowing())handedBox.dismiss();
@@ -9909,27 +11646,213 @@ public final class MainActivity extends Activity {
             alert(came.refused.isEmpty()?"Nothing came that Mininotes can keep.":Given.refusals(came.refused));
             return;
         }
+        handedRecent=offered;handedDevices=devices;
         LinearLayout body=inside();
-        String head=Given.firstLine(came.subject.isEmpty()?came.text:came.subject);
-        if(!came.what.isEmpty())body.addView(label(came.what,READING,INK));
-        if(!head.isEmpty())body.addView(came.what.isEmpty()?label(head,READING,INK):under(head));
+        body.addView(cameCard(came));
         final AlertDialog[] box={null};
-        body.addView(primary("New note",()->{box[0].dismiss();handedDone();intoNewNote(came);}));
-        if(!offered.isEmpty()) {
-            body.addView(under("Or add it to"));
-            for(final NoteStore.Branch one:offered)
-                body.addView(row(one.name,"",()->{box[0].dismiss();handedDone();intoNote(one.id,came);}));
-        }
-        // Or straight to another device, as files on their own, in no note: see Drop.
-        if(!came.files.isEmpty()&&!devices.isEmpty()) {
-            body.addView(under("Or send to"));
-            for(final Drop.Device one:devices)
-                body.addView(row(one.name,one.under(),()->{box[0].dismiss();handedDone();sendTo(new ArrayList<>(came.files),new ArrayList<>(came.refused),one);}));
-        }
+        View note=primary(came.files.isEmpty()?"New note":"New note with it",()->{box[0].dismiss();handedDone();intoNewNote(came);});
+        LinearLayout.LayoutParams noteAt=new LinearLayout.LayoutParams(-1,-2);noteAt.setMargins(0,dp(16),0,dp(8));
+        body.addView(note,noteAt);
+        body.addView(choice("timer","Temp","To your devices, then gone by itself",()->{box[0].dismiss();handedDone();intoTemp(came);}));
+        body.addView(choice("folder-open","Into a folder or a note","Any one you have, or a new one",()->{box[0].dismiss();
+            List<Step> top=new ArrayList<>();top.add(new Step(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING,"Home"));choosePlace(came,top);}));
+        if(!came.files.isEmpty())body.addView(choice("send","Send to someone","A device or a person",()->{box[0].dismiss();chooseSomeone(came,devices);}));
         box[0]=new Box().setTitle("Add to Mininotes").setView(scrolling(body)).create();
         box[0].setOnCancelListener(d->handedDone());
         handedBox=box[0];
         box[0].show();
+    }
+
+    /** The notes written in lately, offered once the place chooser is open, under Recent at its top. */
+    private List<NoteStore.Branch> handedRecent=new ArrayList<>();
+    /** And the devices it can be sent to, for Back to the first box. */
+    private List<Drop.Device> handedDevices=new ArrayList<>();
+
+    /**
+     * What came, as a card: a picture's own thumbnail where one picture came, else its kind's glyph; what it is, and its
+     * name or first line under it, on one line each.
+     */
+    private View cameCard(final Handed came) {
+        LinearLayout card=new LinearLayout(this);card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(12),dp(12),dp(14),dp(12));
+        android.graphics.drawable.GradientDrawable ground=new android.graphics.drawable.GradientDrawable();
+        ground.setCornerRadius(dp(16));ground.setColor(CARD);ground.setStroke(Math.max(1,dp(1)),LINE);card.setBackground(ground);
+        boolean words=came.files.isEmpty();
+        final View face=new View(this);
+        face.setBackground(IconFace.glyph(this,PAPER,LINE,dp(1),words?"file-text":came.files.size()>1?"files":"image".equals(kindOf(came))?"image":"paperclip",INK));
+        card.addView(face,new LinearLayout.LayoutParams(dp(52),dp(52)));
+        LinearLayout said=column();said.setPadding(dp(14),0,0,0);
+        String what=came.what.isEmpty()?(words?"Some words":came.files.size()+" files"):came.what;
+        TextView top=label(what,READING,INK);top.setSingleLine(true);top.setEllipsize(TextUtils.TruncateAt.END);
+        top.setTypeface(top.getTypeface(),android.graphics.Typeface.BOLD);
+        said.addView(top);
+        String under=Given.firstLine(came.subject.isEmpty()?came.text:came.subject);
+        if(!under.isEmpty()){TextView more=label(under,QUIET,MUTED);more.setMaxLines(2);more.setEllipsize(TextUtils.TruncateAt.END);said.addView(more);}
+        card.addView(said,new LinearLayout.LayoutParams(0,-2,1));
+        // One picture: its own face, made small off this thread.
+        if(came.files.size()==1&&"image".equals(kindOf(came))) {
+            final Uri one=came.files.get(0);
+            background.submit(()->{
+                android.graphics.BitmapFactory.Options size=new android.graphics.BitmapFactory.Options();size.inJustDecodeBounds=true;
+                try(java.io.InputStream in=getContentResolver().openInputStream(one)){android.graphics.BitmapFactory.decodeStream(in,null,size);}
+                int step=1;while(size.outWidth/(step*2)>=dp(104)&&size.outHeight/(step*2)>=dp(104))step*=2;
+                android.graphics.BitmapFactory.Options small=new android.graphics.BitmapFactory.Options();small.inSampleSize=step;
+                try(java.io.InputStream in=getContentResolver().openInputStream(one)){return android.graphics.BitmapFactory.decodeStream(in,null,small);}
+            },picture->{if(picture!=null)face.setBackground(IconFace.picture(this,picture));},e->{/* its glyph stays */});
+        }
+        card.setContentDescription(what+(under.isEmpty()?"":", "+under));
+        return card;
+    }
+    /** The kind of what came, by its first file: "image" for a picture, else empty. */
+    private String kindOf(Handed came) {
+        if(came.files.isEmpty())return "";
+        if(came.type.startsWith("image/"))return "image";
+        try{String type=getContentResolver().getType(came.files.get(0));return type!=null&&type.startsWith("image/")?"image":"";}
+        catch(RuntimeException unknown){return "";}
+    }
+
+    /** One way it can go: its icon in a soft square, its name, what it does under it, and › for where it leads. */
+    private View choice(String glyph,String name,String does,Runnable go) {
+        View face=new View(this);face.setBackground(IconFace.glyph(this,CARD,LINE,dp(1),glyph,INK));
+        return choice(face,name,does,go);
+    }
+    private View choice(View face,String name,String does,Runnable go) {
+        LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);
+        line.setMinimumHeight(dp(64));line.setPadding(0,dp(8),0,dp(8));
+        face.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        line.addView(face,new LinearLayout.LayoutParams(dp(40),dp(40)));
+        LinearLayout said=column();said.setPadding(dp(14),0,dp(8),0);
+        TextView top=label(name,READING,INK);top.setMaxLines(2);top.setEllipsize(TextUtils.TruncateAt.END);said.addView(top);
+        if(does!=null&&!does.isEmpty()){TextView under=label(does,QUIET,MUTED);under.setMaxLines(2);under.setEllipsize(TextUtils.TruncateAt.END);said.addView(under);}
+        line.addView(said,new LinearLayout.LayoutParams(0,-2,1));
+        TextView on=label("›",READING,MUTED);on.setPadding(dp(4),0,0,dp(2));line.addView(on);
+        line.setBackgroundResource(touchFeedback());
+        line.setOnClickListener(v->go.run());
+        line.setContentDescription(does==null||does.isEmpty()?name:name+", "+does);
+        return line;
+    }
+
+    /** Straight to someone, as files on their own in no note (see Drop): each device or person, and a new person. */
+    private void chooseSomeone(final Handed came,final List<Drop.Device> devices) {
+        LinearLayout body=inside();
+        body.addView(cameCard(came));
+        final AlertDialog[] box={null};
+        View gap=new View(this);body.addView(gap,new LinearLayout.LayoutParams(1,dp(8)));
+        for(final Drop.Device one:devices)
+            body.addView(choice("user",one.name,one.under(),()->{box[0].dismiss();handedDone();sendTo(new ArrayList<>(came.files),new ArrayList<>(came.refused),one);}));
+        newPersonRows(body,java.util.Collections.emptyList(),devices.isEmpty());
+        box[0]=new Box().setTitle("Send to someone").setView(scrolling(body))
+            .setNegativeButton("Back",(d,w)->askWhereItGoes(came,handedRecent,devices)).create();
+        box[0].setOnCancelListener(d->handedDone());
+        handedBox=box[0];
+        box[0].show();
+    }
+
+    /**
+     * A folder or a note for what came: where it stands said at the top; Put it here, the one button; a new note or a new
+     * folder here; at Home, Temp and what was written in lately; then each folder (›, in) and each note (added to), each with
+     * its own face. Back goes up a level, and at Home back to the first box. A place this phone only reads offers nothing.
+     */
+    private void choosePlace(final Handed came,final List<Step> path) {
+        final Step here=path.get(path.size()-1);
+        final boolean top=path.size()==1;
+        background.submit(()->{
+            List<NoteStore.Branch> holds=new ArrayList<>(store.inside(here.kind,here.id).holds);
+            store.dress(holds);
+            java.util.Set<String> reads=new java.util.HashSet<>();
+            for(NoteStore.Branch one:holds)if(one.kind==NoteStore.Branch.Kind.PAGE&&store.onlyReads(one.id))reads.add(one.id);
+            List<NoteStore.Branch> lately=new ArrayList<>(top?handedRecent:java.util.Collections.<NoteStore.Branch>emptyList());
+            if(!lately.isEmpty())store.dress(lately);
+            boolean writes=here.kind==NoteStore.Branch.Kind.LIBRARY||!Boolean.FALSE.equals(store.mayWriteIn(NoteStore.Branch.Kind.COLLECTION,here.id));
+            return new Object[]{holds,reads,writes,lately};
+        },got->{
+            @SuppressWarnings("unchecked") List<NoteStore.Branch> holds=(List<NoteStore.Branch>)got[0];
+            @SuppressWarnings("unchecked") java.util.Set<String> reads=(java.util.Set<String>)got[1];
+            boolean writes=(Boolean)got[2];
+            @SuppressWarnings("unchecked") List<NoteStore.Branch> lately=(List<NoteStore.Branch>)got[3];
+            LinearLayout body=inside();
+            final AlertDialog[] box={null};
+            StringBuilder where=new StringBuilder();
+            for(Step one:path){if(where.length()>0)where.append(" › ");where.append(one.name);}
+            TextView at=label(where.toString(),QUIET,MUTED);at.setMaxLines(2);at.setEllipsize(TextUtils.TruncateAt.START);body.addView(at);
+            if(writes) {
+                View put=primary(came.filesOnly()?"Put it here":"New note here",()->{box[0].dismiss();handedDone();intoPlace(came,here);});
+                LinearLayout.LayoutParams putAt=new LinearLayout.LayoutParams(-1,-2);putAt.setMargins(0,dp(12),0,dp(8));
+                body.addView(put,putAt);
+                if(came.filesOnly())body.addView(choice("file-plus","New note here","With it inside",()->{box[0].dismiss();handedDone();newNoteIn(came,here);}));
+                body.addView(choice("folder-plus","New folder here","Name it, then put it in",()->{box[0].dismiss();newFolderFor(came,path);}));
+            } else body.addView(label("Only read here. Choose another place.",READING,MUTED));
+            if(top)body.addView(choice("timer","Temp","To your devices, then gone by itself",()->{box[0].dismiss();handedDone();intoTemp(came);}));
+            if(!lately.isEmpty()) {
+                body.addView(part("Recent"));
+                for(final NoteStore.Branch one:lately)
+                    body.addView(choice(IconFace.view(this,one,dp(40)),named(one),"Add to this note",()->{box[0].dismiss();handedDone();intoNote(one.id,came);}));
+            }
+            boolean any=false;
+            for(final NoteStore.Branch one:holds) {
+                if(one.kind!=NoteStore.Branch.Kind.COLLECTION&&!(one.kind==NoteStore.Branch.Kind.PAGE&&!reads.contains(one.id)))continue;
+                if(!any){body.addView(part(top?"On Home":"In "+here.name));any=true;}
+                if(one.kind==NoteStore.Branch.Kind.COLLECTION) {
+                    final List<Step> down=new ArrayList<>(path);down.add(new Step(NoteStore.Branch.Kind.COLLECTION,one.id,one.name));
+                    body.addView(choice(IconFace.view(this,one,dp(40)),named(one),"Open",()->{box[0].dismiss();choosePlace(came,down);}));
+                } else body.addView(choice(IconFace.view(this,one,dp(40)),named(one),"Add to this note",()->{box[0].dismiss();handedDone();intoNote(one.id,came);}));
+            }
+            if(!any&&lately.isEmpty())body.addView(label("Nothing in here yet.",READING,MUTED));
+            final List<Step> up=top?null:new ArrayList<>(path.subList(0,path.size()-1));
+            box[0]=new Box().setTitle(top?"Choose a place":here.name).setView(scrolling(body))
+                .setNegativeButton("Back",(d,w)->{if(up==null)askWhereItGoes(came,handedRecent,handedDevices);else choosePlace(came,up);}).create();
+            box[0].setOnCancelListener(d->handedDone());
+            handedBox=box[0];
+            box[0].show();
+        },e->{handedDone();alert(READ_FAILED);});
+    }
+    /** A thing's name as a line shows it: Untitled for a note with none. */
+    private static String named(NoteStore.Branch one){return one.name==null||one.name.trim().isEmpty()?(one.kind==NoteStore.Branch.Kind.PAGE?"Untitled note":"Untitled"):one.name;}
+
+    /** A new note in the place chosen, with whatever came, files included, in it. */
+    private void newNoteIn(final Handed came,final Step place) {
+        closeNote();blankPage(place.kind==NoteStore.Branch.Kind.LIBRARY?Things.HOME:place.id);
+        active.title=Given.title(came.subject,came.text,came.firstName);
+        pour(came,came.text,true);
+    }
+
+    /** A folder made where the chooser stands, named first, and then opened in the chooser so what came can go in it. */
+    private void newFolderFor(final Handed came,final List<Step> path) {
+        final Step here=path.get(path.size()-1);
+        final EditText name=field("Name of the new folder",80);
+        LinearLayout body=inside();body.addView(name);
+        new Box().setTitle("New folder").setView(body).setPositiveButton("Make it",(d,w)->{
+            final String called=name.getText().toString().trim();
+            background.submit(()->store.addCollectionIn(here.kind==NoteStore.Branch.Kind.LIBRARY?Things.HOME:here.id,called),made->{
+                List<Step> down=new ArrayList<>(path);down.add(new Step(NoteStore.Branch.Kind.COLLECTION,made.id,made.name));
+                choosePlace(came,down);
+            },e->{handedDone();alert("Could not make that folder. Nothing was changed.");});
+        }).setNegativeButton("Back",(d,w)->choosePlace(came,path)).setOnCancelListener(d->choosePlace(came,path)).show();
+        name.requestFocus();
+    }
+
+    /** Into Temp: files kept on Home and put in Temp, which sends them on; words a new note made there, as Temp's + makes one. */
+    private void intoTemp(final Handed came) {
+        if(came.filesOnly()) {
+            keepFiles(NoteStore.Branch.Kind.COLLECTION,Things.HOME,came.files,came.refused,ids->{for(String id:ids)intoPlaceNow(NoteStore.Branch.Kind.FILE,id,NoteStore.TEMP);});
+            return;
+        }
+        closeNote();blankPage(Things.HOME);
+        placeOnSave.put(active.id,NoteStore.TEMP);
+        active.title=Given.title(came.subject,came.text,came.firstName);
+        pour(came,came.text,true);
+    }
+
+    /** Into the place chosen: words make a new note there, with the files; files on their own are kept there as files. */
+    private void intoPlace(final Handed came,final Step place) {
+        final String id=place.kind==NoteStore.Branch.Kind.LIBRARY?Things.HOME:place.id;
+        if(came.filesOnly()) {
+            keepFiles(NoteStore.Branch.Kind.COLLECTION,id,came.files,came.refused);
+            return;
+        }
+        closeNote();blankPage(id);
+        active.title=Given.title(came.subject,came.text,came.firstName);
+        pour(came,came.text,true);
     }
 
     /**
@@ -10003,10 +11926,21 @@ public final class MainActivity extends Activity {
         closeNote();open(note);
     }
 
+    /**
+     * What arrived drawn once for all that came together (Graphene, 2026-10-17): twenty answers in two seconds each drew
+     * Home again whole. Drawn half a second after the first of them, with all that came in that half second.
+     */
+    private void redrawSoon(){if(redrawing)return;redrawing=true;handler.postDelayed(redraw,REDRAW_AFTER);}
+    private boolean redrawing;
+    private final Runnable redraw=()->{redrawing=false;askWhatIsOwed();refresh();refreshOwed();};
+    static final long REDRAW_AFTER=500L;
+
     /** Something landed while the pad was on screen. */
     private void heard(Post.Landed landed) {
         // A help request arrived while the pad is in front (decision 113): the loud in-app box, filled in as the updates come.
         if(landed.helpRequest!=null){helpAlert(landed);return;}
+        // A message from a 0.3.036 build (decision 145, withdrawn in 147): kept and answered by Post, shown nowhere.
+        if(landed.message)return;
         if(landed.files){filesNews(landed);return;}
         // Something another person shared with me for the first time (decision 109): drawn again where it shows (Shared with me
         // and its count), and asked about in the pop-up, once for each thing.
@@ -10015,7 +11949,7 @@ public final class MainActivity extends Activity {
         // Somebody said they have something. Nothing to say about it: the marks say it, once they are
         // asked again what is still waiting.
         if(landed.answered) {
-            askWhatIsOwed();refresh();refreshOwed();
+            redrawSoon();
             // Somebody changed what this phone may do while the box saying so was open - or the page.
             if(landed.people&&boxScope!=null&&shareBox!=null&&shareBox.isShowing())
                 sharedWith(boxScope,boxTarget,boxName);
@@ -10023,13 +11957,13 @@ public final class MainActivity extends Activity {
             // Your groups changed on another device of yours while People and devices was open: drawn again where it is.
             if(landed.groups){people().again();people().withAgain();}
             // Somebody's Parlons! address came from another device of yours: known to the menus, and drawn where it shows.
-            if(landed.contacts){background.submit(()->{parlonsBook=store.parlonsBook();return null;},v->{},e->{});
+            if(landed.contacts){background.submit(()->{parlonsBook=store.parlonsBook();return null;},v->{if(active!=null&&!shelves)askWhatIsOwed();},e->{});
                 people().again();}
             return;
         }
         if(landed.said==null)return;
         if(awaiting!=0){handler.removeCallbacks(notYet);busyDone(awaiting,null);awaiting=0;}
-        toast(landed.said);refresh();refreshOwed();
+        toast(landed.said);redrawSoon();
         // Somebody left while the list of who has it was open.
         if(landed.people&&boxScope!=null&&shareBox!=null&&shareBox.isShowing())
             sharedWith(boxScope,boxTarget,boxName);
@@ -10044,16 +11978,17 @@ public final class MainActivity extends Activity {
      * <p>Asked of the notebook on the worker, behind any writing of this page that was already on its way,
      * so what comes back is what the notebook says after both.
      */
-    private void changedUnderneath(final String id) {
+    void changedUnderneath(final String id) {
         if(id==null||active==null||shelves||page==null||!active.id.equals(id))return;
-        background.submit(()->{NoteStore.Note got=store.get(id);if(got!=null)got.writers=store.writersOf(id,got.body);return got;},stored->{
+        // Open as it changed: seen, not new (the owner, 2026-10-14).
+        background.submit(()->{store.seen(id);NoteStore.Note got=store.get(id);if(got!=null)got.writers=store.writersOf(id,got.body);return got;},stored->{
             if(stored==null||active==null||shelves||page==null||!active.id.equals(id))return;
             if(stored.revision<=keptRevision&&stored.body.equals(kept))return;
             // Nothing typed since the page was last written down: it says what the notebook said then, whatever is on
             // the screen - blank rules tapped onto it, or anything else that changed the words without a key. Only
             // typing is writing, and only writing is put together with what arrived.
             boolean typed=edits!=saved;
-            Arriving.Page said=Arriving.onThePage(kept,page.getText().toString(),stored.body,typed);
+            Arriving.Page said=Arriving.onThePage(kept,whole(),stored.body,typed);
             android.util.Log.i("Mininotes/Page",said.unsaved?"the open note changed elsewhere, and what was typed here is put with it"
                 :typed?"the open note changed elsewhere, and what was typed here was already in it"
                 :"the open note changed elsewhere, and the page, not typed in, now says what arrived");
@@ -10067,14 +12002,16 @@ public final class MainActivity extends Activity {
             final boolean titleUnsaved=renamedHere&&!wanted.equals(active.title);
             if(titleUnsaved)active.title=wanted;
             showTitle();
-            if(!page.getText().toString().equals(said.text)) {
-                holds(said.text);
+            if(!whole().equals(said.text)) {
                 // What was typed here keeps being yours, and what arrived is whoever the notebook says wrote it.
-                Writers who=typed?Writers.follow(said.text,Writers.UNKNOWN,page.getText().toString(),page.writers(),stored.body,stored.writers)
+                Writers who=typed?Writers.follow(said.text,Writers.UNKNOWN,whole(),wholeWriters(),stored.body,stored.writers)
                     :stored.writers;
+                // The same tab stays open, found by its name where tabs came or went elsewhere (decision 142).
+                split(said.text,who,tabNamed(said.text,tabName(),tab));
+                holdsTab();
                 // The reader stays on the words they were reading, and the cursor on the words it was in: see Pad.replace.
-                loading=true;page.replace(said.text,who);loading=false;
-                linkify();
+                loading=true;page.replace(tabWords,tabPageWriters);loading=false;
+                linkify();drawTabs();
             }
             // Words typed since the last writing are in the page and nowhere else, so it is written again.
             if(said.unsaved||titleUnsaved){edits++;handler.postDelayed(autoSave,SAVE_DELAY);}

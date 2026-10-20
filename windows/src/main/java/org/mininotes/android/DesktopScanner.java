@@ -22,7 +22,7 @@ final class DesktopScanner {
             @Override protected void paintComponent(Graphics g0){Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);g.setColor(new Color(32,36,33));g.fillRoundRect(0,0,getWidth(),getHeight(),14,14);g.dispose();}
         };screen.setOpaque(false);screen.setBorder(BorderFactory.createEmptyBorder(6,6,6,6));screen.add(preview);
         DesktopUi.Text progress=DesktopUi.quiet("Start the camera, open a picture of the code, or paste a link.");
-        JComboBox<String> cameras=new JComboBox<>(new String[]{"Default camera"});cameras.setPreferredSize(new Dimension(220,cameras.getPreferredSize().height));cameras.getAccessibleContext().setAccessibleName("Camera");
+        JComboBox<String> cameras=DesktopUi.combo(new String[]{"Default camera"});cameras.setPreferredSize(new Dimension(220,cameras.getPreferredSize().height));cameras.getAccessibleContext().setAccessibleName("Camera");
         JButton camera=DesktopUi.primary("Start camera",()->{}),image=DesktopUi.button("Open a picture…",()->{}),paste=DesktopUi.button("Paste a link or picture",()->{});
         JPanel top=new JPanel(new BorderLayout(DesktopUi.S,0));top.setOpaque(false);top.add(DesktopUi.actions(cameras,camera),BorderLayout.WEST);top.add(DesktopUi.footer(image,paste),BorderLayout.EAST);
         JPanel panel=new JPanel(new BorderLayout(0,12));panel.setOpaque(false);panel.add(top,BorderLayout.NORTH);panel.add(screen);panel.add(progress,BorderLayout.SOUTH);
@@ -59,8 +59,8 @@ final class DesktopScanner {
             });
         });
         image.addActionListener(e->{
-            JFileChooser pick=new JFileChooser();if(pick.showOpenDialog(dialog)!=JFileChooser.APPROVE_OPTION)return;
-            scanning.set(false);progress.setText("Reading QR image…");worker.submit(()->{try{String text=DesktopQr.read(pick.getSelectedFile().toPath());SwingUtilities.invokeLater(()->found.accept(new Code(text,false)));}catch(Exception failure){SwingUtilities.invokeLater(()->progress.setText(failure.getMessage()));}});
+            java.nio.file.Path chosenImage=DesktopPick.openOne(dialog,"Open QR image");if(chosenImage==null)return;
+            scanning.set(false);progress.setText("Reading QR image…");worker.submit(()->{try{String text=DesktopQr.read(chosenImage);SwingUtilities.invokeLater(()->found.accept(new Code(text,false)));}catch(Exception failure){SwingUtilities.invokeLater(()->progress.setText(failure.getMessage()));}});
         });
         paste.addActionListener(e->{
             try {

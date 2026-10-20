@@ -26,8 +26,8 @@ import org.mininotes.desktop.platform.content.Context;
  */
 public class DesktopGuardTest {
     @Rule public TemporaryFolder temp=new TemporaryFolder();
-    private static final String PASSWORD="velvet kettle 4417",PHONE="MxGuardPhoneFixture@127.0.0.1:9441",PC="MxGuardPcFixture@127.0.0.1:9442";
-    private static final String[] NEVER={"privatespace//","privatenote//","privatefolder//","private//:","private space//","private note//",PASSWORD,"velvet"};
+    private static final String PHRASE="velvet kettle 4417",PHONE="MxGuardPhoneFixture@127.0.0.1:9441",PC="MxGuardPcFixture@127.0.0.1:9442";
+    private static final String[] NEVER={"privatespace//","privatenote//","privatefolder//","private//:","private space//","private note//",PHRASE,"velvet"};
 
     private static void clean(String what,String text) {
         String low=text==null?"":text.toLowerCase(Locale.ROOT);
@@ -54,7 +54,7 @@ public class DesktopGuardTest {
             // 1. Typed a key at a time: caught at its colon, the password into its own field.
             end(pad,pad.page);
             for(char c:"\nprivate//:".toCharArray())type(pad,pad.page,String.valueOf(c));
-            password(pad,PASSWORD);
+            password(pad,PHRASE);
             saveNow(pad);send.run();
             assertEquals("Meet at noon\n",onEdt(()->pad.page.getText()));
 
@@ -78,16 +78,16 @@ public class DesktopGuardTest {
 
             // 3. Pasted in one go, short: the code and its password out of the page at once, the password in its field.
             end(pad,pad.page);
-            SwingUtilities.invokeAndWait(()->pad.page.replaceSelection("private//:"+PASSWORD));
+            SwingUtilities.invokeAndWait(()->pad.page.replaceSelection("private//:"+PHRASE));
             await(()->onEdt(()->pad.privately.asking!=null&&pad.privately.asking.isEditable()));
-            assertEquals(PASSWORD,onEdt(()->new String(pad.privately.asking.getPassword())));
+            assertEquals(PHRASE,onEdt(()->new String(pad.privately.asking.getPassword())));
             assertEquals("Meet at noon\n",onEdt(()->pad.page.getText()));
             SwingUtilities.invokeAndWait(()->pad.privately.asking.postActionEvent());
             saveNow(pad);send.run();
 
             // 4. Pasted long, which the catching leaves to the guard: the page shows at once what is kept, the caret sensible.
             end(pad,pad.page);
-            SwingUtilities.invokeAndWait(()->pad.page.replaceSelection("Notes pasted from a long message from somebody, with privatespace//:"+PASSWORD+" in it\nBring water"));
+            SwingUtilities.invokeAndWait(()->pad.page.replaceSelection("Notes pasted from a long message from somebody, with privatespace//:"+PHRASE+" in it\nBring water"));
             saveNow(pad);send.run();
             assertEquals("Meet at noon\nNotes pasted from a long message from somebody, with \nBring water",onEdt(()->pad.page.getText()));
             assertEquals(onEdt(()->pad.page.getDocument().getLength()),onEdt(()->pad.page.getCaretPosition()));
@@ -99,7 +99,7 @@ public class DesktopGuardTest {
 
             // 6. In the title, pasted.
             SwingUtilities.invokeAndWait(()->{pad.title.requestFocusInWindow();pad.title.setCaretPosition(pad.title.getText().length());});
-            SwingUtilities.invokeAndWait(()->pad.title.replaceSelection(" and privatespace//:"+PASSWORD+" also, which is long enough"));
+            SwingUtilities.invokeAndWait(()->pad.title.replaceSelection(" and privatespace//:"+PHRASE+" also, which is long enough"));
             saveNow(pad);send.run();
             assertEquals("Plan and ",onEdt(()->pad.title.getText()));
 
@@ -107,7 +107,7 @@ public class DesktopGuardTest {
             NoteStore.Note now=pad.store.get(n.id);
             ByteArrayOutputStream raw=new ByteArrayOutputStream();DataOutputStream out=new DataOutputStream(raw);
             out.write(Parcel.MAGIC);out.writeBoolean(true);
-            for(String one:new String[]{"","","","","Plan privatefolder//:"+PASSWORD,now.body+"\nFrom the phone private note//:"+PASSWORD+"\nThe end"})Parcel.put(out,one,Parcel.TEXT_MOST);
+            for(String one:new String[]{"","","","","Plan privatefolder//:"+PHRASE,now.body+"\nFrom the phone private note//:"+PHRASE+"\nThe end"})Parcel.put(out,one,Parcel.TEXT_MOST);
             byte[] old=Envelope.seal(page(n.id),now.revision+1,1,raw.toByteArray(),phoneKeys.signing(),pad.keys.agreement().getPublic());
             Post.arrived(pad.context,pad.store,pad.keys,old);settle(pad);
             NoteStore.Note arrived=pad.store.get(n.id);
@@ -129,7 +129,7 @@ public class DesktopGuardTest {
             java.awt.datatransfer.Clipboard board=java.awt.Toolkit.getDefaultToolkit().getSystemClipboard();
             java.awt.datatransfer.Transferable was=board.getContents(null);
             try {
-                SwingUtilities.invokeAndWait(()->{pad.page.setText(pad.page.getText()+"\nprivatespace//:"+PASSWORD);pad.copyNote();});
+                SwingUtilities.invokeAndWait(()->{pad.page.setText(pad.page.getText()+"\nprivatespace//:"+PHRASE);pad.copyNote();});
                 clean("the clipboard",(String)board.getData(java.awt.datatransfer.DataFlavor.stringFlavor));
             } finally{if(was!=null)try{board.setContents(was,null);}catch(IllegalStateException busy){/* as it is */}}
             saveNow(pad);
@@ -143,7 +143,7 @@ public class DesktopGuardTest {
         Desktop pad=open(folder);
         try {
             assertSame("the guard leaves Read me whole",NoteStore.READ_ME_SAYS,PrivateCode.scrub(NoteStore.READ_ME_SAYS));
-            assertTrue(NoteStore.READ_ME_SAYS.contains("type the word privatespace, then //: and your password, all together"));
+            // Private alone named since 0.4.008, which opens or makes a space (decision 214).
             assertTrue(NoteStore.READ_ME_SAYS.contains("type the word private, then //: and your password, all together"));
             assertTrue("the old one spelled them whole",PrivateCode.holds(NoteStore.READ_ME_0_3_008));
             NoteStore.Note n=new NoteStore.Note();n.book=Things.HOME;n.title=NoteStore.READ_ME;n.body=NoteStore.READ_ME_SAYS;n.revision=1;pad.store.save(n);
@@ -151,15 +151,17 @@ public class DesktopGuardTest {
             end(pad,pad.page);type(pad,pad.page,"\nMy own line");
             saveNow(pad);
             assertEquals(NoteStore.READ_ME_SAYS+"\nMy own line",pad.store.get(n.id).body);
-            // An old Read me, as 0.3.008 wrote it and as the guard leaves it once saved again: both said again.
+            // An old Read me, as 0.3.008 wrote it and as the guard leaves it once saved again: both said again, as README
+            // since 0.4.010 (decision 221).
             for(String was:new String[]{NoteStore.READ_ME_0_3_008,PrivateCode.scrub(NoteStore.READ_ME_0_3_008)}) {
-                NoteStore.Note old=new NoteStore.Note();old.book=Things.HOME;old.title=NoteStore.READ_ME;old.body="";old.revision=1;
+                NoteStore.Note old=new NoteStore.Note();old.book=Things.HOME;old.title=NoteStore.READ_ME_WAS;old.body="";old.revision=1;
                 pad.store.save(old);
                 // As a build before the guard wrote it: straight into the notebook, which save would not do.
                 pad.store.getWritableDatabase().execSQL("UPDATE notes SET body=? WHERE id=?",new Object[]{was,old.id});
                 assertEquals(was,pad.store.get(old.id).body);
                 assertTrue(pad.store.readMeAgain());
                 assertEquals(NoteStore.READ_ME_SAYS,pad.store.get(old.id).body);
+                assertEquals(NoteStore.READ_ME,pad.store.get(old.id).title);
                 for(NoteStore.Version v:pad.store.versions(old.id))assertFalse(PrivateCode.holds(v.body));
             }
         } finally{close(pad);}

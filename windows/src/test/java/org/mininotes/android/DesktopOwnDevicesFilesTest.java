@@ -34,7 +34,9 @@ public class DesktopOwnDevicesFilesTest {
         void pair(String address,String name,Device other) throws Exception {
             store.pairedWith(address,name,true,other.keys.agreement().getPublic().getEncoded(),other.keys.signing().getPublic().getEncoded());
         }
-        Post.Landed hear(byte[] sealed){return Post.arrived(context,store,keys,sealed);}
+        // This fixture hands every answer and file over itself. No runtime context: otherwise an
+        // arriving list also schedules a real background fetch, racing fetches() below.
+        Post.Landed hear(byte[] sealed){return Post.arrived(null,store,keys,sealed);}
         String attach(String note,byte[] bytes,String name) throws Exception {
             String id=UUID.randomUUID().toString();
             Files.write(store.fileFor(id).toPath(),bytes);

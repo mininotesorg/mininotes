@@ -41,7 +41,32 @@ public class DesktopMarksTest {
         SwingUtilities.invokeAndWait(()->{
             Desktop.Paper page=made[0];
             JFrame frame=new JFrame();frame.add(page);frame.pack();frame.setSize(600,220);
-            page.doLayout();
+            page.setSize(560,180);page.doLayout();
+            // An underlined word sits flush: its marks take no room on either side (decision 118).
+            try {
+                String words=page.getText();
+                int bread=words.indexOf("bread");
+                FontMetrics metrics=page.getFontMetrics(page.getFont());
+                double left=page.modelToView2D(bread).getX();
+                double right=page.modelToView2D(bread+5).getX();
+                assertEquals(metrics.stringWidth("bread"),right-left,1.5);
+                assertEquals("the opening marks add nothing",left,page.modelToView2D(bread-2).getX(),1.0);
+                assertEquals("the closing marks add nothing",right,page.modelToView2D(bread+7).getX(),1.0);
+                assertEquals("one space before the word",metrics.stringWidth(" "),left-page.modelToView2D(bread-3).getX(),1.5);
+                assertEquals("one space after the word",metrics.stringWidth(" "),page.modelToView2D(words.indexOf("today")).getX()-right,1.5);
+                // A line typed after the page is already drawn still hides the marks and stays flush (decision 118).
+                page.getDocument().insertString(words.length(),"\nmore __jam__ please",null);
+                page.setSize(560,180);page.doLayout();
+                String again=page.getText();
+                int jam=again.indexOf("jam");
+                double jamLeft=page.modelToView2D(jam).getX();
+                double jamRight=page.modelToView2D(jam+3).getX();
+                assertEquals(metrics.stringWidth("jam"),jamRight-jamLeft,1.5);
+                assertEquals("the opening marks add nothing on the next line",jamLeft,page.modelToView2D(jam-2).getX(),1.0);
+                assertEquals("the closing marks add nothing on the next line",jamRight,page.modelToView2D(jam+5).getX(),1.0);
+                int breadAgain=again.indexOf("bread");
+                assertEquals(metrics.stringWidth("bread"),page.modelToView2D(breadAgain+5).getX()-page.modelToView2D(breadAgain).getX(),1.5);
+            } catch(javax.swing.text.BadLocationException outside) { throw new AssertionError(outside); }
             BufferedImage image=new BufferedImage(560,180,BufferedImage.TYPE_INT_RGB);
             Graphics2D g=image.createGraphics();page.paint(g);g.dispose();
             try{javax.imageio.ImageIO.write(image,"png",SHOTS.resolve("76-marks.png").toFile());}catch(Exception e){throw new RuntimeException(e);}

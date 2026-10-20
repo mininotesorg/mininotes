@@ -31,10 +31,13 @@ final class Waits {
      *                  does not fit three levels, a collection going on its own with its look and its files - and go
      *                  the moment it says it knows about trees (see {@link Unsent.Why#NEEDS_UPDATE}). Not owed as well:
      *                  sending them again changes nothing until it is updated.
+     * @param asking    notes or files that arrived there for the first time and wait in its Shared with me to be accepted
+     *                  (see {@link Asking}): not "everybody has it" yet, whatever its answer said
      */
-    record Where(int owed,int lacking,int files,boolean confirmed,boolean stuck,boolean locked,int update) {
-        Where(int owed,int lacking,int files,boolean confirmed,boolean stuck){this(owed,lacking,files,confirmed,stuck,false,0);}
-        Where(int owed,int lacking,int files,boolean confirmed,boolean stuck,boolean locked){this(owed,lacking,files,confirmed,stuck,locked,0);}
+    record Where(int owed,int lacking,int files,boolean confirmed,boolean stuck,boolean locked,int update,int asking) {
+        Where(int owed,int lacking,int files,boolean confirmed,boolean stuck){this(owed,lacking,files,confirmed,stuck,false,0,0);}
+        Where(int owed,int lacking,int files,boolean confirmed,boolean stuck,boolean locked){this(owed,lacking,files,confirmed,stuck,locked,0,0);}
+        Where(int owed,int lacking,int files,boolean confirmed,boolean stuck,boolean locked,int update){this(owed,lacking,files,confirmed,stuck,locked,update,0);}
         /**
          * A device that is locked, with something waiting for it, is grey and not amber: amber asks for something to be
          * done, and there is nothing to do but open it. Red still wins - days of it is worth knowing - and one that
@@ -43,6 +46,8 @@ final class Waits {
          */
         SyncMark mark() {
             SyncMark said=SyncMark.person(owed>0||update>0,lacking>0,confirmed,stuck);
+            // Arrived, and waiting there to be accepted: sent, not "everybody has it" (the connect review, 2026-10-14).
+            if(asking>0&&said==SyncMark.GONE)said=SyncMark.SENT;
             return locked&&update==0&&(said==SyncMark.WAITING||said==SyncMark.SENT)?SyncMark.PAUSED:said;
         }
         /** Whether it is locked and something waits for it: what its round and the words say instead. */
@@ -50,12 +55,15 @@ final class Waits {
         /** Two notes' worth, added up, for a book or a collection. */
         Where and(Where other) {
             return other==null?this:new Where(owed+other.owed,lacking+other.lacking,files+other.files,
-                confirmed&&other.confirmed,stuck||other.stuck,locked||other.locked,update+other.update);
+                confirmed&&other.confirmed,stuck||other.stuck,locked||other.locked,update+other.update,asking+other.asking);
         }
     }
 
     /** What waits for one device only because it has not been updated: one thing, and nothing else about it known. */
     static Where needsUpdate(){return new Where(0,0,0,false,false,false,1);}
+
+    /** What is said of a device where what was shared waits to be accepted. */
+    static String accepting(String name){return "Waiting for "+name+" to accept it";}
 
     /** What is said of a device that is locked while something waits for it. */
     static String locked(String name){return name+" is locked; it takes it in when opened";}
@@ -79,6 +87,7 @@ final class Waits {
         else if(where.owed()>0)said=SyncMark.WAITING.person();
         else if(where.lacking()>0)said=name+" has the text; "+where.lacking()+" of "+files(where.files())+" still going.";
         else if(where.update()>0)said=Unsent.needsUpdate(name)+".";
+        else if(where.asking()>0)said=accepting(name)+".";
         else if(!where.confirmed())said=SyncMark.SENT.person();
         else said=where.files()>0?"Has this version, files included.":SyncMark.GONE.person();
         // And what waits for them to be updated, said as well where something else was said first.
@@ -95,7 +104,7 @@ final class Waits {
      */
     static List<String> lines(List<Device> devices,int notes) {
         List<String> stuck=new ArrayList<>(),update=new ArrayList<>(),owed=new ArrayList<>(),files=new ArrayList<>(),kept=new ArrayList<>(),
-            sent=new ArrayList<>(),locked=new ArrayList<>();
+            sent=new ArrayList<>(),locked=new ArrayList<>(),asking=new ArrayList<>();
         for(Device one:devices) {
             Where at=one.where();String name=one.name()==null||one.name().isBlank()?"a paired device":one.name();
             if(one.kept()>0)kept.add("Waiting to reach "+name+" with "+(one.kept()==1?"an answer":one.kept()+" answers"));
@@ -106,9 +115,10 @@ final class Waits {
             if(at!=null&&at.stuck())stuck.add(name+" has not been heard from for more than three days");
             else if(at!=null&&at.owed()>0)owed.add("Waiting to reach "+name+" with "+(notes>1?"changes to "+(at.owed()==1?"1 note":at.owed()+" notes"):"your changes"));
             if(at!=null&&at.lacking()>0)files.add("Waiting for "+name+" to confirm "+files(at.lacking()));
+            if(at!=null&&at.owed()==0&&at.lacking()==0&&at.update()==0&&!at.stuck()&&at.asking()>0){asking.add(accepting(name));continue;}
             if(at!=null&&at.owed()==0&&at.lacking()==0&&at.update()==0&&!at.confirmed()&&!at.stuck())sent.add("Sent to "+name+", waiting for them to say they have it");
         }
-        List<String> out=new ArrayList<>(stuck);out.addAll(update);out.addAll(owed);out.addAll(files);out.addAll(kept);out.addAll(sent);out.addAll(locked);
+        List<String> out=new ArrayList<>(stuck);out.addAll(update);out.addAll(owed);out.addAll(files);out.addAll(kept);out.addAll(sent);out.addAll(asking);out.addAll(locked);
         return out;
     }
 

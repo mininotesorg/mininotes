@@ -115,11 +115,13 @@ final class DesktopLock {
         boolean helloSet=DesktopHello.has(folder);
         JPasswordField password=new JPasswordField(24);password.setName("unlockPassword");
         // Wrapped at the box's width: cut off at the right edge, the line that said what to do next lost its end.
-        DesktopUi.Text wrong=DesktopUi.note(" ",420-2*DesktopUi.L,DesktopUi.WARN,DesktopUi.BODY.deriveFont(13f));wrong.setName("unlockSaid");
+        // At the width the box gives it, not one of its own: a fixed width a little wider than the box cut the line's end off.
+        DesktopUi.Text wrong=DesktopUi.note(" ",DesktopUi.SPREAD,DesktopUi.WARN,DesktopUi.BODY.deriveFont(13f));wrong.setName("unlockSaid");
         // The box grows to what was put in it after it was shown - a longer message, the password - rather than hiding it.
         Runnable fit=()->{if(box[0]==null)return;box[0].validate();int tall=box[0].getPreferredSize().height;if(tall>box[0].getHeight())box[0].setSize(box[0].getWidth(),tall);};
         // Painted first: a wrapped line is measured at the height it was last painted at, so a longer message measured one line.
-        java.util.function.BiConsumer<Color,String> say=(colour,words)->{wrong.setForeground(colour);wrong.setText(words);wrong.paintImmediately(wrong.getVisibleRect());SwingUtilities.invokeLater(fit);};
+        // In the language chosen (decision 160), as every word on the screen.
+        java.util.function.BiConsumer<Color,String> say=(colour,words)->{wrong.setForeground(colour);wrong.setText(Say.t(words));wrong.paintImmediately(wrong.getVisibleRect());SwingUtilities.invokeLater(fit);};
         JPanel body=DesktopUi.column();
         JLabel brand=new JLabel(new ImageIcon(DesktopIcon.image(48)));DesktopUi.add(body,brand);DesktopUi.gap(body,DesktopUi.M);
         DesktopUi.add(body,DesktopUi.body(helloSet?"Open your notes with Windows Hello.":"Type your password to open your notes."));DesktopUi.gap(body,DesktopUi.M);
@@ -164,7 +166,7 @@ final class DesktopLock {
                         asking[0]=null;
                         try{opened.accept(get());}
                         catch(Exception e){Throwable why=e.getCause()!=null?e.getCause():e;
-                            say.accept(DesktopUi.QUIET,(why.getMessage()!=null?why.getMessage():"Windows Hello did not open it.")+" Press Unlock with Windows Hello to try again, or use your backup password.");
+                            say.accept(DesktopUi.QUIET,Say.t(why.getMessage()!=null?why.getMessage():"Windows Hello did not open it.")+" "+Say.t("Press Unlock with Windows Hello to try again, or use your backup password."));
                             (byPassword.isVisible()?password:hello).requestFocusInWindow();}
                     }
                 };
@@ -226,7 +228,7 @@ final class DesktopLock {
     static boolean opening(Opener opener) {
         JDialog[] box={null};boolean[] shown={false};
         DesktopUi.Text said=DesktopUi.note(OPENING,360,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f));said.setName("unlockSaid");
-        java.util.function.BiConsumer<Color,String> say=(colour,words)->{said.setForeground(colour);said.setText(words);said.paintImmediately(said.getVisibleRect());
+        java.util.function.BiConsumer<Color,String> say=(colour,words)->{said.setForeground(colour);said.setText(Say.t(words));said.paintImmediately(said.getVisibleRect());
             SwingUtilities.invokeLater(()->{box[0].validate();int tall=box[0].getPreferredSize().height;if(tall>box[0].getHeight())box[0].setSize(box[0].getWidth(),tall);});};
         JProgressBar strip=strip();strip.setVisible(true);
         JPanel body=DesktopUi.column();
@@ -464,7 +466,7 @@ final class DesktopLock {
         JPanel passwordRow=DesktopUi.row(DesktopUi.body("Backup password"),holder(change)),wordsRow=DesktopUi.row(DesktopUi.body("12 recovery words"),holder(words));
         DesktopUi.Text ways=DesktopUi.quiet("Ways to open it");
         // Locking again when Mininotes has not been used for a while: a choice, and Never is one of them.
-        JComboBox<String> after=new JComboBox<>(AFTER_NAMES);after.setSelectedIndex(afterIndex(minutes(app.context)));
+        JComboBox<String> after=DesktopUi.combo(AFTER_NAMES);after.setSelectedIndex(afterIndex(minutes(app.context)));
         after.addActionListener(e->{int m=AFTER_MINUTES[after.getSelectedIndex()];app.context.getSharedPreferences("settings",0).edit().putString("autoLock",Integer.toString(m)).apply();});
         JPanel afterHolder=new JPanel(new GridBagLayout());afterHolder.setOpaque(false);afterHolder.add(after);
         JPanel afterRow=DesktopUi.row(DesktopUi.body("Lock again when not used"),afterHolder);

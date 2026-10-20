@@ -158,7 +158,7 @@ public class DesktopLookTravelsTest {
         pc.hear(phone.note(pc,seeds));
         String here=pc.store.above(seeds).get(0);
         assertEquals("Garden",pc.store.nameOf(here,true));
-        // Shared with the PC by somebody else, it waited for an answer: accepted, it is on Home (decision 109).
+        // Shared with the PC by somebody else, it waited for an answer: accepted, it is in Shared with me (decisions 109 and 122).
         pc.store.acceptShared(COLLECTION,here);assertEquals(Tint.USUAL,pc.store.toneOf(COLLECTION,here));
         // Its notes carry its name: nothing of its own to send, until its strength alone changes.
         assertTrue(phone.store.cartonsOwed(COLLECTION,garden).isEmpty());
@@ -167,7 +167,7 @@ public class DesktopLookTravelsTest {
         later();phone.store.paint(COLLECTION,garden,3);
         pc.hear(phone.carton(pc,PC,garden,true));
         assertEquals(6,pc.store.toneOf(COLLECTION,here));assertEquals("its colour too, decided after it was made",3,pc.store.colourOf(COLLECTION,here));
-        NoteStore.Branch line=null;for(NoteStore.Branch one:pc.store.contents(Things.HOME))if(one.id.equals(here))line=one;
+        NoteStore.Branch line=null;for(NoteStore.Branch one:pc.store.contents(NoteStore.SHARED))if(one.id.equals(here))line=one;
         assertNotNull(line);assertEquals("drawn with it",6,line.tone);assertEquals(3,line.colour);
         // Set on the PC afterwards: the phone's older carton, arriving again, does not put it back.
         byte[] older=phone.carton(pc,PC,garden,true);

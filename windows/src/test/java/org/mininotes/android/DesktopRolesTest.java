@@ -203,4 +203,46 @@ public class DesktopRolesTest {
         for(Parcel.Member member:one.store.travelling(Sharing.Scope.PAGE,note))if(member.key.equals(one.key()))return member;
         throw new AssertionError("no entry of its own");
     }
+
+    /**
+     * Shared as Can read, then made Can write, as the list that really travels says it (decision 120). The other side
+     * was a reader and then may write. The same the other way: made a reader again, it may only read.
+     */
+    @Test public void aReaderMadeAWriterMayWriteAndAWriterMadeAReaderMayNot() throws Exception {
+        Device owner=new Device("Owner again","MxRolesOwnerAgainFixture@127.0.0.1:9421");
+        Device reader=new Device("Reader","MxRolesReaderFixture@127.0.0.1:9422");
+        owner.pair(reader);reader.pair(owner);
+        String note=UUID.randomUUID().toString();
+        NoteStore.Note made=new NoteStore.Note();made.id=note;made.book=owner.store.someBook();made.title="List";made.body="milk";made.revision=1;owner.store.save(made);
+        owner.store.give(Sharing.Scope.PAGE,note,reader.at,Sharing.Level.READ,"Reader");
+        assertTrue(owner.store.mayChange(owner.ruleFor(note,reader)));
+        reader.hear(carried(owner,reader,note,1,"milk"));
+        assertEquals(Sharing.Level.READ,reader.store.myLevel(Sharing.Scope.PAGE,note));
+        assertTrue(reader.store.onlyReads(note));
+        long raised=System.currentTimeMillis();
+        owner.store.decide(owner.ruleFor(note,reader),Sharing.Level.WRITE,raised);
+        assertEquals(Sharing.Level.WRITE,owner.ruleFor(note,reader).level);
+        assertTrue("the list names the reader at Can write by the key they know themselves by",
+            named(owner,reader,note,Sharing.Level.WRITE));
+        reader.hear(carried(owner,reader,note,2,"milk"));
+        assertEquals(Sharing.Level.WRITE,reader.store.myLevel(Sharing.Scope.PAGE,note));
+        assertFalse(reader.store.onlyReads(note));
+        owner.store.decide(owner.ruleFor(note,reader),Sharing.Level.READ,raised+1);
+        reader.hear(carried(owner,reader,note,3,"milk"));
+        assertEquals(Sharing.Level.READ,reader.store.myLevel(Sharing.Scope.PAGE,note));
+        assertTrue(reader.store.onlyReads(note));
+    }
+
+    /** The note as it would go, carrying the list the notebook actually keeps, not one written beside it. */
+    private static byte[] carried(Device from,Device to,String id,long revision,String body) throws Exception {
+        boolean writes=from.store.mayWrite(to.at,java.util.List.of(id));
+        byte[] parcel=Parcel.wrap(new Parcel.Sent("","","","",from.store.get(id).title,body,writes,
+            from.store.travelling(Sharing.Scope.PAGE,id),"PAGE",id,false,-1L,true,null,1L));
+        return Envelope.seal(page(id),revision,System.currentTimeMillis(),parcel,from.keys.signing(),to.keys.agreement().getPublic());
+    }
+    private static boolean named(Device from,Device who,String id,Sharing.Level level) throws Exception {
+        for(Parcel.Member one:from.store.travelling(Sharing.Scope.PAGE,id))
+            if(one.key.equals(who.store.mySigningKey)&&one.level==level.said())return true;
+        return false;
+    }
 }

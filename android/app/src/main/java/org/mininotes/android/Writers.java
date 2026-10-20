@@ -60,6 +60,20 @@ final class Writers {
         return out;
     }
 
+    /** The runs over the letters from one place to another: a tab's share of its note's (see Sections, decision 142). */
+    Writers slice(int from,int to) {
+        Writers out=new Writers();int start=0;
+        for(int i=0;i<runs;i++){int a=Math.max(from,start),b=Math.min(to,start+lengths[i]);if(b>a)out.add(by[i],b-a);start+=lengths[i];}
+        return out;
+    }
+
+    /** Runs one after another, as the words they are about are: a note's tabs put back together. */
+    static Writers join(Writers... parts) {
+        Writers out=new Writers();
+        for(Writers part:parts)if(part!=null)for(int i=0;i<part.runs;i++)out.add(part.by[i],part.lengths[i]);
+        return out;
+    }
+
     /** How many letters these runs cover: always the length of the text they are about. */
     int length(){int all=0;for(int i=0;i<runs;i++)all+=lengths[i];return all;}
     /** How many runs there are, and each one: its length and its writer. */

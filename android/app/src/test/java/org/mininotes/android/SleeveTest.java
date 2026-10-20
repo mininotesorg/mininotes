@@ -65,6 +65,19 @@ public class SleeveTest {
         assertNotNull(older);assertEquals(0,older.until);assertEquals("Mx-owner",older.owner);
     }
 
+    /** Since 0.3.066: the device it is linked to a file on travels, and an older sleeve, or one linked nowhere, says none. */
+    @Test public void whereItIsLinkedTravelsAndAnOlderOneHasNone() throws IOException {
+        Sleeve.Sent s=sleeve("m",false);
+        Sleeve.Sent linked=new Sleeve.Sent(s.id,s.name,s.kind,s.bytes,s.manifest,true,s.scope,s.target,s.members,true,false,
+            "Mx-owner","key-owner",0,0,0,"Laptop");
+        byte[] whole=Sleeve.wrap(linked);
+        assertEquals("Laptop",Sleeve.open(whole).linked);
+        assertEquals("kept when it stops saying where the pieces are","Laptop",Sleeve.open(whole).unsaid().linked);
+        Sleeve.Sent older=Sleeve.open(Arrays.copyOf(whole,whole.length-4-"Laptop".length()));
+        assertNotNull(older);assertEquals("",older.linked);assertEquals("Mx-owner",older.owner);
+        assertEquals("",Sleeve.open(Sleeve.wrap(s)).linked);
+    }
+
     @Test public void itsOwnerAndItsChangesTravel() throws IOException {
         Sleeve.Sent s=sleeve("m",false);
         Sleeve.Sent named=new Sleeve.Sent(s.id,s.name,s.kind,s.bytes,s.manifest,true,s.scope,s.target,s.members,true,false,
@@ -88,15 +101,18 @@ public class SleeveTest {
     }
 
     /** How many bytes the field since 0.2.029 takes: when it is to be gone (decision 95). */
-    private static final int SINCE_0_2_029=8;
+    /** What 0.3.066 adds, for a file linked to none: the empty name of the device it is linked on. */
+    private static final int SINCE_0_3_066=4;
+    private static final int SINCE_0_2_029=8+SINCE_0_3_066;
     /** How many bytes the fields since 0.2.027 take with nobody named as owner: two empty fields, two times, then the 0.2.029 one. */
     private static final int SINCE_0_2_027=4+4+8+8+SINCE_0_2_029;
 
     @Test public void halfOfOneIsNotOne() throws IOException {
         byte[] whole=Sleeve.wrap(sleeve("m",true));
-        // Cut anywhere but where a 0.2.026 sleeve ends, which is a whole one of those (see oneFromBeforeIsReadAsItWas).
-        int before=whole.length-SINCE_0_2_027,between=whole.length-SINCE_0_2_029;
-        for(int cut=Sleeve.MAGIC.length;cut<whole.length;cut++)if(cut!=before&&cut!=between)assertNull("cut at "+cut,Sleeve.open(Arrays.copyOf(whole,cut)));
+        // Cut anywhere but where an older sleeve ends, which is a whole one of those: 0.2.026's (see oneFromBeforeIsReadAsItWas),
+        // 0.2.027's, and 0.3.065's, before where it is linked.
+        int before=whole.length-SINCE_0_2_027,between=whole.length-SINCE_0_2_029,linkless=whole.length-SINCE_0_3_066;
+        for(int cut=Sleeve.MAGIC.length;cut<whole.length;cut++)if(cut!=before&&cut!=between&&cut!=linkless)assertNull("cut at "+cut,Sleeve.open(Arrays.copyOf(whole,cut)));
         assertNull(Sleeve.open(null));assertNull(Sleeve.open(new byte[0]));assertNull(Sleeve.open(Sleeve.MAGIC));
     }
 

@@ -7,9 +7,9 @@ import javax.swing.JScrollPane;
 import javax.swing.plaf.ComponentUI;
 
 /**
- * A scroll bar that is not seen (the owner, 2026-10-05: "let's use an invisible scrolling bar on laptop"): its strip is
+ * A quiet scroll bar (the owner, 2026-10-09: keep the handle visible without hover): its strip is
  * the colour of what scrolls beside it, so a page washed in a colour runs to the edge with no cream band down its side,
- * and its handle shows only while the pointer is on the strip or it is being dragged. The wheel, the keys and a drag
+ * and its handle stays visible, becoming stronger on hover or while dragged. The wheel, the keys and a drag
  * scroll as they did.
  */
 public final class DesktopScroll extends com.formdev.flatlaf.ui.FlatScrollBarUI {
@@ -35,7 +35,8 @@ public final class DesktopScroll extends com.formdev.flatlaf.ui.FlatScrollBarUI 
 
     @Override protected Color getThumbColor(JComponent c,boolean hover,boolean pressed) {
         Color ground=beside(c);
-        if(!hoverTrack&&!hoverThumb&&!hover&&!pressed&&!isDragging)return ground;
-        return DesktopUi.mix(ground,DesktopUi.INK,pressed||isDragging?0.45f:0.3f);
+        boolean over=hoverTrack||hoverThumb||hover;
+        Color ink=ground.getRed()*299+ground.getGreen()*587+ground.getBlue()*114<128000?Color.WHITE:DesktopUi.INK;
+        return DesktopUi.mix(ground,ink,pressed||isDragging?0.5f:over?0.4f:0.3f);
     }
 }

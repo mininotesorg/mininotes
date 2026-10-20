@@ -21,16 +21,49 @@ final class DesktopOpenList extends JPanel {
     /** How many lines at most: what was lately in hand, not a second tree. */
     private static final int MOST=30;
     static final int WIDE=210;
+    /**
+     * The menu over the list, made as one of its lines is (the owner, 2026-10-18: "it must be perfectly aligned with the
+     * Recent list and it must be distanced from it a bit"; decision 192): the same inset, its mark where their faces are,
+     * its word where their names start, the same wash under the pointer; then room and a line before Recent.
+     */
+    final JButton menuRow=new JButton(Say.t("Menu")){
+        @Override protected void paintComponent(Graphics g0) {
+            if(getModel().isRollover()||getModel().isPressed()) {
+                Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setColor(new Color(0,0,0,getModel().isPressed()?24:14));g.fillRoundRect(0,0,getWidth(),getHeight(),12,12);g.dispose();
+            }
+            super.paintComponent(g0);
+        }
+    };
 
     DesktopOpenList(Desktop pad) {
         super(new BorderLayout());this.pad=pad;
         // The line before it is the grip's (decision 83), so it has no edge of its own.
         setBackground(DesktopUi.SHELF);
         setPreferredSize(new Dimension(WIDE,0));
-        JPanel head=new JPanel(new BorderLayout());head.setOpaque(false);head.setBorder(BorderFactory.createEmptyBorder(10,12,6,8));
-        JLabel title=new JLabel("Recent");title.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,13f));title.setForeground(DesktopUi.QUIET);
+        JPanel head=new JPanel(new BorderLayout());head.setOpaque(false);head.setBorder(BorderFactory.createEmptyBorder(0,12,6,8));
+        JLabel title=new JLabel(Say.t("Recent"));title.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,13f));title.setForeground(DesktopUi.QUIET);
+        // Over it, the menu (the owner, 2026-10-18: "bring it in the app over Recents"; decision 192; see Desktop.placeMenu).
+        menuRow.setIcon(new Icon(){public int getIconWidth(){return 22;}public int getIconHeight(){return 22;}
+            public void paintIcon(Component c,Graphics g0,int x,int y){Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setColor(DesktopUi.INK);for(int i=0;i<3;i++)g.fillRoundRect(x+4,y+6+i*5,14,2,2,2);g.dispose();}});
+        menuRow.setIconTextGap(10);menuRow.setHorizontalAlignment(SwingConstants.LEFT);
+        menuRow.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,13f));menuRow.setForeground(DesktopUi.INK);
+        menuRow.setContentAreaFilled(false);menuRow.setBorderPainted(false);menuRow.setFocusPainted(false);menuRow.setRolloverEnabled(true);
+        menuRow.setBorder(BorderFactory.createEmptyBorder(5,8,5,4));
+        menuRow.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        menuRow.setToolTipText(Say.t("Menu"));menuRow.getAccessibleContext().setAccessibleName(Say.t("Menu"));
+        menuRow.addActionListener(e->pad.menu(menuRow));
+        JPanel over=new JPanel(new BorderLayout());over.setOpaque(false);over.setBorder(BorderFactory.createEmptyBorder(8,0,0,0));
+        // Its line at the list's own inset, with room under it and a line, so it does not read as one of Recent.
+        JPanel inset=new JPanel(new BorderLayout());inset.setOpaque(false);inset.setBorder(BorderFactory.createEmptyBorder(0,6,0,6));inset.add(menuRow);
+        over.add(inset,BorderLayout.NORTH);
+        JComponent rule=new JComponent(){@Override protected void paintComponent(Graphics g){g.setColor(DesktopUi.LINE);g.fillRect(12,getHeight()/2,getWidth()-20,1);}};
+        rule.setPreferredSize(new Dimension(10,21));
+        over.add(rule,BorderLayout.SOUTH);
         head.add(title,BorderLayout.WEST);
-        add(head,BorderLayout.NORTH);
+        JPanel heads=new JPanel(new BorderLayout());heads.setOpaque(false);heads.add(over,BorderLayout.NORTH);heads.add(head,BorderLayout.SOUTH);
+        add(heads,BorderLayout.NORTH);
         lines.setOpaque(false);lines.setBorder(BorderFactory.createEmptyBorder(0,6,8,6));
         JPanel top=new JPanel(new BorderLayout());top.setOpaque(false);top.add(lines,BorderLayout.NORTH);
         JScrollPane scroll=new JScrollPane(top);scroll.setBorder(null);scroll.setOpaque(false);scroll.getViewport().setOpaque(false);
@@ -80,11 +113,21 @@ final class DesktopOpenList extends JPanel {
         row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         row.setToolTipText((one.kind==Overview.Kind.NOTE?"The note ":"The folder ")+DesktopHome.named(look));
         MouseAdapter hand=new MouseAdapter(){
-            public void mouseClicked(MouseEvent e){if(SwingUtilities.isLeftMouseButton(e))pad.save(()->pad.goTo(one));}
+            public void mouseClicked(MouseEvent e){if(SwingUtilities.isLeftMouseButton(e))pad.save(()->{
+                if(one.kind==Overview.Kind.COLLECTION){pad.showHome();pad.home.folder.openPlace(DesktopHome.recentPlace());pad.home.folder.into(look);}
+                else pad.goTo(one);
+            });}
             public void mouseEntered(MouseEvent e){row.putClientProperty("over",true);row.repaint();}
             public void mouseExited(MouseEvent e){row.putClientProperty("over",false);row.repaint();}
         };
         row.addMouseListener(hand);face.addMouseListener(hand);name.addMouseListener(hand);
+        // A right-click: the thing's own menu, as on Home (the owner, 2026-10-11: "everything across the app has a contextual menu").
+        // And, at its end, taking it out of Recent, as Recent on Home has (the owner, 2026-10-19: "in the Recent, on a right
+        // click, we need to have a remove from Recent option"; decision 210).
+        DesktopMenus.onRightClick(row,e->{JPopupMenu menu=pad.thingMenu(look);if(menu==null)menu=new JPopupMenu();else menu.addSeparator();
+            JMenuItem out=DesktopMenus.item("Remove from Recent");
+            out.addActionListener(a->pad.disk.submit(()->{pad.store.outOfRecent(look.id);return null;},done->{refresh();pad.home.refresh();pad.status.setText(Say.t("Removed from Recent"));},pad::failed));
+            menu.add(out);menu.show(e.getComponent(),e.getX(),e.getY());});
         return row;
     }
 }

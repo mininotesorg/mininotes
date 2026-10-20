@@ -14,3 +14,6 @@ dist/*
 keystore.properties
 windows/.gradle/
 windows/build/
+
+# The translation engine's source and build, fetched by tools (docs/TRANSLATION.md), never in the tree.
+native/

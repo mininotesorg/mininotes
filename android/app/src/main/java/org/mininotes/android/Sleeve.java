@@ -56,6 +56,11 @@ final class Sleeve {
          * on Temp is temporary on each of them, for the same time, as Temp is a note to oneself.
          */
         final long until;
+        /**
+         * The device where it is a file kept in step on disk, by its name, said only to the sender's own other devices, else
+         * empty (the owner, 2026-10-16: a linked file says so on the phone). Since 0.3.066, where an older build stops reading.
+         */
+        final String linked;
         Sent(String id,String name,String kind,long bytes,String manifest,boolean writes,String scope,String target,
              java.util.List<Parcel.Member> members,boolean answer,boolean gone) {
             this(id,name,kind,bytes,manifest,writes,scope,target,members,answer,gone,"","",0,0);
@@ -66,6 +71,11 @@ final class Sleeve {
         }
         Sent(String id,String name,String kind,long bytes,String manifest,boolean writes,String scope,String target,
              java.util.List<Parcel.Member> members,boolean answer,boolean gone,String owner,String ownerKey,long named,long replaced,long until) {
+            this(id,name,kind,bytes,manifest,writes,scope,target,members,answer,gone,owner,ownerKey,named,replaced,until,"");
+        }
+        Sent(String id,String name,String kind,long bytes,String manifest,boolean writes,String scope,String target,
+             java.util.List<Parcel.Member> members,boolean answer,boolean gone,String owner,String ownerKey,long named,long replaced,long until,String linked) {
+            this.linked=linked==null?"":linked;
             this.id=id==null?"":id;this.name=name==null?"":name;this.kind=kind==null?"":kind;this.bytes=bytes;
             this.manifest=manifest==null?"":manifest;this.writes=writes;this.scope=scope==null?"":scope;
             this.target=target==null?"":target;
@@ -75,9 +85,9 @@ final class Sleeve {
             this.named=Math.max(0,named);this.replaced=Math.max(0,replaced);this.until=Math.max(0,until);
         }
         /** The same file, named but not yet said where to find, as a list that does not fit says it. */
-        Sent unsaid(){return new Sent(id,name,kind,bytes,"",writes,scope,target,members,answer,gone,owner,ownerKey,named,replaced,until);}
+        Sent unsaid(){return new Sent(id,name,kind,bytes,"",writes,scope,target,members,answer,gone,owner,ownerKey,named,replaced,until,linked);}
         /** The same, not asking to be answered. */
-        Sent quiet(){return new Sent(id,name,kind,bytes,manifest,writes,scope,target,members,false,gone,owner,ownerKey,named,replaced,until);}
+        Sent quiet(){return new Sent(id,name,kind,bytes,manifest,writes,scope,target,members,false,gone,owner,ownerKey,named,replaced,until,linked);}
     }
 
     private Sleeve(){}
@@ -117,6 +127,8 @@ final class Sleeve {
         out.writeLong(sent.replaced);
         // Since 0.2.029 (decision 95), where a 0.2.027 or 0.2.028 build stops reading: when it is to be gone, to one's own devices.
         out.writeLong(sent.until);
+        // Since 0.3.066, where an older build stops reading: the device it is linked to a file on, or empty.
+        Parcel.put(out,sent.linked,Parcel.NAME_MOST);
         // Anything a later build adds goes after this, where this one stops reading.
         out.flush();
         return bytes.toByteArray();
@@ -161,7 +173,8 @@ final class Sleeve {
             // Present or not at all: half of it is a sleeve cut short, refused (readLong runs out).
             long until=in.available()>0?in.readLong():0;
             if(until<0)return null;
-            return new Sent(id,name,kind,size,manifest,writes,scope,target,members,answer,gone,owner,ownerKey,named,replaced,until);
+            String linked=in.available()>0?Parcel.get(in,Parcel.NAME_MOST):"";
+            return new Sent(id,name,kind,size,manifest,writes,scope,target,members,answer,gone,owner,ownerKey,named,replaced,until,linked);
         } catch(IOException | IllegalArgumentException broken){return null;}
     }
 }

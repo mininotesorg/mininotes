@@ -24,7 +24,7 @@ public class PrivateSpaceTest {
         assertEquals(PrivateCode.Kind.SPACE,PrivateCode.ending("Privatespace//:",15)[0]);
         // A phone's keyboard puts a space after "private", and a capital at the start of a line.
         assertEquals(PrivateCode.Kind.SPACE,PrivateCode.ending("Private space//:",16)[0]);
-        assertEquals(PrivateCode.Kind.OPEN,PrivateCode.ending("x private//:",12)[0]);
+        assertEquals("private//: opens or makes, as privatespace//: does",PrivateCode.Kind.SPACE,PrivateCode.ending("x private//:",12)[0]);
         assertNull(PrivateCode.ending("privatespace//:x",16));
         assertNull(PrivateCode.ending("private:",8));
         assertNull(PrivateCode.ending("privatespace//",14));

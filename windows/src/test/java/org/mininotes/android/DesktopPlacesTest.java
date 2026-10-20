@@ -126,7 +126,7 @@ public class DesktopPlacesTest {
                 SwingUtilities.convertPointToScreen(p,home);
                 Point desk=new Point(0,0);SwingUtilities.convertPointToScreen(desk,pad.home.folder);
                 // Past the window's edge, where holding turns the page, and short of the card.
-                return new Point(desk.x+38,p.y);
+                return new Point(desk.x+r.x+20,p.y);
             });
             SwingUtilities.invokeAndWait(()->{
                 assertTrue("beside the card",!pad.home.folder.card.getBounds().contains(38,over.y-pad.home.folder.getLocationOnScreen().y));
@@ -142,34 +142,24 @@ public class DesktopPlacesTest {
             assertEquals("in the cell it was let go in",Layout.cell(free[0],free[1]),bread.cell);
             SwingUtilities.invokeAndWait(()->assertFalse("the card went up a level: closed",pad.home.folder.isOpen()));
 
-            // The dock: seven favourites - the notebook's five and two past them, which the PC has room for.
+            // The dock: seven favourites, each in it as it was made one, as many as are put there (decision 190).
             List<NoteStore.Note> faves=new ArrayList<>();
             for(int n=1;n<=7;n++){NoteStore.Note one=note(store,kitchen.id,"Favourite "+n);store.keepToHand(NoteStore.Branch.Kind.PAGE,one.id,true);faves.add(one);}
             SwingUtilities.invokeAndWait(pad::refresh);settle(pad);
             SwingUtilities.invokeAndWait(()->assertEquals(dockIds(pad).toString(),7,pad.home.dock.tiles.size()));
-            // The dock draws the notebook's five first, then the rest: the sixth icon is one past them.
-            String sixth=onEdt(()->pad.home.dock.tiles.get(5).thing.id),fromTheFive=onEdt(()->pad.home.dock.tiles.get(1).thing.id);
-            assertEquals(5,onEdt(()->store.dock().size()).intValue());
-            assertFalse("the sixth is past the notebook's five",ids(onEdt(()->store.dock())).contains(sixth));
-            assertTrue(ids(onEdt(()->store.dock())).contains(fromTheFive));
-            SwingUtilities.invokeAndWait(()->{
-                assertTrue("offered on one past the fifth",offers(pad,pad.home.dock.tiles.get(5).thing));
-                assertTrue(offers(pad,pad.home.dock.tiles.get(1).thing));
-            });
-            // Taken out: gone from the dock, waiting in Favourites, which comes first on Home.
+            assertEquals(7,onEdt(()->store.dock().size()).intValue());
+            String sixth=onEdt(()->pad.home.dock.tiles.get(5).thing.id);
+            SwingUtilities.invokeAndWait(()->assertTrue("offered on every one in it",offers(pad,pad.home.dock.tiles.get(5).thing)));
+            // Taken out: gone from the dock, still a favourite, in Favourites, which comes first on Home.
             NoteStore.Branch sixthLine=onEdt(()->pad.home.dock.tiles.get(5).thing);
             SwingUtilities.invokeAndWait(()->pad.undock(sixthLine));settle(pad);
             SwingUtilities.invokeAndWait(()->{
                 assertFalse(dockIds(pad).contains(sixth));assertEquals(6,pad.home.dock.tiles.size());
                 assertTrue(ids(pad.home.overflow()).contains(sixth));
                 assertEquals(NoteStore.Branch.Kind.FAVOURITES,pad.home.grid.tiles.get(0).thing.kind);
-                assertFalse("not offered on one the dock does not draw",pad.home.inDock(sixth));
+                assertFalse(pad.home.inDock(sixth));assertTrue("Add to the dock offered instead",offersAdd(pad,sixthLine));
             });
-            // One of the notebook's five taken out too: it leaves that dock, and the room it leaves is not refilled by the sixth.
-            NoteStore.Branch secondLine=onEdt(()->pad.home.dock.tiles.get(1).thing);
-            SwingUtilities.invokeAndWait(()->pad.undock(secondLine));settle(pad);
-            assertFalse(ids(onEdt(()->store.dock())).contains(fromTheFive));
-            SwingUtilities.invokeAndWait(()->{assertFalse(dockIds(pad).contains(fromTheFive));assertFalse(dockIds(pad).contains(sixth));assertEquals(5,pad.home.dock.tiles.size());});
+            assertTrue(onEdt(()->store.favourite(NoteStore.Branch.Kind.PAGE,sixth)));
             shoot(pad.frame,"95c-dock-taken-out");
             // A move on Home with the Favourites icon on it pins that too, kept in this PC's settings: it does not jump into
             // the cell the moved one leaves.
@@ -181,10 +171,21 @@ public class DesktopPlacesTest {
                 assertEquals(NoteStore.Branch.Kind.FAVOURITES,pad.home.grid.tiles.get(0).thing.kind);
             });
             assertEquals(Layout.cell(favouritesAt[0],favouritesAt[1]),pad.context.getSharedPreferences("settings",0).getLong(NoteStore.FAVOURITES+"Cell",Layout.NONE));
-            // Starred again, or carried onto the dock, it comes back.
-            NoteStore.Branch sixthAgain=sixthLine;
-            SwingUtilities.invokeAndWait(()->pad.favourite(sixthAgain,true));settle(pad);
-            SwingUtilities.invokeAndWait(()->assertTrue(dockIds(pad).contains(sixth)));
+            // Added to the dock again from its menu: at its end.
+            SwingUtilities.invokeAndWait(()->pad.dock(sixthLine));settle(pad);
+            SwingUtilities.invokeAndWait(()->{assertTrue(dockIds(pad).contains(sixth));assertEquals(sixth,pad.home.dock.tiles.get(6).thing.id);});
+            // Twenty in it, more than the window shows: it scrolls across, and the last can be scrolled to.
+            for(int n=1;n<=13;n++){NoteStore.Note one=note(store,kitchen.id,"More "+n);store.toDockEnd(NoteStore.Branch.Kind.PAGE,one.id);}
+            SwingUtilities.invokeAndWait(pad::refresh);settle(pad);
+            SwingUtilities.invokeAndWait(()->{
+                assertEquals(20,pad.home.dock.tiles.size());
+                JScrollBar across=pad.home.dockScroll.getHorizontalScrollBar();
+                assertTrue("the bar to scroll across",across.isVisible());
+                across.setValue(across.getMaximum());
+                DesktopHome.Tile last=pad.home.dock.tiles.get(19);
+                assertTrue("the last one in view once scrolled",pad.home.dockScroll.getViewport().getViewRect().contains(last.getBounds()));
+            });
+            shoot(pad.frame,"95d-dock-scrolls");
         } finally {SwingUtilities.invokeAndWait(()->pad.shutdown(false));await(()->!pad.frame.isDisplayable());}
     }
 
@@ -234,10 +235,11 @@ public class DesktopPlacesTest {
             SwingUtilities.invokeAndWait(()->{JComponent head=pad.home.folder.head;carryTo(pad,head,head.getWidth()/2,head.getHeight()/2);});
             Thread.sleep(900);settle(pad);
             SwingUtilities.invokeAndWait(()->{assertFalse(pad.home.folder.aside());assertEquals(kitchen.id,pad.home.folder.id());});
-            // Out of the card over Home's bar, where no cell is and the card is not: it steps aside. Then an empty cell of
+            // Out of the card at the top of Home, beside the strip that is centred there while a thing is carried (the bar
+            // is in the title bar since 0.3.076), where no cell is and the card is not: it steps aside. Then an empty cell of
             // Home that the card, aside, does not cover, among the rows this page has: in a small window (the release
             // machine's screen is 1024 by 768) there are three, and a fourth aimed at put it on Home in no cell at all.
-            SwingUtilities.invokeAndWait(()->{carryTo(pad,home,home.getWidth()/2,2);
+            SwingUtilities.invokeAndWait(()->{carryTo(pad,home,12,2);
                 assertTrue("out of the card, it stepped aside",pad.home.folder.aside());});
             Thread.sleep(200);SwingUtilities.invokeAndWait(pad.frame::validate);
             int[] free=onEdt(()->{for(int row=0;row<home.rows();row++)for(int col=0;col<home.columns();col++)if(home.in(row,col)==null){
@@ -264,6 +266,10 @@ public class DesktopPlacesTest {
     private static List<String> ids(List<NoteStore.Branch> lines){List<String> out=new ArrayList<>();for(NoteStore.Branch one:lines)out.add(one.id);return out;}
     private static List<String> dockIds(Desktop pad){List<String> out=new ArrayList<>();for(DesktopHome.Tile one:pad.home.dock.tiles)out.add(one.thing.id);return out;}
     /** Whether a thing's menu offers to take it out of the dock. */
+    private static boolean offersAdd(Desktop pad,NoteStore.Branch thing) {
+        for(Component c:pad.thingMenu(thing).getComponents())if(c instanceof JMenuItem item&&"Add to the dock".equals(item.getText()))return true;
+        return false;
+    }
     private static boolean offers(Desktop pad,NoteStore.Branch thing) {
         for(Component c:pad.thingMenu(thing).getComponents())if(c instanceof JMenuItem item&&"Remove from the dock".equals(item.getText()))return true;
         return false;

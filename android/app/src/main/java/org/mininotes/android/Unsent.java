@@ -73,7 +73,9 @@ final class Unsent {
         if(said.equals(Direct.WAITS))return Why.NOT_IN_REACH;
         if(said.contains("node is not running"))return Why.NOT_CONNECTED;
         if(said.contains("older than sharing"))return Why.TOO_OLD;
-        if(said.contains("could not be looked up")||said.contains("could not be reached"))return Why.NOT_REACHED;
+        // The network's own words for a device it has no way to, said in the app's words instead (the owner, 2026-10-17:
+        // "no reachable address for …" in a box).
+        if(said.contains("could not be looked up")||said.contains("could not be reached")||said.contains("no reachable address"))return Why.NOT_REACHED;
         return Why.OTHER;
     }
 
@@ -117,7 +119,7 @@ final class Unsent {
     static String remedy(Problem p,String here) {
         switch(p.why) {
             case NOT_PAIRED:
-                return "Pair with it: open People and devices, show your code, and scan it on "+it(p.who)+".";
+                return "Add it: open People and devices, show your code, and scan it on "+it(p.who)+".";
             case ONLY_LISTED: return "Link with them to send it, or take them off if they should not have it.";
             case LINKING: return "If they do not, open Mininotes on "+it(p.who)+", or link with them by hand.";
             case NOT_REACHED: return "Open Mininotes on "+it(p.who)+", on the same Wi-Fi as "+here+" if you can. It stays waiting and goes by itself.";
@@ -138,7 +140,7 @@ final class Unsent {
     }
 
     /** The button's words, or null for none. */
-    static String button(Fix fix){return fix==Fix.PAIR?"Pair with it":fix==Fix.TRAVEL?"How notes travel":null;}
+    static String button(Fix fix){return fix==Fix.PAIR?"Add it":fix==Fix.TRAVEL?"How notes travel":null;}
 
     /** The button's words for this reason: somebody only listed is linked with by their name. */
     static String button(Problem p) {

@@ -405,6 +405,22 @@ public class SchemaMigrationsTest {
         String upper=step.toUpperCase(java.util.Locale.ROOT);
         assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
     }
+    @Test public void nobodyHasANameWePickYet() {
+        // Decision 124: the name they share, the name we pick, which is shown, and whether that stays on this device.
+        // Empty and off for every device already here, so the name the row already has stays the one they share.
+        assertTrue(SchemaMigrations.VERSION>=48);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(47,48));
+        for(String sql:new String[]{fresh,step}) {
+            assertTrue("addresses.sharedName",sql.contains("ALTER TABLE addresses ADD COLUMN sharedName TEXT NOT NULL DEFAULT ''"));
+            assertTrue("addresses.picked",sql.contains("ALTER TABLE addresses ADD COLUMN picked TEXT NOT NULL DEFAULT ''"));
+            assertTrue("addresses.showPicked",sql.contains("ALTER TABLE addresses ADD COLUMN showPicked INTEGER NOT NULL DEFAULT 0"));
+            assertTrue("addresses.pickedHere",sql.contains("ALTER TABLE addresses ADD COLUMN pickedHere INTEGER NOT NULL DEFAULT 0"));
+            assertTrue("addresses.pickedAt",sql.contains("ALTER TABLE addresses ADD COLUMN pickedAt INTEGER NOT NULL DEFAULT 0"));
+        }
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+        assertEquals(5,SchemaMigrations.upgrade(47,48).size());
+    }
     @Test public void nobodyIsInAGroupYetAndEveryRuleWasGivenDirectly() {
         // Decision 100: groups, who is in each, what each was given, and the group a rule came from: none of it for any
         // rule there is, so every rule already here stays one given to its person on their own.
@@ -459,6 +475,82 @@ public class SchemaMigrationsTest {
         // Columns and a table only: nothing already here is changed, so nothing already here waits.
         String upper=step.toUpperCase(java.util.Locale.ROOT);
         assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+
+    @Test public void nothingIsKeptAsAFileYet() {
+        // Decision 162: where a note or a folder is kept on the disk too, this device's own; a table only, so every note
+        // already here stays inside until somebody chooses otherwise, and nothing already here is changed.
+        assertTrue(SchemaMigrations.VERSION>=51);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(50,51));
+        for(String sql:new String[]{fresh,step})
+            assertTrue("ondisk",sql.contains("CREATE TABLE IF NOT EXISTS ondisk(id TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'note', path TEXT NOT NULL, "
+                +"hash TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0, head TEXT NOT NULL DEFAULT '', under TEXT NOT NULL DEFAULT '', lost TEXT NOT NULL DEFAULT '')"));
+        assertEquals(1,SchemaMigrations.upgrade(50,51).size());
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP ")||upper.contains("ALTER "));
+    }
+
+    @Test public void theDockGetsAnOrderOfItsOwnFilledWithTheFavourites() {
+        // Decision 190: a column on things and on notes, this device's, filled once with every favourite; nothing removed.
+        assertTrue(SchemaMigrations.VERSION>=52);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(51,52));
+        for(String sql:new String[]{fresh,step}) {
+            assertTrue(sql.contains("ALTER TABLE things ADD COLUMN docked INTEGER NOT NULL DEFAULT 0"));
+            assertTrue(sql.contains("ALTER TABLE notes ADD COLUMN docked INTEGER NOT NULL DEFAULT 0"));
+        }
+        assertTrue(step.contains("WHERE favourite=1")&&step.contains("WHERE pinned=1"));
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+
+    @Test public void stampsAndSecretsAreTwoNewTables() {
+        // Decision 199: two tables, nothing already here changed.
+        assertTrue(SchemaMigrations.VERSION>=53);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(52,53));
+        for(String sql:new String[]{fresh,step}){assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS stamps("));assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS secrets("));}
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP ")||upper.contains("ALTER "));
+    }
+
+    @Test public void aStampKeepsWhatMinimaSaid() {
+        // Decision 203: four columns added to stamps, nothing already there changed.
+        assertTrue(SchemaMigrations.VERSION>=55);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(54,55));
+        for(String sql:new String[]{fresh,step})for(String col:new String[]{"block","txpow","recorded","name"})
+            assertTrue(col,sql.contains("ALTER TABLE stamps ADD COLUMN "+col));
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+
+    @Test public void aFileTakenOutElsewhereIsRememberedByWhoTookItOut() {
+        // Decision 206: one column added to incoming, nothing already there changed.
+        assertTrue(SchemaMigrations.VERSION>=56);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(55,56));
+        for(String sql:new String[]{fresh,step})assertTrue(sql.contains("ALTER TABLE incoming ADD COLUMN taken INTEGER NOT NULL DEFAULT 0"));
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+
+    @Test public void everyStampIsKeptInATableOfItsOwn() {
+        // Decision 218: a new table, filled from stamps, nothing already there changed.
+        assertTrue(SchemaMigrations.VERSION>=57);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(56,57));
+        for(String sql:new String[]{fresh,step}) {
+            assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS stamped("));
+            for(String col:new String[]{"state TEXT","tries INTEGER","block INTEGER","txpow TEXT","tx TEXT","recorded TEXT","words TEXT","title TEXT"})assertTrue(col,sql.contains(col));
+            assertTrue(sql.contains("SELECT id,kind,name,hash,at,request,"));
+        }
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP ")||upper.contains("ALTER "));
+    }
+
+    @Test public void theNftOfAVerificationIsKeptWithItsStamps() {
+        // Decision 224: two columns added to stamped, nothing already there changed.
+        assertTrue(SchemaMigrations.VERSION>=58);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(57,58));
+        for(String sql:new String[]{fresh,step})for(String col:new String[]{"nft","nfttx"})assertTrue(col,sql.contains("ALTER TABLE stamped ADD COLUMN "+col+" TEXT NOT NULL DEFAULT ''"));
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP ")||upper.contains("CREATE "));
     }
 
     @Test public void downgradeIsRefusedRatherThanRewritingTheNotebook() {

@@ -11,7 +11,8 @@ import javax.swing.*;
 
 /**
  * Something another person shared with me for the first time, on the PC's screens (the owner, 2026-10-06; docs/HOME.md,
- * decision 109): the pop-up for one thing and for several, Shared with me with Waiting for you first, the Refuse box, and on
+ * decision 109, and decision 127): the pop-up for one thing and for several, Shared with me as the same icons as everywhere
+ * else, a click offering Accept, Refuse and See sender, the Refuse box, and on
  * the sender's side the notice and the Refused line in the Share box. Each pictured, made-up people and notes only.
  */
 public class DesktopSharedWithMeTest {
@@ -58,21 +59,24 @@ public class DesktopSharedWithMeTest {
             settle(pad);
             shoot(pad.frame,"109c-home-count");
             for(DesktopHome.Tile one:pad.home.grid.tiles){assertNotEquals(market,one.thing.id);assertNotEquals(list.id,one.thing.id);}
-            // Shared with me: Waiting for you first, a line each, Refuse and Accept on it.
+            // Shared with me: the same icons as everywhere else. A click is Accept, Refuse, See sender. No strip of buttons.
             SwingUtilities.invokeAndWait(()->pad.home.folder.openPlace(DesktopHome.sharedPlace()));settle(pad);
-            assertEquals(3,pad.home.folder.asking.size());assertTrue(pad.home.folder.waits.isShowing());
+            assertFalse("no waiting strip",pad.home.folder.waits.isShowing());
+            assertEquals(3,asking(pad).size());
+            NoteStore.Branch accepting=asking(pad,market);
+            JPopupMenu menu=onEdt(()->pad.home.menuFor(accepting));
+            assertNotNull(item(menu,FirstShare.ACCEPT));assertNotNull(item(menu,FirstShare.REFUSE));assertNotNull(item(menu,FirstShare.SEE_SENDER));
+            assertNull("Block is on See sender, and only when they are not a contact",item(menu,FirstShare.BLOCK));
             shoot(pad.frame,"109d-waiting-for-you");
-            // Accepted: on Home, and the line is gone.
-            NoteStore.Branch first=null;for(NoteStore.Branch one:pad.home.folder.asking)if(one.id.equals(market))first=one;
-            NoteStore.Branch accepting=first;
+            // Accepted: on Home, and the icon is no longer waiting.
             SwingUtilities.invokeAndWait(()->pad.acceptWaiting(accepting));settle(pad);settle(pad);
             assertFalse(store.waits(NoteStore.Branch.Kind.COLLECTION,market));
-            assertEquals(2,pad.home.folder.asking.size());
-            assertTrue(pad.status.getText(),pad.status.getText().contains("“Saturday market” is on Home now"));
+            assertEquals(2,asking(pad).size());
+            assertNull(asking(pad,market));
+            assertTrue(pad.status.getText(),pad.status.getText().contains("“Saturday market” is in Shared with me now"));
             shoot(pad.frame,"109e-accepted");
             // Refuse: the box, quietly first, then telling them with a few words.
-            NoteStore.Branch soup=null;for(NoteStore.Branch one:pad.home.folder.asking)if(one.id.equals(recipe.id))soup=one;
-            NoteStore.Branch refusing=soup;
+            NoteStore.Branch refusing=asking(pad,recipe.id);
             JDialog refuse=opened(()->pad.refuseWaiting(refusing),"refuse");
             shoot(refuse,"109f-refuse-box");
             SwingUtilities.invokeAndWait(()->{button(refuse,FirstShare.TELL).doClick();JTextField words=field(refuse);words.setText("Thanks, I have one already");});
@@ -80,7 +84,7 @@ public class DesktopSharedWithMeTest {
             SwingUtilities.invokeAndWait(()->button(refuse,FirstShare.REFUSE).doClick());
             pad.network.flush(10000);settle(pad);
             assertNull("deleted here",store.get(recipe.id));
-            assertEquals(1,pad.home.folder.asking.size());
+            assertEquals(1,asking(pad).size());
             shoot(pad.frame,"109h-refused");
             SwingUtilities.invokeAndWait(()->pad.home.folder.close());settle(pad);
             // The sender's side: a note of mine shared with Ana, who refused it with a few words.
@@ -99,15 +103,55 @@ public class DesktopSharedWithMeTest {
             assertNotNull("the Refused line",named(share,"refused Ana"));
             shoot(share,"109j-share-box-refused");
             SwingUtilities.invokeAndWait(share::dispose);
+            // Somebody not in People: See sender offers Block sender. People lists them. The note already kept stays.
+            NoteStore.Note stray=new NoteStore.Note();stray.book=Things.HOME;stray.title="Stray note";stray.body="Synthetic stray";store.save(stray);
+            String strayAt="MxStrayFixture@127.0.0.1:9999";
+            theirs(store,"notes",stray.id,strayAt);
+            SwingUtilities.invokeAndWait(()->{pad.refresh();pad.home.folder.openPlace(DesktopHome.sharedPlace());});settle(pad);
+            NoteStore.Branch strayLine=asking(pad,stray.id);
+            assertNotNull("the stray share is an icon",strayLine);
+            JDialog sender=opened(()->pad.seeSender(strayLine),"sender");
+            assertNotNull(button(sender,FirstShare.BLOCK));
+            SwingUtilities.invokeAndWait(()->button(sender,FirstShare.BLOCK).doClick());
+            settle(pad);
+            assertTrue(pad.status.getText(),pad.status.getText().contains(FirstShare.BLOCKED_SAID));
+            assertTrue(store.senderBlocked(strayAt));
+            assertNotNull("the note already kept stays",store.get(stray.id));
+            JDialog people=opened(()->pad.people(null),DesktopPeople.TITLE);
+            assertNotNull(named(people,"blocked "+strayAt));
+            assertNotNull(named(people,"delete "+strayAt));
+            SwingUtilities.invokeAndWait(people::dispose);
         } finally {
             SwingUtilities.invokeAndWait(()->{for(Window w:Window.getWindows())if(w instanceof JDialog&&w.isShowing())w.dispose();});
             pad.shutdown(false,null);
         }
     }
 
+    /** The waiting icons in Shared with me, as the grid draws them. */
+    private static java.util.List<NoteStore.Branch> asking(Desktop pad) throws Exception {
+        java.util.List<NoteStore.Branch> out=new java.util.ArrayList<>();
+        SwingUtilities.invokeAndWait(()->{for(DesktopHome.Tile one:pad.home.folder.grid.tiles)if(one.thing.asking)out.add(one.thing);});
+        return out;
+    }
+    private static NoteStore.Branch asking(Desktop pad,String id) throws Exception {
+        for(NoteStore.Branch one:asking(pad))if(id.equals(one.id))return one;
+        return null;
+    }
+    private static <T> T onEdt(java.util.concurrent.Callable<T> call) throws Exception {
+        Object[] got={null};Exception[] failed={null};
+        SwingUtilities.invokeAndWait(()->{try{got[0]=call.call();}catch(Exception e){failed[0]=e;}});
+        if(failed[0]!=null)throw failed[0];
+        @SuppressWarnings("unchecked") T it=(T)got[0];
+        return it;
+    }
+    private static JMenuItem item(JPopupMenu menu,String words) {
+        for(Component c:menu.getComponents())if(c instanceof JMenuItem i&&words.equals(i.getText()))return i;
+        return null;
+    }
+
     /** A thing as an arrival from another person leaves it: theirs, from them, and waiting to be accepted. */
     private static void theirs(NoteStore store,String table,String id,String from) {
-        store.getWritableDatabase().execSQL("UPDATE "+table+" SET theirs=1,origin=?,accepted=0"+("notes".equals(table)?",writes=1":"")+" WHERE id=?",new Object[]{from,id});
+        store.getWritableDatabase().execSQL("UPDATE "+table+" SET theirs=1,origin=?,shown=?,accepted=0"+("notes".equals(table)?",writes=1":"")+" WHERE id=?",new Object[]{from,NoteStore.SHARED,id});
     }
 
     /** A box opened by something that waits for it to close, found once it is up, by its title or its name. */

@@ -127,7 +127,8 @@ public class DesktopLooksTest {
         NoteStore.Note theirs=write(store,kitchen,"Synthetic from somebody");
         store.getWritableDatabase().execSQL("UPDATE notes SET theirs=1,origin=? WHERE id=?",new Object[]{PHONE,theirs.id});
         store.stands(Sharing.Scope.PAGE,theirs.id,Sharing.Level.READ,1);
-        assertThrows(IllegalArgumentException.class,()->store.setIcon(NoteStore.Branch.Kind.PAGE,theirs.id,"star"));
+        // Not the folder's star, which it wears from its folder (decision 153): a change.
+        assertThrows(IllegalArgumentException.class,()->store.setIcon(NoteStore.Branch.Kind.PAGE,theirs.id,"heart"));
 
         // In the row, so in a backup, and back again.
         store.setImage(NoteStore.Branch.Kind.COLLECTION,kitchen,picture);
@@ -211,9 +212,9 @@ public class DesktopLooksTest {
         pc.hear(note(phone,pc,two,1,"Synthetic beans",List.of(new Parcel.Step("their-garden","Garden","flower",0,1)),"",null));
         assertEquals(garden,pc.store.above(two).get(0));
         assertEquals("flower",pc.store.iconOf(NoteStore.Branch.Kind.COLLECTION,garden));
-        // Shared with the PC by somebody else, it waited for an answer: accepted, it is on Home (decision 109).
+        // Shared with the PC by somebody else, it waited for an answer: accepted, it is in Shared with me (decisions 109 and 122).
         pc.store.acceptShared(NoteStore.Branch.Kind.COLLECTION,garden);
-        assertEquals("flower",line(pc.store.contents(Things.HOME),garden).icon);
+        assertEquals("flower",line(pc.store.contents(NoteStore.SHARED),garden).icon);
         // A note from a build before trees names the collection in its old fields, says no icon, and takes none off.
         byte[] old=Parcel.wrap(new Parcel.Sent("","","their-garden","Garden","Peas","Synthetic peas",true),Envelope.MAX_TEXT);
         pc.hear(Envelope.seal(page(three),1,1,old,phone.keys.signing(),pc.keys.agreement().getPublic()));
@@ -225,7 +226,7 @@ public class DesktopLooksTest {
         pc.hear(carton(phone,pc,"their-garden","Garden",3,"sprout",picture));
         assertArrayEquals(picture,pc.store.imageOf(NoteStore.Branch.Kind.COLLECTION,garden));
         assertEquals("sprout",pc.store.iconOf(NoteStore.Branch.Kind.COLLECTION,garden));
-        assertArrayEquals(picture,line(pc.store.contents(Things.HOME),garden).image);
+        assertArrayEquals(picture,line(pc.store.contents(NoteStore.SHARED),garden).image);
         // One behind what was taken from them already puts nothing back.
         pc.hear(carton(phone,pc,"their-garden","Garden",2,"leaf",null));
         assertArrayEquals(picture,pc.store.imageOf(NoteStore.Branch.Kind.COLLECTION,garden));

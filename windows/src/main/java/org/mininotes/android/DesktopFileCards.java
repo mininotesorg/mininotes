@@ -52,32 +52,57 @@ final class DesktopFileCards extends JPanel {
     boolean shows(String note,int count){return showing.equals(note==null?"":note)&&drawn==count;}
 
     /** The cards for this note, drawn again: thumbnails are made off the event thread. */
+    /** The pages drawn for documents' cards, by file and size; NONE where nothing could be drawn. */
+    private final java.util.Map<String,BufferedImage> pages=new java.util.concurrent.ConcurrentHashMap<>();
+    private static final BufferedImage NONE=new BufferedImage(1,1,BufferedImage.TYPE_INT_RGB);
+    private static final java.util.concurrent.ExecutorService PREVIEWS=java.util.concurrent.Executors.newSingleThreadExecutor(work->{
+        Thread one=new Thread(work,"mininotes-previews");one.setDaemon(true);one.setPriority(Thread.MIN_PRIORITY);return one;});
+
     void show(String note) {
         if(!showing.equals(note==null?"":note))stopPlaying();
         showing=note==null?"":note;
         if(note==null){row.removeAll();setVisible(false);revalidate();return;}
         app.disk.submit(()->{
-            List<NoteStore.Held> files=app.store.filesOf(NoteStore.Branch.Kind.PAGE,note);
+            List<NoteStore.Held> files=app.store.notAway(app.store.filesOf(NoteStore.Branch.Kind.PAGE,note));
             java.util.Map<String,BufferedImage> thumbs=new java.util.HashMap<>();
             java.util.Map<String,Long> lengths=new java.util.HashMap<>();
-            for(NoteStore.Held file:files)if(picture(file))try{thumbs.put(file.id,thumbnail(file));}catch(Exception unreadable){/* shown by its kind */}
+            for(NoteStore.Held file:files)if(picture(file))try{BufferedImage made=thumbnail(file);if(made!=null)thumbs.put(file.id,made);}catch(Exception unreadable){/* shown by its kind */}
+            // A document's page is drawn on a thread of its own, never on the one the note's saves wait on (decision 208):
+            // what is drawn already is used, what is not is drawn next and the cards shown again.
+            List<NoteStore.Held> toDraw=new java.util.ArrayList<>();
+            for(NoteStore.Held file:files)if(!picture(file)&&Peek.previewed(file.name,file.kind,file.bytes)) {
+                String key=file.id+":"+file.bytes;
+                if(pages.containsKey(key)){BufferedImage made=pages.get(key);if(made!=NONE)thumbs.put(file.id,made);}else toDraw.add(file);
+            }
+            if(!toDraw.isEmpty())PREVIEWS.execute(()->{
+                for(NoteStore.Held file:toDraw){BufferedImage made=null;try{made=thumbnail(file);}catch(Throwable unreadable){/* its kind, then */}
+                    pages.put(file.id+":"+file.bytes,made==null?NONE:made);}
+                SwingUtilities.invokeLater(()->{if(showing.equals(note))show(note);});
+            });
             // How long each recording is, read from its own bytes, so the card says it before ▶ is pressed.
             for(NoteStore.Held file:files)if(Recording.audio(file.name,file.kind)&&file.bytes<=Attachment.LIMIT)try{lengths.put(file.id,Recording.millis(bytes(file)));}catch(Exception unreadable){/* no length said */}
-            return new Object[]{files,thumbs,app.store.fileStates(note,Node.onlyMine(app.context)),lengths};
+            // Which are stamped on Minima, and how far, for the mark on their cards (decision 224).
+            java.util.Map<String,NoteStore.StampRow> stamped=new java.util.HashMap<>();
+            for(NoteStore.Held file:files){List<NoteStore.StampRow> all=app.store.stampsOf(file.id);if(!all.isEmpty())stamped.put(file.id,all.get(0));}
+            return new Object[]{files,thumbs,app.store.fileStates(note,Node.onlyMine(app.context)),lengths,stamped};
         },loaded->{
             if(!showing.equals(note))return;
             @SuppressWarnings("unchecked") List<NoteStore.Held> files=(List<NoteStore.Held>)loaded[0];
             @SuppressWarnings("unchecked") java.util.Map<String,BufferedImage> thumbs=(java.util.Map<String,BufferedImage>)loaded[1];
             @SuppressWarnings("unchecked") java.util.Map<String,String> states=(java.util.Map<String,String>)loaded[2];
             @SuppressWarnings("unchecked") java.util.Map<String,Long> lengths=(java.util.Map<String,Long>)loaded[3];
+            @SuppressWarnings("unchecked") java.util.Map<String,NoteStore.StampRow> stamped=(java.util.Map<String,NoteStore.StampRow>)loaded[4];
             row.removeAll();faces.clear();
-            for(NoteStore.Held file:files)row.add(card(file,thumbs.get(file.id),states.getOrDefault(file.id,""),lengths.getOrDefault(file.id,-1L)));
+            for(NoteStore.Held file:files)row.add(card(file,thumbs.get(file.id),states.getOrDefault(file.id,""),lengths.getOrDefault(file.id,-1L),stamped.get(file.id)));
             // Still playing if it is still here: the player finds its new card by the file's id.
             if(playing!=null&&!faces.containsKey(playing))stopPlaying();
             drawn=files.size();
             setVisible(open&&drawn>0);revalidate();repaint();if(getParent()!=null)getParent().revalidate();
         },app::failed);
     }
+
+    /** The cards drawn again as they stand: a stamp sent, landed or found shows on its file's card (decision 224). */
+    void again(){if(!showing.isEmpty())show(showing);}
 
     static boolean picture(NoteStore.Held file) {
         return (file.kind!=null&&file.kind.startsWith("image/"))||pictureNamed(file.name);
@@ -95,6 +120,8 @@ final class DesktopFileCards extends JPanel {
         if(file.bytes>20L*1024*1024)return null;
         ByteArrayOutputStream bytes=new ByteArrayOutputStream();
         DesktopFiles.copyOut(app.context,app.store.fileFor(file.id).toPath(),bytes);
+        // A document: its first page, or its first words on a small page (decision 208).
+        if(!picture(file))return page(bytes.toByteArray(),file.name,file.kind,w,h);
         BufferedImage whole=javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(bytes.toByteArray()));
         if(whole==null)return null;
         double scale=Math.max((double)w/whole.getWidth(),(double)h/whole.getHeight());
@@ -105,7 +132,48 @@ final class DesktopFileCards extends JPanel {
         return small;
     }
 
-    private JComponent card(NoteStore.Held file,BufferedImage thumb,String going,long millis) {
+    /**
+     * A document's card face: a PDF's first page drawn by PDFBox, the top of it across the card; anything else whose words
+     * can be read, those words on a small white page. Null where there is nothing to draw, so its kind is shown.
+     */
+    static BufferedImage page(byte[] bytes,String name,String kind,int w,int h) {
+        if(Peek.pdf(name,kind)) {
+            try(org.apache.pdfbox.pdmodel.PDDocument pdf=org.apache.pdfbox.Loader.loadPDF(bytes)) {
+                if(pdf.getNumberOfPages()==0)return null;
+                float wide=pdf.getPage(0).getMediaBox().getWidth();
+                BufferedImage drawn=new org.apache.pdfbox.rendering.PDFRenderer(pdf).renderImage(0,Math.max(0.05f,w*2f/Math.max(1f,wide)));
+                return top(drawn,w,h);
+            } catch(Throwable unreadable){return null;}
+        }
+        List<String> lines=Peek.lines(bytes,name,kind,8);
+        if(lines.isEmpty())return null;
+        BufferedImage paper=new BufferedImage(w*2,h*2,BufferedImage.TYPE_INT_RGB);
+        Graphics2D g=paper.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setColor(Color.WHITE);g.fillRect(0,0,paper.getWidth(),paper.getHeight());
+        g.setColor(new Color(60,64,67));Font small=DesktopUi.BODY.deriveFont(15f);g.setFont(small);
+        FontMetrics m=g.getFontMetrics();int y=14+m.getAscent(),x=16,room=paper.getWidth()-2*x;
+        for(String line:lines) {
+            // Each line to the width, cut with an ellipsis: a glance at it, not the document.
+            String said=line;while(said.length()>1&&m.stringWidth(said+"…")>room)said=said.substring(0,said.length()-1);
+            g.drawString(said.length()<line.length()?said+"…":said,x,y);y+=m.getHeight();
+            if(y>paper.getHeight())break;
+        }
+        g.dispose();
+        return top(paper,w,h);
+    }
+    /** The top of a page across the card's width, made small. */
+    private static BufferedImage top(BufferedImage whole,int w,int h) {
+        double scale=(double)w/whole.getWidth();
+        BufferedImage small=new BufferedImage(w,h,BufferedImage.TYPE_INT_RGB);
+        Graphics2D g=small.createGraphics();g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        g.setRenderingHint(RenderingHints.KEY_RENDERING,RenderingHints.VALUE_RENDER_QUALITY);
+        g.setColor(Color.WHITE);g.fillRect(0,0,w,h);
+        g.drawImage(whole,0,0,w,(int)Math.round(whole.getHeight()*scale),null);g.dispose();
+        return small;
+    }
+
+    private JComponent card(NoteStore.Held file,BufferedImage thumb,String going,long millis,NoteStore.StampRow stamp) {
         JPanel card=new JPanel(new BorderLayout()){
             @Override protected void paintComponent(Graphics g0) {
                 Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
@@ -136,9 +204,17 @@ final class DesktopFileCards extends JPanel {
         size.setFont(DesktopUi.BODY.deriveFont(11.5f));size.setForeground(going.isEmpty()?Desktop.QUIET:Desktop.ACCENT);
         if(!going.isEmpty())size.setToolTipText(going);
         JPanel words=new JPanel(new BorderLayout());words.setOpaque(false);words.add(name,BorderLayout.NORTH);words.add(size,BorderLayout.SOUTH);
+        // Stamped on Minima: a small stamp before its name, saying how far, and a click on it opens the stamp's box (decision 224).
+        if(stamp!=null) {
+            JLabel mark=new JLabel(DesktopIcons.glyph("stamp",14));mark.setName("stampMark");mark.setBorder(BorderFactory.createEmptyBorder(0,0,0,4));
+            mark.setToolTipText(Integritas.noteLine(stamp,false));mark.getAccessibleContext().setAccessibleName(Integritas.noteLine(stamp,false));
+            mark.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            mark.addMouseListener(new MouseAdapter(){@Override public void mouseClicked(MouseEvent e){if(SwingUtilities.isLeftMouseButton(e)){e.consume();DesktopStamp.show(app,stamp.n());}}});
+            words.add(mark,BorderLayout.WEST);
+        }
         JButton delete=new JButton("×");delete.setFocusPainted(false);delete.setMargin(new Insets(0,4,0,4));delete.setFont(DesktopUi.BODY.deriveFont(15f));
         delete.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
-        delete.setToolTipText("Delete this attachment");delete.getAccessibleContext().setAccessibleName("Delete "+file.name);
+        delete.setToolTipText("Move to bin");delete.getAccessibleContext().setAccessibleName("Delete "+file.name);
         delete.setEnabled(app.page.isEditable());
         delete.addActionListener(e->delete(file));
         JPanel foot=new JPanel(new BorderLayout(4,0));foot.setOpaque(false);foot.setBorder(BorderFactory.createEmptyBorder(6,0,0,0));
@@ -154,11 +230,26 @@ final class DesktopFileCards extends JPanel {
     /** What can be done to one attached file: the card's click and cross, and what the paperclip and the Send box do. */
     JPopupMenu menu(NoteStore.Held file) {
         JPopupMenu menu=new JPopupMenu();
-        JMenuItem open=new JMenuItem("Open");open.addActionListener(e->open(file));menu.add(open);
-        JMenuItem copy=new JMenuItem("Save a copy…");copy.addActionListener(e->app.saveCopy(file));menu.add(copy);
-        JMenuItem send=new JMenuItem("Send to a device…");send.addActionListener(e->send(file));menu.add(send);
+        JMenuItem open=DesktopMenus.item(DesktopApps.openLine(file.name));open.addActionListener(e->open(file));menu.add(open);
+        JMenuItem with=DesktopMenus.item("Open with…");with.addActionListener(e->DesktopOpening.openWith(app,file));menu.add(with);
+        JMenuItem clipboard=DesktopMenus.item("Copy");clipboard.addActionListener(e->app.copyFile(file));menu.add(clipboard);
+        // Everything a file has elsewhere that an attachment can use (the owner, 2026-10-19: "A right click on an attachment should
+        // also bring as many functionalities as possible, including stamping on Minima"; decision 224), each Home's file menu's own.
+        NoteStore.Branch line=new NoteStore.Branch(NoteStore.Branch.Kind.FILE,file.id,file.note,file.name,"",0,0,false);
+        if(app.onDisk!=null&&app.onDisk.linkedFile(file.id)){JMenuItem explorer=DesktopMenus.item("Show in Explorer");explorer.addActionListener(e->DesktopOnDisk.showInExplorer(app,file.id));menu.add(explorer);}
+        // Written in by whoever may (decision 93): offered once the notebook says this PC may.
+        JMenuItem rename=DesktopMenus.item("Rename…");rename.addActionListener(e->app.home.renameFile(line));rename.setVisible(false);menu.add(rename);
+        JMenuItem replace=DesktopMenus.item("Replace with another file…");replace.addActionListener(e->app.home.replaceFile(line));replace.setVisible(false);menu.add(replace);
+        app.disk.submit(()->app.store.mayChangeFile(file.id),may->{rename.setVisible(may);replace.setVisible(may);if(menu.isVisible())menu.pack();},e->{});
+        JMenuItem stamp=DesktopMenus.item("Stamp on Minima…");stamp.addActionListener(e->DesktopStamp.files(app,java.util.List.of(file)));menu.add(stamp);
+        JMenuItem verify=DesktopMenus.item("Verify on Minima…");verify.addActionListener(e->DesktopStamp.verifyFile(app,file));menu.add(verify);
+        // A file stamped from here: its menu starts with its stamp, which opens the stamp's box (decisions 218 and 224).
+        DesktopStamp.fileLine(app,menu,file.id);
+        JMenuItem save=DesktopMenus.item("Save on my computer…");save.addActionListener(e->app.saveCopy(file));menu.add(save);
+        JMenuItem send=DesktopMenus.item("Send to a device…");send.addActionListener(e->send(file));menu.add(send);
+        JMenuItem move=DesktopMenus.item("Move to another note…");move.setEnabled(app.page.isEditable());move.addActionListener(e->app.home.intoNote(line));menu.add(move);
         menu.addSeparator();
-        JMenuItem delete=new JMenuItem("Delete");delete.setEnabled(app.page.isEditable());delete.addActionListener(e->delete(file));menu.add(delete);
+        JMenuItem delete=DesktopMenus.item("Move to bin");delete.setEnabled(app.page.isEditable());delete.addActionListener(e->delete(file));menu.add(delete);
         return menu;
     }
 
@@ -293,26 +384,16 @@ final class DesktopFileCards extends JPanel {
 
     static String extension(String name){return DropList.type(name);}
 
-    /** Opened in the program this PC uses for it, from a copy in Mininotes' own temporary folder, emptied when it closes. */
-    private void open(NoteStore.Held file) {
-        app.disk.submit(()->{
-            Path folder=Path.of(System.getProperty("java.io.tmpdir"),"Mininotes-open");Files.createDirectories(folder);
-            folder.toFile().deleteOnExit();
-            Path copy=folder.resolve(DesktopFiles.onDisk(file.name));
-            ByteArrayOutputStream bytes=new ByteArrayOutputStream();
-            DesktopFiles.copyOut(app.context,app.store.fileFor(file.id).toPath(),bytes);
-            Files.write(copy,bytes.toByteArray());copy.toFile().deleteOnExit();
-            return copy;
-        },copy->{
-            try{java.awt.Desktop.getDesktop().open(copy.toFile());}
-            catch(Exception none){app.status.setText("No program on this PC opens "+file.name+". Save a copy from the paperclip.");}
-        },app::failed);
-    }
+    /** Opened in the program it opens in: to work in where this PC may change it, its saves coming back. */
+    private void open(NoteStore.Held file){DesktopOpening.open(app,file);}
 
-    /** Deleted from this note on this PC, after one question: there is no bin for attachments. */
+    /**
+     * Into the bin, with no question (the owner, 2026-10-18: "no need for this confirmation, it goes in the bin"; decision
+     * 193): out of the note's strip at once, and back into the note from the bin. Gone for good only when the bin is emptied.
+     */
     private void delete(NoteStore.Held file) {
-        if(!DesktopUi.confirm(app.frame,"Delete “"+file.name+"”?","It is removed from this note on this PC. It cannot be put back.","Delete",true))return;
         String note=showing;
-        app.disk.submit(()->{app.store.drop(file.id);return null;},done->{app.status.setText("Attachment deleted");show(note);app.refreshStanding();app.filesChanged(note);},app::failed);
+        app.disk.submit(()->{app.store.putAway(NoteStore.Branch.Kind.FILE,file.id,true,true);return null;},
+            done->{app.status.setText(Say.t("“{0}” is in the bin",file.name));show(note);app.refreshStanding();app.refresh();},app::failed);
     }
 }

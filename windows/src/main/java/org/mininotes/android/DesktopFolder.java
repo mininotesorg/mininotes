@@ -26,10 +26,18 @@ final class DesktopFolder extends JComponent {
     final JPanel card;
     final JPanel head=new JPanel(new BorderLayout(8,0));
     final DesktopHome.Icons grid;
+    /**
+     * A folder shown as an album (decision 217): its pictures as squares over its grid, which holds what else it has, all in
+     * one scroll. The scroll shows the grid alone for every other folder.
+     */
+    final DesktopAlbum.Grid album;
+    final DesktopAlbum.View albumView;
     private final JScrollPane scroll;
     private final JButton plus;
     /** Where the card is: every collection from the one opened on Home down to the one it shows; or the Favourites alone. */
     private final List<NoteStore.Branch> trail=new ArrayList<>();
+    private final Map<String,Integer> positions=new java.util.HashMap<>();
+    private void holdPosition(){if(isOpen())positions.put(last().id,scroll.getViewport().getViewPosition().y);}
     /** The collection the card shows, as last read, as the thing its menu and its mark are about; null among the favourites. */
     private NoteStore.Branch thing;
     /** The collection it is in, as last read: what "up a level" means, and what ‹ says. */
@@ -52,6 +60,9 @@ final class DesktopFolder extends JComponent {
         // The scroll bar's strip is the card's ground, not white (see DesktopScroll).
         scroll.putClientProperty("ground",(java.util.function.Supplier<Color>)this::ground);
         scroll.getVerticalScrollBar().setUnitIncrement(24);scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        album=new DesktopAlbum.Grid(DesktopAlbum.squares(pad,DesktopAlbum.MADE),this::openPicture,
+            (one,on)->pad.home.fileMenu(one.line()).show(on,on.getWidth()/2,on.getHeight()/2));
+        albumView=new DesktopAlbum.View(album);
         plus=home.plusButton(this::id);
         JLayeredPane body=new JLayeredPane(){
             @Override public void doLayout() {
@@ -85,7 +96,7 @@ final class DesktopFolder extends JComponent {
             public void mousePressed(MouseEvent e){if(e.isPopupTrigger()&&thing!=null)pad.roomMenu(thing,e.getComponent(),e.getX(),e.getY());}
             public void mouseReleased(MouseEvent e){if(e.isPopupTrigger()&&thing!=null)pad.roomMenu(thing,e.getComponent(),e.getX(),e.getY());}
         };
-        for(JComponent part:new JComponent[]{card,grid,head})part.addMouseListener(room);scroll.getViewport().addMouseListener(room);
+        for(JComponent part:new JComponent[]{card,grid,head,album,albumView})part.addMouseListener(room);scroll.getViewport().addMouseListener(room);
         card.getInputMap(WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(KeyStroke.getKeyStroke("F2"),"rename");
         card.getActionMap().put("rename",new AbstractAction(){public void actionPerformed(ActionEvent e){startNaming();}});
     }
@@ -127,6 +138,8 @@ final class DesktopFolder extends JComponent {
     /** Whether the card is the archive's or the bin's, where things wait to be put back. */
     boolean away(){return !trail.isEmpty()&&(last().kind==NoteStore.Branch.Kind.ARCHIVE||last().kind==NoteStore.Branch.Kind.BIN);}
     /** Whether the card is Temp's or Recent's, which list things that are elsewhere: each opens where it is. */
+    /** Whether the card open is Recent's. */
+    boolean inRecent(){return isOpen()&&!trail.isEmpty()&&last().kind==NoteStore.Branch.Kind.RECENT;}
     boolean lists(){return !trail.isEmpty()&&(last().kind==NoteStore.Branch.Kind.TEMP||last().kind==NoteStore.Branch.Kind.RECENT||last().kind==NoteStore.Branch.Kind.SHARED);}
     /** Whether the card is the bin's. */
     boolean inBin(){return !trail.isEmpty()&&last().kind==NoteStore.Branch.Kind.BIN;}
@@ -148,14 +161,14 @@ final class DesktopFolder extends JComponent {
 
     /** A collection on Home, clicked: its card. */
     void open(NoteStore.Branch collection){open(collection,false);}
-    void open(NoteStore.Branch collection,boolean name){trail.clear();trail.add(step(collection));nameNext=name?collection.id:null;draw();}
+    void open(NoteStore.Branch collection,boolean name){positions.clear();trail.clear();trail.add(step(collection));nameNext=name?collection.id:null;draw();}
     /** The Favourites icon, clicked: the favourites the dock has no room for. */
-    void openFavourites(){trail.clear();trail.add(DesktopHome.favouritesPlace());nameNext=null;draw();}
+    void openFavourites(){positions.clear();trail.clear();trail.add(DesktopHome.favouritesPlace());nameNext=null;draw();}
     /** The archive or the bin, clicked on Home: what waits in it. */
-    void openPlace(NoteStore.Branch place){trail.clear();trail.add(place);nameNext=null;draw();}
+    void openPlace(NoteStore.Branch place){positions.clear();trail.clear();trail.add(place);nameNext=null;draw();}
     /** A collection inside the card, clicked: the same card, one level in. */
     void into(NoteStore.Branch collection){into(collection,false);}
-    void into(NoteStore.Branch collection,boolean name){if(!isOpen()){open(collection,name);return;}trail.add(step(collection));nameNext=name?collection.id:null;draw();}
+    void into(NoteStore.Branch collection,boolean name){if(!isOpen()){open(collection,name);return;}holdPosition();trail.add(step(collection));nameNext=name?collection.id:null;draw();}
     /**
      * A collection from anywhere else - the tree, the dock, the search, the overview, a favourite: its card over Home, with
      * the trail above it being where it really is, however deep, so ‹ goes up to what holds it.
@@ -167,20 +180,22 @@ final class DesktopFolder extends JComponent {
             for(String up:pad.store.above(id))steps.add(new NoteStore.Branch(NoteStore.Branch.Kind.COLLECTION,up,"",pad.store.collectionName(up),"",0,0,true));
             steps.add(new NoteStore.Branch(NoteStore.Branch.Kind.COLLECTION,id,"",pad.store.collectionName(id),"",0,0,true));
             return steps;
-        },steps->{trail.clear();trail.addAll(steps);nameNext=name?id:null;pad.showHome();draw();},pad::failed);
+        },steps->{positions.clear();trail.clear();trail.addAll(steps);nameNext=name?id:null;pad.showHome();draw();},pad::failed);
     }
     private static NoteStore.Branch step(NoteStore.Branch collection) {
         return new NoteStore.Branch(NoteStore.Branch.Kind.COLLECTION,collection.id,collection.parent,collection.name,"",0,0,true,collection.colour);
     }
 
     /** ‹, or Esc: one level up, in the same card, or the card closed where there is no level above it but Home. */
-    void up(){if(trail.size()>1){trail.remove(trail.size()-1);nameNext=null;draw();}else close();}
+    void up(){if(trail.size()>1){holdPosition();trail.remove(trail.size()-1);nameNext=null;draw();}else close();}
 
     /** Put away, and Home under it is what is seen again, the keyboard on the icon the card was opened from. */
     void close() {
+        // The pinned menu's This folder goes with the card.
+        pad.pinnedMenu.soon();
         String from=trail.isEmpty()?null:trail.get(0).id;
         if(naming!=null)finishNaming(true);
-        trail.clear();thing=null;shown="";nameNext=null;setVisible(false);lit=false;waiting(List.of());
+        trail.clear();positions.clear();thing=null;shown="";nameNext=null;setVisible(false);lit=false;waiting(List.of());
         // Home's own + back, now the card's is gone.
         home.plus.setVisible(true);
         home.focusThing(from);
@@ -189,10 +204,11 @@ final class DesktopFolder extends JComponent {
 
     /** The card for where the trail ends, over Home: up at once with its name from the trail, then read and drawn. */
     private void draw() {
+        pad.pinnedMenu.soon();
         if(trail.isEmpty())return;
         NoteStore.Branch now=last();
         boolean fresh=!now.id.equals(shown);
-        if(fresh){grid.fill(List.of(),null);thing=listing()?null:now;bar(now);}
+        if(fresh){grid.fill(List.of(),null);asAlbum(false);thing=listing()?null:now;bar(now);}
         // A place's card has a + too, where things can be made in it (decision 87): not Recent, nor Tools.
         plus.setVisible(!listing()||Desktop.takesNew(now.id));
         // One + at a time: while the card is up, its own is the one, and Home's under the dim goes.
@@ -239,9 +255,12 @@ final class DesktopFolder extends JComponent {
             return;
         }
         // The trail is kept across a trip to a note, and what it names can have been put away since.
-        for(int at=0;at<path.size();at++)if(!pad.store.stillThere(NoteStore.Branch.Kind.COLLECTION,path.get(at).id)){got.put("keep",at);return;}
+        for(int at=0;at<path.size();at++)if(path.get(at).kind==NoteStore.Branch.Kind.COLLECTION&&!pad.store.stillThere(path.get(at).kind,path.get(at).id)){got.put("keep",at);return;}
         String in=pad.store.collectionOfBook(end.id);
-        got.put("card",pad.store.contents(end.id));
+        List<NoteStore.Branch> holds=pad.store.contents(end.id);
+        got.put("card",holds);
+        // Shown as an album here: its pictures, newest first, of those it shows (decision 217).
+        if(pad.store.album(end.id))got.put("album",Album.shown(Album.pictures(pad.store.filesOf(NoteStore.Branch.Kind.COLLECTION,end.id)),holds));
         got.put("name",pad.store.collectionName(end.id));
         got.put("tint",pad.store.colourOf(NoteStore.Branch.Kind.COLLECTION,end.id));
         // And how strongly it lands, its own (decision 107).
@@ -280,23 +299,55 @@ final class DesktopFolder extends JComponent {
             thing=new NoteStore.Branch(NoteStore.Branch.Kind.COLLECTION,end.id,NoteStore.home(parent)?Sharing.EVERYTHING:parent,name==null?end.name:name,"",0,0,true,tint);
             thing.icon=(String)got.getOrDefault("icon","");thing.image=(byte[])got.get("image");thing.tone=(Integer)got.getOrDefault("tone",Tint.USUAL);
             trail.set(trail.size()-1,step(thing));
-            if(trail.size()>1&&parentName!=null){NoteStore.Branch above=trail.get(trail.size()-2);
+            if(trail.size()>1&&parentName!=null&&trail.get(trail.size()-2).kind==NoteStore.Branch.Kind.COLLECTION&&trail.get(trail.size()-2).id.equals(parent)){NoteStore.Branch above=trail.get(trail.size()-2);
                 trail.set(trail.size()-2,new NoteStore.Branch(NoteStore.Branch.Kind.COLLECTION,above.id,above.parent,parentName,"",0,0,true,above.colour));}
         }
         // Files from Explorer let go on the card are kept with this collection (decision 23); in a place, on Home.
         card.putClientProperty(DesktopHome.KEEPS,thing);grid.putClientProperty(DesktopHome.KEEPS,thing);
+        album.putClientProperty(DesktopHome.KEEPS,thing);albumView.putClientProperty(DesktopHome.KEEPS,thing);
         bar(end);
-        @SuppressWarnings("unchecked") List<NoteStore.Branch> asking=end.kind==NoteStore.Branch.Kind.SHARED?(List<NoteStore.Branch>)got.getOrDefault("waitingFor",List.of()):List.of();
-        waiting(asking);
+        // What waits for an answer is an icon in the same grid, not a strip of buttons (decision 127).
+        @SuppressWarnings("unchecked") List<NoteStore.Branch> waitingFor=end.kind==NoteStore.Branch.Kind.SHARED?(List<NoteStore.Branch>)got.getOrDefault("waitingFor",List.of()):List.of();
+        if(!waitingFor.isEmpty()){List<NoteStore.Branch> all=new java.util.ArrayList<>(waitingFor);all.addAll(lines);lines=all;}
+        waiting(List.of());
         boolean same=end.id.equals(shown);shown=end.id;
+        // An album: its pictures as squares, and under them what else it holds, as the folder draws it (decision 217).
+        @SuppressWarnings("unchecked") List<NoteStore.Held> pictures=away()||listing()?null:(List<NoteStore.Held>)got.get("album");
+        asAlbum(pictures!=null);
+        if(pictures!=null) {
+            Map<String,NoteStore.Branch> byId=new java.util.HashMap<>();for(NoteStore.Branch one:lines)byId.put(one.id,one);
+            List<DesktopAlbum.Picture> squares=new ArrayList<>();
+            for(NoteStore.Held one:pictures){NoteStore.Branch line=byId.get(one.id);if(line!=null)squares.add(new DesktopAlbum.Picture(line,one));}
+            lines=Album.others(lines,pictures);
+            album.fill(squares);albumView.others(grid,!lines.isEmpty());
+        }
         if(!same)scroll.getViewport().setViewPosition(new java.awt.Point(0,0));
-        // Nothing accepted yet, but something waiting above: nothing more to say under it.
-        grid.fill(lines,lines.isEmpty()&&asking.isEmpty()?nothingYet(end.kind):null);
+        grid.fill(lines,lines.isEmpty()&&pictures==null?nothingYet(end.kind):null);
+        int restored=positions.getOrDefault(end.id,0);
+        if(!same)SwingUtilities.invokeLater(()->{if(isOpen()&&last().id.equals(end.id))scroll.getViewport().setViewPosition(new java.awt.Point(0,restored));});
         home.wantPreviews(lines);
         card.repaint();
         // The keyboard to the first icon as it reads, top left, wherever the icons were put.
-        if(!same&&naming==null&&!end.id.equals(nameNext))SwingUtilities.invokeLater(()->{DesktopHome.Tile first=grid.first();if(first!=null)first.requestFocusInWindow();else if(plus.isVisible())plus.requestFocusInWindow();});
+        if(!same&&restored==0&&naming==null&&!end.id.equals(nameNext))SwingUtilities.invokeLater(()->{if(albumShown&&!album.pictures.isEmpty()){focusPicture(0);return;}
+            DesktopHome.Tile first=grid.first();if(first!=null)first.requestFocusInWindow();else if(plus.isVisible())plus.requestFocusInWindow();});
         if(end.id.equals(nameNext)){nameNext=null;startNaming();}
+    }
+
+    /** Whether the card shows an album now. */
+    boolean albumShown;
+    /** The album, or the folder's grid alone, in the card's scroll; the grid shown again for a folder that is not one. */
+    private void asAlbum(boolean on) {
+        if(on==albumShown&&scroll.getViewport().getView()==(on?albumView:grid))return;
+        albumShown=on;
+        if(on)albumView.others(grid,true);else{grid.setVisible(true);album.fill(List.of());}
+        scroll.setViewportView(on?albumView:grid);scroll.getViewport().setOpaque(false);
+        scroll.revalidate();scroll.repaint();
+    }
+    /** A square clicked: its picture large, with the rest of the album either side of it. */
+    private void openPicture(int at){DesktopAlbum.open(pad,id(),album.pictures,at);}
+    /** The keyboard to one of the album's squares: the first as it opens, the one last shown large as the viewer closes. */
+    void focusPicture(int at) {
+        for(Component one:album.getComponents())if(one instanceof DesktopAlbum.Square square&&square.at==at){square.requestFocusInWindow();return;}
     }
 
     /** Shared with me's first part, under the bar: what waits for an answer, a line each (decision 109). Empty, not shown. */
@@ -385,8 +436,10 @@ final class DesktopFolder extends JComponent {
             back.addActionListener(e->up());left.add(back);
             this.back=back;
         }
-        if(!place&&thing!=null){SyncMark mark=pad.marks.get(thing.id);
-            if(mark!=null){NoteStore.Branch about=thing;JLabel ring=DesktopMark.button(mark,20,true,()->pad.markClicked(about,mark));right.add(ring);}}
+        // Temp too: what is in it goes to other devices, so its card says whether something waits, and its mark sends it.
+        NoteStore.Branch markOn=end.kind==NoteStore.Branch.Kind.TEMP?end:place?null:thing;
+        if(markOn!=null){SyncMark mark=pad.marks.get(markOn.id);
+            if(mark!=null){NoteStore.Branch about=markOn;JLabel ring=DesktopMark.button(mark,20,true,()->pad.markClicked(about,mark));right.add(ring);}}
         // Every card's ⋯, a place's as a folder's at any depth: the very menu a right-click on it opens (the owner, 2026-10-04:
         // "the Temp folder and all other folders should have the 3 dots menu for contextual settings, just as the right
         // click"; decision 98). A place's is its menu on Home; a folder's its own.
@@ -434,7 +487,19 @@ final class DesktopFolder extends JComponent {
     /** The menu the card's ⋯ opens, the one a right-click on what the card is opens; null where there is none. */
     java.util.function.Supplier<JPopupMenu> cardMenu(NoteStore.Branch end) {
         if(!Grid.place(end.kind)){NoteStore.Branch about=thing;return about==null?null:()->pad.thingMenu(about);}
-        return pad.home==null?null:()->pad.home.menuFor(end);
+        return pad.home==null?null:()->withoutOpen(pad.home.menuFor(end));
+    }
+    /**
+     * The place's menu less its Open, which in its own open card does nothing (the owner, 2026-10-11: "we should only present
+     * elements that have a function"), and the line under it.
+     */
+    static JPopupMenu withoutOpen(JPopupMenu menu) {
+        if(menu==null||menu.getComponentCount()==0)return menu;
+        if(menu.getComponent(0) instanceof JMenuItem first&&"Open".equals(DesktopMenus.words(first))) {
+            menu.remove(0);
+            if(menu.getComponentCount()>0&&menu.getComponent(0) instanceof JSeparator)menu.remove(0);
+        }
+        return menu;
     }
 
     /** A colour chosen for the collection while its card is up: the card takes it at once, as the page does. */

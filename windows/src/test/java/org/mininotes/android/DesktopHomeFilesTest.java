@@ -142,8 +142,14 @@ public class DesktopHomeFilesTest {
 
     /** A file offered by one of the owner's devices and fetched, as Post fetches it. @return its id here */
     private static String received(NoteStore store,String from,String name,byte[] plain) throws Exception {
+        return receivedAs(store,from,"Work laptop",name,plain,true);
+    }
+
+    /** The same from a named device, one of the owner's or somebody else's (decision 122). */
+    private static String receivedAs(NoteStore store,String from,String who,String name,byte[] plain,boolean mine) throws Exception {
+        store.pairedWith(from,who,mine,("agree-"+from).getBytes(java.nio.charset.StandardCharsets.UTF_8),("sign-"+from).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         String wire=UUID.randomUUID().toString();
-        NoteStore.Transfer one=store.offerArrived(from,"Work laptop",wire,1,
+        NoteStore.Transfer one=store.offerArrived(from,who,wire,1,
             List.of(new Enclosure.Listed(UUID.randomUUID().toString(),name,"application/octet-stream",plain.length,"pieces")),Drop.FETCHING);
         assertTrue(store.looseArrived(one.files.get(0),plain));
         store.settle(one.id,Drop.HERE);
@@ -152,6 +158,7 @@ public class DesktopHomeFilesTest {
 
     @Test public void aFileThatArrivesLandsOnHomeNewAndNotInTheDropBox() throws Exception {
         NoteStore store=fresh();
+        store.pairedWith(A,"Work laptop",true,new byte[]{4,1},new byte[]{4,2});
         byte[] plain=bytes(2048,1);
         String wire=UUID.randomUUID().toString();
         NoteStore.Transfer sending=store.offerArrived(A,"Work laptop",wire,1,
@@ -250,55 +257,41 @@ public class DesktopHomeFilesTest {
         for(NoteStore.Branch one:store.inside(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING).holds)assertNotEquals(FILE,one.kind);
     }
 
-    @Test public void theDockTakesAPlaceMovesTheRestAlongAndLetsTheLastGo() throws Exception {
+    @Test public void theDockTakesAPlaceMovesTheRestAlongAndKeepsEveryOne() throws Exception {
         NoteStore store=fresh();
         List<String> n=new ArrayList<>();
         for(int at=1;at<=6;at++)n.add(note(store,Things.HOME,"Note "+at,"Synthetic "+at).id);
         String shelf=store.addCollectionIn(Things.HOME,"Lists").id;
-        // A star fills the first free place, as it did.
+        // A star puts it at the end of the dock too (decision 190).
         store.keepToHand(PAGE,n.get(0),true);store.keepToHand(PAGE,n.get(1),true);store.keepToHand(COLLECTION,shelf,true);
         assertEquals(List.of(n.get(0),n.get(1),shelf),ids(store.dock()));
-        // Put at a place: made a favourite, the rest moved along.
+        // Put at a place: the rest moved along, and not made a favourite.
         store.toDock(PAGE,n.get(2),2);
         assertEquals(List.of(n.get(0),n.get(2),n.get(1),shelf),ids(store.dock()));
-        assertTrue(store.favourite(PAGE,n.get(2)));
-        store.toDock(PAGE,n.get(3),1);
-        assertEquals(List.of(n.get(3),n.get(0),n.get(2),n.get(1),shelf),ids(store.dock()));
+        assertFalse(store.favourite(PAGE,n.get(2)));
+        store.toDock(PAGE,n.get(3),1);store.toDock(PAGE,n.get(4),3);
+        // Six in it: none pushed out (decision 190, it scrolls across).
+        assertEquals(List.of(n.get(3),n.get(0),n.get(4),n.get(2),n.get(1),shelf),ids(store.dock()));
         assertTrue(store.favouritesBeyondDock().isEmpty());
-        // A sixth pushes the last out of the dock; it stays a favourite, in Favourites.
-        store.toDock(PAGE,n.get(4),3);
-        assertEquals(List.of(n.get(3),n.get(0),n.get(4),n.get(2),n.get(1)),ids(store.dock()));
-        assertEquals(List.of(shelf),ids(store.favouritesBeyondDock()));
-        assertTrue(store.favourite(COLLECTION,shelf));
-        assertEquals(6,store.favouriteCount());
         // Moved within the dock: nobody leaves.
         store.toDock(PAGE,n.get(1),1);
-        assertEquals(List.of(n.get(1),n.get(3),n.get(0),n.get(4),n.get(2)),ids(store.dock()));
+        assertEquals(List.of(n.get(1),n.get(3),n.get(0),n.get(4),n.get(2),shelf),ids(store.dock()));
         // Out of the dock: a favourite still, and the rest close up.
         store.outOfDock(PAGE,n.get(0));
-        assertEquals(List.of(n.get(1),n.get(3),n.get(4),n.get(2)),ids(store.dock()));
+        assertEquals(List.of(n.get(1),n.get(3),n.get(4),n.get(2),shelf),ids(store.dock()));
         assertTrue(store.favourite(PAGE,n.get(0)));
-        assertEquals(List.of(shelf,n.get(0)),ids(store.favouritesBeyondDock()));
-        // Its place let go of and nothing else moved: the favourite past the dock keeps its place there (decision 74).
-        assertEquals(0,count(store,"SELECT dock FROM notes WHERE id=?",n.get(0)));
-        assertEquals(6,count(store,"SELECT dock FROM things WHERE id=?",shelf));
-        // A star fills the first free place again.
+        assertEquals(List.of(n.get(0)),ids(store.favouritesBeyondDock()));
+        // A star puts it at the end; no longer a favourite, it stays in the dock.
         store.keepToHand(PAGE,n.get(5),true);
-        assertEquals(List.of(n.get(1),n.get(3),n.get(4),n.get(2),n.get(5)),ids(store.dock()));
-        // No longer a favourite: out of the dock and out of Favourites.
+        assertEquals(n.get(5),ids(store.dock()).get(5));
         store.keepToHand(PAGE,n.get(5),false);
-        assertFalse(ids(store.dock()).contains(n.get(5)));assertFalse(ids(store.favouritesBeyondDock()).contains(n.get(5)));
-        // Put away, a docked favourite keeps its place unseen; pushed out first when the dock is full.
-        store.keepToHand(PAGE,n.get(5),true);
+        assertTrue(ids(store.dock()).contains(n.get(5)));assertFalse(store.favourite(PAGE,n.get(5)));
+        // Put away, it keeps its place unseen, and comes back to it.
         store.putAway(PAGE,n.get(4),true,true);
-        assertEquals(List.of(n.get(1),n.get(3),n.get(2),n.get(5)),ids(store.dock()));
-        store.toDock(COLLECTION,shelf,9);
-        assertEquals(List.of(n.get(1),n.get(3),n.get(2),n.get(5),shelf),ids(store.dock()));
-        // Pushed out of the dock, it keeps a place in the one order of favourites, after the dock's (decision 74).
-        assertTrue(count(store,"SELECT dock FROM notes WHERE id=?",n.get(4))>Things.DOCK_PHONE);
+        assertEquals(List.of(n.get(1),n.get(3),n.get(2),shelf,n.get(5)),ids(store.dock()));
         store.restore(PAGE,n.get(4));
-        assertTrue(ids(store.favouritesBeyondDock()).contains(n.get(4)));
-        // The dock is this device's own: the lines are the Favourites collection's, marks and all.
+        assertEquals(List.of(n.get(1),n.get(3),n.get(4),n.get(2),shelf,n.get(5)),ids(store.dock()));
+        // The lines are the Favourites collection's, marks and all.
         assertTrue(store.dock().get(0).kept);
     }
 
@@ -328,6 +321,17 @@ public class DesktopHomeFilesTest {
         assertTrue(store.lookingEverywhere("  ").isEmpty());
         // And the old search is as it was: notes and collections only.
         for(NoteStore.Branch one:store.looking("beach"))assertNotEquals(FILE,one.kind);
+    }
+
+    @Test public void aFileFromSomebodyElseLandsInSharedWithMeNotOnHome() throws Exception {
+        NoteStore store=fresh();
+        String beach=receivedAs(store,B,"Ana","beach.jpg",bytes(5,21),false);
+        assertEquals(List.of(beach),ids(store.contents(NoteStore.SHARED),FILE));
+        assertTrue(ids(store.contents(Things.HOME),FILE).isEmpty());
+        assertEquals(0,store.freshOnHome());
+        assertEquals(0,store.waitingCount());
+        assertEquals("in Shared with me",line(store.lookingEverywhere("beach"),beach).detail);
+        assertEquals(NoteStore.SHARED,line(store.lookingEverywhere("beach"),beach).parent);
     }
 
     @Test public void aNoteOnHomeIsListedFoundBackedUpAndOwed() throws Exception {

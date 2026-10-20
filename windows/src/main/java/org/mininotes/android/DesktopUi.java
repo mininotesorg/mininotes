@@ -31,7 +31,25 @@ final class DesktopUi {
      * Segoe UI with the system's fallbacks behind it - emoji included, through the font configuration the
      * app starts with - so a note written on a phone reads the same here, not as a row of boxes.
      */
-    static final Font BODY=javax.swing.text.StyleContext.getDefaultStyleContext().getFont("Segoe UI",Font.PLAIN,14);
+    static final Font BODY=javax.swing.text.StyleContext.getDefaultStyleContext().getFont(family(System.getProperty("mininotes.language","")),Font.PLAIN,14);
+    /**
+     * The face the app is drawn in, for the language chosen (decision 160): Segoe UI has no Devanagari, Chinese or Japanese,
+     * and Java's fallbacks on Windows add them only for a PC set to that language - so Hindi came out as boxes. Each of
+     * those scripts gets the Windows face made for it, which has Latin letters too; any other language, Segoe UI.
+     */
+    static String family(String language) {
+        String wanted=switch(language==null?"":language){case "hi"->"Nirmala UI";case "zh"->"Microsoft YaHei UI";case "ja"->"Yu Gothic UI";default->"Segoe UI";};
+        return java.util.Arrays.asList(GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames()).contains(wanted)?wanted:"Segoe UI";
+    }
+    /** A face that can draw these words: the app's own where it can, else one of Windows' faces for other scripts. */
+    static Font fontFor(String words,Font usual) {
+        if(words==null||usual.canDisplayUpTo(words)==-1)return usual;
+        for(String family:new String[]{"Nirmala UI","Microsoft YaHei UI","Yu Gothic UI","Malgun Gothic","Segoe UI Symbol"}) {
+            Font one=new Font(family,usual.getStyle(),usual.getSize());
+            if(one.getFamily().equals(family)&&one.canDisplayUpTo(words)==-1)return one;
+        }
+        return usual;
+    }
     private static boolean installed;
 
     private DesktopUi(){}
@@ -39,6 +57,11 @@ final class DesktopUi {
     /** The look, once, before anything is drawn. */
     static synchronized void install() {
         if(installed)return;installed=true;
+        // Persian is written from right to left: every window, as it opens, laid out mirrored (decision 160).
+        if(!GraphicsEnvironment.isHeadless()&&Say.rightToLeft())Toolkit.getDefaultToolkit().addAWTEventListener(event->{
+            if(event.getID()==java.awt.event.WindowEvent.WINDOW_OPENED&&event.getSource() instanceof Window w)
+                w.applyComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
+        },AWTEvent.WINDOW_EVENT_MASK);
         // The hand over anything that can be pressed: every button, switch, menu line and drop-down, set as the
         // pointer first reaches it, so no button made anywhere in the app can be left with the arrow.
         if(!GraphicsEnvironment.isHeadless())Toolkit.getDefaultToolkit().addAWTEventListener(event->{
@@ -100,7 +123,7 @@ final class DesktopUi {
      */
     static Text spread(String text){return new Text(text,BODY.deriveFont(13f),QUIET,SPREAD);}
     /** The width a spread text wraps at: whatever its column gives it. */
-    private static final int SPREAD=-1;
+    static final int SPREAD=-1;
 
     /**
      * Words that can be selected and copied, like any text on a page - an address, a time, a sentence to
@@ -109,7 +132,8 @@ final class DesktopUi {
     static final class Text extends JTextArea {
         private final int wrap;
         Text(String text,Font font,Color colour,int wrap) {
-            super(text);this.wrap=wrap;
+            // In the language chosen (decision 160): looked up by its English, a whole phrase at a time.
+            super(Say.t(text));this.wrap=wrap;
             setEditable(false);setOpaque(false);setBorder(null);setMargin(new Insets(0,0,0,0));
             setFont(font);setForeground(colour);setLineWrap(wrap!=0);setWrapStyleWord(true);
             setSelectionColor(new Color(0xDC,0xE8,0xDF));setSelectedTextColor(INK);
@@ -163,7 +187,14 @@ final class DesktopUi {
     }
     // ---- buttons ---------------------------------------------------------------------------------------
 
-    static JButton button(String text,Runnable action){JButton b=new JButton(text);b.setFocusPainted(false);b.addActionListener(e->action.run());return b;}
+    /** A drop-down whose words are said in the language chosen as they are drawn (decision 160); its items stay English. */
+    @SafeVarargs static <E> JComboBox<E> combo(E... items){JComboBox<E> box=new JComboBox<>(items);translate(box);return box;}
+    static void translate(JComboBox<?> box) {
+        @SuppressWarnings("unchecked") ListCellRenderer<Object> was=(ListCellRenderer<Object>)box.getRenderer();
+        box.setRenderer((list,value,index,selected,focused)->was.getListCellRendererComponent(list,value instanceof String s?Say.t(s):value,index,selected,focused));
+    }
+
+    static JButton button(String text,Runnable action){JButton b=new JButton(Say.t(text));b.putClientProperty("words",text);b.setFocusPainted(false);b.addActionListener(e->action.run());return b;}
     /** The one thing a window is for. Filled, and only ever one per window. */
     static JButton primary(String text,Runnable action) {
         JButton b=button(text,action);
@@ -180,11 +211,40 @@ final class DesktopUi {
     /** A window's closing row: to the right, the primary last, where the eye ends. */
     static JPanel footer(JComponent... items){return flow(FlowLayout.RIGHT,items);}
     private static JPanel flow(int align,JComponent... items) {
-        JPanel p=new JPanel(new FlowLayout(align,S,0));p.setOpaque(false);
-        // FlowLayout puts its gap before the first item too; this takes it back so rows line up with text.
-        p.setBorder(BorderFactory.createEmptyBorder(0,align==FlowLayout.LEFT?-S:0,0,align==FlowLayout.RIGHT?-S:0));
+        JPanel p=new JPanel(new Wrapping(align));p.setOpaque(false);
+        // FlowLayout puts its gaps before the first item and above the first row too; this takes them back so rows line up
+        // with text, and a row that wraps has its gap between its lines only.
+        p.setBorder(BorderFactory.createEmptyBorder(-S,align==FlowLayout.LEFT?-S:0,-S,align==FlowLayout.RIGHT?-S:0));
         for(JComponent item:items)if(item!=null)p.add(item);
         return p;
+    }
+
+    /**
+     * A row of buttons that, too wide for its box, goes on in a line under the first, and says it is that tall (the owner,
+     * 2026-10-13: "make sure the login window always displays all buttons in full"). A plain FlowLayout wraps them as
+     * well, but measures one line, and the box was made one line too short: in French the last button was cut off.
+     */
+    static final class Wrapping extends FlowLayout {
+        Wrapping(int align){super(align,S,S);}
+        @Override public Dimension preferredLayoutSize(Container target){return size(target,true);}
+        @Override public Dimension minimumLayoutSize(Container target){return size(target,false);}
+        private Dimension size(Container target,boolean preferred) {
+            synchronized(target.getTreeLock()) {
+                // The width it has, or the nearest the box gives it; none yet, one line, as FlowLayout measures.
+                int width=0;for(Container up=target;up!=null&&width==0;up=up.getParent())width=up.getWidth();
+                Insets in=target.getInsets();int hgap=getHgap(),vgap=getVgap();
+                int most=width<=0?Integer.MAX_VALUE:width-in.left-in.right-2*hgap;
+                int wide=0,tall=0,rowWide=0,rowTall=0,rows=0;
+                for(Component one:target.getComponents()) {
+                    if(!one.isVisible())continue;
+                    Dimension d=preferred?one.getPreferredSize():one.getMinimumSize();
+                    if(rowWide>0&&rowWide+hgap+d.width>most){wide=Math.max(wide,rowWide);tall+=rowTall;rows++;rowWide=0;rowTall=0;}
+                    rowWide+=(rowWide>0?hgap:0)+d.width;rowTall=Math.max(rowTall,d.height);
+                }
+                if(rowWide>0){wide=Math.max(wide,rowWide);tall+=rowTall;rows++;}
+                return new Dimension(wide+in.left+in.right+2*hgap,tall+(rows+1)*vgap+in.top+in.bottom);
+            }
+        }
     }
 
     // ---- on and off ------------------------------------------------------------------------------------
@@ -246,7 +306,10 @@ final class DesktopUi {
                 Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
                 // In the person's colour where one was given it (Desktop.inkOnRound), so two P's are told apart.
                 Object fill=getClientProperty("fill"),letter=getClientProperty("letter");
-                if(fill instanceof Color f&&letter instanceof Color l)paintAvatar(g,name,0,0,32,f,l);else paintAvatar(g,name,0,0,32);g.dispose();
+                // Their picture, where they have one (decision 158).
+                java.awt.image.BufferedImage face=getClientProperty("faceOf") instanceof String who?DesktopFaces.of(who.isEmpty()?null:who):null;
+                if(face!=null)DesktopFaces.paintRound(g,face,0,0,32);
+                else if(fill instanceof Color f&&letter instanceof Color l)paintAvatar(g,name,0,0,32,f,l);else paintAvatar(g,name,0,0,32);g.dispose();
             }
         };
     }
@@ -306,14 +369,51 @@ final class DesktopUi {
         said.setOpaque(false);said.setBorder(null);said.setLineWrap(true);said.setWrapStyleWord(true);strip.add(said);
         JLayeredPane layers=frame.getLayeredPane();layers.add(strip,JLayeredPane.MODAL_LAYER);
         Runnable place=()->{
-            Rectangle content=frame.getContentPane().getBounds();int margin=M,wide=Math.max(80,content.width-2*margin);
-            Insets in=strip.getInsets();said.setSize(wide-in.left-in.right,Short.MAX_VALUE);
+            // As wide as its words, and in the middle of the foot (the owner, 2026-10-13: "the message should be smaller, not
+            // covering the whole footer"); words longer than the window wrap within it.
+            Rectangle content=frame.getContentPane().getBounds();int margin=M,most=Math.max(80,content.width-2*margin);
+            Insets in=strip.getInsets();FontMetrics measure=said.getFontMetrics(said.getFont());int words=0;
+            for(String line:said.getText().split("\n"))words=Math.max(words,measure.stringWidth(line));
+            int wide=Math.min(most,words+in.left+in.right+6);
+            said.setSize(wide-in.left-in.right,Short.MAX_VALUE);
             int tall=said.getPreferredSize().height+in.top+in.bottom;
-            strip.setBounds(content.x+margin,content.y+content.height-tall-margin+4,wide,tall);strip.revalidate();strip.repaint();
+            strip.setBounds(content.x+(content.width-wide)/2,content.y+content.height-tall-margin+4,wide,tall);strip.revalidate();strip.repaint();
         };
         strip.putClientProperty("place",place);
         layers.addComponentListener(new ComponentAdapter(){public void componentResized(ComponentEvent e){place.run();}});
         place.run();return strip;
+    }
+    /**
+     * A notice in the middle of a window, over what is there, for a moment (the owner, 2026-10-19: "The Integritas message is
+     * too low, it should be centred on the screen"; decision 218): larger words on a card with a shadow, gone after a few
+     * seconds or at a click, and a newer one takes its place. On top of any box open over the window too.
+     */
+    static JPanel centred(Window over,String words) {
+        if(!(over instanceof RootPaneContainer root))return null;
+        JLayeredPane layers=root.getLayeredPane();
+        for(Component c:layers.getComponentsInLayer(JLayeredPane.POPUP_LAYER))if(c instanceof JComponent j&&j.getClientProperty("centred")!=null){layers.remove(c);layers.repaint();}
+        Text said=new Text(words,BODY.deriveFont(Font.BOLD,16f),INK,0);said.setLineWrap(true);said.setWrapStyleWord(true);said.setName("centredNotice");
+        JPanel card=new JPanel(new BorderLayout()){
+            @Override protected void paintComponent(Graphics g0) {
+                Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setColor(new Color(20,24,20,40));g.fillRoundRect(2,5,getWidth()-4,getHeight()-5,20,20);
+                g.setColor(CARD);g.fillRoundRect(0,0,getWidth()-1,getHeight()-5,20,20);
+                g.setColor(LINE);g.drawRoundRect(0,0,getWidth()-1,getHeight()-6,20,20);g.dispose();
+            }
+        };
+        card.setOpaque(false);card.putClientProperty("centred",Boolean.TRUE);card.putClientProperty("ground",CARD);card.setBorder(BorderFactory.createEmptyBorder(20,28,24,28));card.add(said);
+        Runnable place=()->{
+            Rectangle area=root.getContentPane().getBounds();Insets in=card.getInsets();FontMetrics measure=said.getFontMetrics(said.getFont());int longest=0;
+            for(String line:said.getText().split("\n"))longest=Math.max(longest,measure.stringWidth(line));
+            int wide=Math.min(Math.max(220,area.width-2*L),Math.min(520,longest+in.left+in.right+8));
+            said.setSize(wide-in.left-in.right,Short.MAX_VALUE);int tall=said.getPreferredSize().height+in.top+in.bottom;
+            card.setBounds(area.x+(area.width-wide)/2,area.y+(area.height-tall)/2,wide,tall);card.revalidate();card.repaint();
+        };
+        layers.add(card,JLayeredPane.POPUP_LAYER);place.run();
+        javax.swing.Timer gone=new javax.swing.Timer(5000,e->{layers.remove(card);layers.repaint();});gone.setRepeats(false);gone.start();
+        MouseAdapter click=new MouseAdapter(){public void mouseClicked(MouseEvent e){gone.stop();layers.remove(card);layers.repaint();}};
+        card.addMouseListener(click);said.addMouseListener(click);
+        return card;
     }
     /** Puts a floating message where it belongs again, after its words changed. */
     static void placeFloating(JPanel strip){if(strip.getClientProperty("place") instanceof Runnable place)place.run();}
@@ -325,7 +425,7 @@ final class DesktopUi {
      * bar of its own. Escape closes it. Pass the primary button as the last of the footer's items.
      */
     static JDialog sheet(Window owner,String title,JComponent body,JComponent footer,boolean modal) {
-        JDialog dialog=new JDialog(owner,title,modal?Dialog.ModalityType.APPLICATION_MODAL:Dialog.ModalityType.MODELESS);
+        JDialog dialog=new JDialog(owner,Say.t(title),modal?Dialog.ModalityType.APPLICATION_MODAL:Dialog.ModalityType.MODELESS);
         dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
         JPanel page=new JPanel(new BorderLayout());page.setBackground(PAPER);
         JPanel top=new JPanel(new BorderLayout());top.setOpaque(false);top.setBorder(padding(L-4,L,M));top.add(title(title));page.add(top,BorderLayout.NORTH);dialog.getRootPane().putClientProperty("top",top);
@@ -351,6 +451,13 @@ final class DesktopUi {
     static void show(JDialog dialog,int width,int minHeight,int maxHeight) {
         dialog.pack();
         dialog.setSize(Math.max(width,Math.min(dialog.getWidth(),width+160)),Math.min(maxHeight,Math.max(minHeight,dialog.getHeight())));
+        // Measured again at the width it now has: a row of buttons that wraps there is taller than it was at its own width,
+        // and the box grows to show all of it, as far as the screen allows (see Wrapping).
+        dialog.validate();int tall=dialog.getPreferredSize().height;
+        if(tall>dialog.getHeight()) {
+            Rectangle screen=dialog.getGraphicsConfiguration()==null?null:dialog.getGraphicsConfiguration().getBounds();
+            dialog.setSize(dialog.getWidth(),screen==null?tall:Math.min(tall,screen.height-40));
+        }
         dialog.setLocationRelativeTo(dialog.getOwner());
         if(!dialog.isModal()||!(dialog.getOwner() instanceof RootPaneContainer)){dialog.setVisible(true);return;}
         // Windows lets nothing reach a window behind a modal one, so a click beside the box could not close
@@ -394,9 +501,16 @@ final class DesktopUi {
         JPanel top=(JPanel)dialog.getRootPane().getClientProperty("top");
         top.removeAll();dialog.setTitle(title);
         if(backTo!=null) {
-            JButton to=quietButton("‹  "+backTo,back);to.setName("back");
-            to.getAccessibleContext().setAccessibleName("Back to "+backTo);
-            JPanel line=actions(to);line.setBorder(BorderFactory.createEmptyBorder(0,-S-6,4,0));top.add(line,BorderLayout.NORTH);
+            // As a note's way back to Home is (the owner, 2026-10-18: "make sure we don't have these boxes cut on the left side,
+            // don't put these back elements in a box, align this with what we have at the note level"): the arrow and the name,
+            // bold, no box, its words translated whole.
+            JButton to=new JButton(Say.t(backTo),Desktop.backIcon());to.setName("back");to.setIconTextGap(6);
+            to.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
+            to.setFont(BODY.deriveFont(Font.BOLD,14f));to.setForeground(INK);to.setFocusPainted(false);to.setMargin(new Insets(4,6,4,8));
+            to.addActionListener(e->back.run());
+            to.getAccessibleContext().setAccessibleName(Say.t("Back to {0}",Say.t(backTo)));
+            JPanel line=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0));line.setOpaque(false);line.add(to);
+            line.setBorder(BorderFactory.createEmptyBorder(0,-6,4,0));top.add(line,BorderLayout.NORTH);
         }
         top.add(title(title));
         if(more!=null){JPanel right=new JPanel(new GridBagLayout());right.setOpaque(false);right.add(more);top.add(right,BorderLayout.EAST);}
@@ -422,7 +536,7 @@ final class DesktopUi {
     static JPanel views(String[] names,int shown,java.util.function.IntConsumer show) {
         JPanel line=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0));line.setOpaque(false);ButtonGroup one=new ButtonGroup();
         for(int at=0;at<names.length;at++) {
-            int which=at;JToggleButton view=new JToggleButton(names[at],at==shown);view.setFocusPainted(false);
+            int which=at;JToggleButton view=new JToggleButton(Say.t(names[at]),at==shown);view.setFocusPainted(false);
             view.putClientProperty(FlatClientProperties.BUTTON_TYPE,FlatClientProperties.BUTTON_TYPE_TAB);
             view.putClientProperty(FlatClientProperties.STYLE,"tabUnderlineColor:#306348;tabUnderlineHeight:3;tabSelectedForeground:#2B302B");
             view.setFont(BODY.deriveFont(at==shown?Font.BOLD:Font.PLAIN,15f));view.setForeground(at==shown?INK:QUIET);view.setMargin(new Insets(6,14,8,14));
@@ -527,7 +641,7 @@ final class DesktopUi {
     /** One of a few, from a dropdown. The index, or -1. */
     static int choose(Window owner,String title,String message,String[] options,int initial,String yes) {
         int[] said={-1};JDialog[] box={null};
-        JComboBox<String> pick=new JComboBox<>(options);pick.setSelectedIndex(Math.max(0,initial));
+        JComboBox<String> pick=DesktopUi.combo(options);pick.setSelectedIndex(Math.max(0,initial));
         JPanel body=column();Text words=note(message,360,INK,BODY);
         add(body,words);gap(body,12);add(body,pick);
         JButton go=primary(yes,()->{said[0]=pick.getSelectedIndex();box[0].dispose();});
@@ -558,7 +672,7 @@ final class DesktopUi {
     }
     /** A role as a line of a menu: its name, and under it what it lets them do. */
     static String roleLine(String role,String does) {
-        return "<html><div style='width:250px'><b>"+role+"</b><br><font color='#"+String.format("%06x",QUIET.getRGB()&0xffffff)+"'>"+does+"</font></div></html>";
+        return "<html><div style='width:250px'><b>"+Say.t(role)+"</b><br><font color='#"+String.format("%06x",QUIET.getRGB()&0xffffff)+"'>"+Say.t(does)+"</font></div></html>";
     }
     /** One item from a list. Null if none was taken. */
     static <T> T pick(Window owner,String title,String message,List<T> items,Function<T,String> label,String yes) {

@@ -16,8 +16,8 @@ import java.util.List;
  * what is sealed never hold a code or its password.
  */
 public class PrivateCodeTest {
-    private static final String PASSWORD="velvet kettle 4417";
-    private static final String[] NEVER={"privatespace//","privatenote//","privatefolder//","private//:","private space//","private note//","private folder//",PASSWORD,"velvet"};
+    private static final String PHRASE="velvet kettle 4417";
+    private static final String[] NEVER={"privatespace//","privatenote//","privatefolder//","private//:","private space//","private note//","private folder//",PHRASE,"velvet"};
 
     private static void clean(String what,String text) {
         String low=text.toLowerCase(java.util.Locale.ROOT);
@@ -27,11 +27,11 @@ public class PrivateCodeTest {
     // ---- the guard -----------------------------------------------------------------------------------------------------
 
     @Test public void theGuardTakesEveryCodeAndTheRestOfItsLine() {
-        assertEquals("Milk\n\nEggs",PrivateCode.scrub("Milk\nprivatespace//:"+PASSWORD+"\nEggs"));
-        assertEquals("Milk \nEggs",PrivateCode.scrub("Milk privatespace//:"+PASSWORD+"\nEggs"));
+        assertEquals("Milk\n\nEggs",PrivateCode.scrub("Milk\nprivatespace//:"+PHRASE+"\nEggs"));
+        assertEquals("Milk \nEggs",PrivateCode.scrub("Milk privatespace//:"+PHRASE+"\nEggs"));
         // The new word, and the two old ones still caught so a code from a build before the rename is taken out (decision 116).
         for(String code:new String[]{"privatespace//:","private space//:","privatenote//:","privatefolder//:","private//:","Private Space//:","PRIVATE FOLDER//:","PrivateNote//:","private //:"})
-            assertEquals(code,"Plan ",PrivateCode.scrub("Plan "+code+PASSWORD));
+            assertEquals(code,"Plan ",PrivateCode.scrub("Plan "+code+PHRASE));
         assertEquals("a\r\nb",PrivateCode.scrub("aprivate//:x\r\nb"));
         assertEquals("two on a line, both gone","x ",PrivateCode.scrub("x privatespace//:a private//:b"));
         // Words people write are left as they are, and the same object comes back.
@@ -118,7 +118,7 @@ public class PrivateCodeTest {
         for(char c:"velvet ".toCharArray())page.commit(String.valueOf(c));   // before the field is up
         assertNull(page.up());
         for(char c:"kettle 4417".toCharArray())page.commit(String.valueOf(c));
-        assertEquals(PASSWORD,page.enter());
+        assertEquals(PHRASE,page.enter());
         page.commit("milk");page.save();
         assertEquals("Groceries\nmilk",page.kept.get(page.kept.size()-1));
         page.allClean();
@@ -136,8 +136,8 @@ public class PrivateCodeTest {
             for(int i=1;i<=first.length();i++){if(wordAgain)page.compose(word+first.substring(0,i));else page.commit(first.substring(i-1,i));}
             assertEquals("only the password is caught",first,page.catching.toString());
             page.save();
-            assertNull(page.up());page.compose(PASSWORD);
-            assertEquals(PASSWORD,page.enter());
+            assertNull(page.up());page.compose(PHRASE);
+            assertEquals(PHRASE,page.enter());
             page.allClean();
         }
     }
@@ -145,18 +145,18 @@ public class PrivateCodeTest {
     @Test public void pastedInOneGo() {
         // Short, Enter and all: caught whole, the password straight to opening.
         Page page=new Page("Plan ");
-        page.commit("privatespace//:"+PASSWORD+"\nnext line");
+        page.commit("privatespace//:"+PHRASE+"\nnext line");
         assertEquals("Plan \nnext line",page.text.toString());
-        assertEquals(PASSWORD,page.up());
+        assertEquals(PHRASE,page.up());
         page.save();page.allClean();
         // Short, no Enter: the password waits in its field.
         page=new Page("");
-        page.commit("private//:"+PASSWORD);
-        assertEquals("",page.text.toString());assertNull(page.up());assertEquals(PASSWORD,page.enter());
+        page.commit("private//:"+PHRASE);
+        assertEquals("",page.text.toString());assertNull(page.up());assertEquals(PHRASE,page.enter());
         page.save();page.allClean();
         // Long, which the watcher leaves to the guard: taken out at the save, with the rest of its line.
         page=new Page("Plan\n");
-        page.commit("Here is a long paragraph pasted from somewhere else, and in it privatespace//:"+PASSWORD+" and more\nthe end");
+        page.commit("Here is a long paragraph pasted from somewhere else, and in it privatespace//:"+PHRASE+" and more\nthe end");
         assertNull(page.catching);
         page.save();
         assertEquals("Plan\nHere is a long paragraph pasted from somewhere else, and in it \nthe end",page.kept.get(0));
@@ -179,15 +179,15 @@ public class PrivateCodeTest {
         assertEquals("Plan ",page.kept.get(0));
         page.compose(word);
         assertNotNull("caught when the keyboard wrote it back",page.catching);
-        assertNull(page.up());page.compose(PASSWORD);assertEquals(PASSWORD,page.enter());
+        assertNull(page.up());page.compose(PHRASE);assertEquals(PHRASE,page.enter());
         page.save();page.allClean();
     }
 
     // ---- what is sealed, and what arrives -------------------------------------------------------------------------------
 
     @Test public void aParcelNeverCarriesACodeAndOneThatArrivesWithOneLeavesItAtTheDoor() throws Exception {
-        String body="Meet at noon\nprivatespace//:"+PASSWORD+"\nBring water";
-        Parcel.Sent going=new Parcel.Sent("","","","","Plan private//:"+PASSWORD,body,true,Collections.<Parcel.Member>emptyList(),"PAGE","x",false,-1L,false,
+        String body="Meet at noon\nprivatespace//:"+PHRASE+"\nBring water";
+        Parcel.Sent going=new Parcel.Sent("","","","","Plan private//:"+PHRASE,body,true,Collections.<Parcel.Member>emptyList(),"PAGE","x",false,-1L,false,
             List.of(),1L,List.of(),null,"",null);
         byte[] plain=Parcel.wrap(going);
         String bytes=new String(plain,java.nio.charset.StandardCharsets.ISO_8859_1);
@@ -197,7 +197,7 @@ public class PrivateCodeTest {
         // From a build before the guard, which wrote the code: read without it.
         java.io.ByteArrayOutputStream raw=new java.io.ByteArrayOutputStream();java.io.DataOutputStream out=new java.io.DataOutputStream(raw);
         out.write(Parcel.MAGIC);out.writeBoolean(true);
-        for(String one:new String[]{"","","","","privatefolder//:"+PASSWORD,body})Parcel.put(out,one,Parcel.TEXT_MOST);
+        for(String one:new String[]{"","","","","privatefolder//:"+PHRASE,body})Parcel.put(out,one,Parcel.TEXT_MOST);
         Parcel.Sent old=Parcel.open(raw.toByteArray());
         clean("an old parcel's title",old.title);clean("an old parcel's body",old.body);
         assertEquals("Meet at noon\n\nBring water",old.body);

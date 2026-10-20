@@ -187,7 +187,7 @@ final class DesktopIconPicker {
         if(mine){String w=worn;boolean p=pictured;worn=ownWorn;pictured=ownPictured;ownWorn=w;ownPictured=p;}
         if(shared&&everybody) {
             DesktopUi.gap(top,DesktopUi.S);
-            JComboBox<String> whom=new JComboBox<>(new String[]{"For everybody","Only for me"});whom.setSelectedIndex(mine?1:0);
+            JComboBox<String> whom=DesktopUi.combo(new String[]{"For everybody","Only for me"});whom.setSelectedIndex(mine?1:0);
             whom.getAccessibleContext().setAccessibleName("For whom the icon is chosen");
             whom.addActionListener(e->{
                 boolean now=whom.getSelectedIndex()==1;if(now==mine)return;mine=now;
@@ -274,10 +274,8 @@ final class DesktopIconPicker {
 
     /** The system's own box for a file, showing pictures only; the one chosen made and worn, and this box gone. */
     private void choosePicture() {
-        JFileChooser pick=new JFileChooser();pick.setDialogTitle("Choose a picture");
-        pick.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Pictures (JPEG, PNG, GIF, BMP, WebP)","jpg","jpeg","png","gif","bmp","webp"));
-        if(pick.showOpenDialog(box)!=JFileChooser.APPROVE_OPTION||pick.getSelectedFile()==null)return;
-        File file=pick.getSelectedFile();box.dispose();
+        java.nio.file.Path picked=DesktopPick.openOne(box,"Choose a picture");if(picked==null)return;
+        File file=picked.toFile();box.dispose();
         picture(pad,thing,kind,file.getName(),()->DesktopIcons.read(file.toPath()),mine);
     }
 

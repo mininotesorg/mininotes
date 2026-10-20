@@ -1,0 +1,350 @@
+# Mininotes help, read by the Agent on the device (decision 191). The same file is on GitHub.
+# Each answer: "# id", "= title", "? a way of asking" (as many as it has), "! the answer" (one line per paragraph),
+# and "> ACT" where the Agent can do it at once. No long dashes. Keep the French file (fr.txt) in step.
+
+# ask
+= The Agent
+? what can you do
+? what can I ask
+? help
+? how does the agent work
+? what is the agent
+! Ask a question about Mininotes, or ask for something to be done. I can tell you what is new, read your todo list, add a line to it or to any note ("add milk to Grocery"), share a note or a folder with somebody ("share Grocery with Carol"), add someone, open or find a note, make a new note, and put things in the dock or in your favourites.
+! Everything happens on this device: nothing you type here is sent anywhere. Before I change anything that reaches other people, I show you what I am about to do and wait for you to confirm.
+
+# dock
+= The dock
+? what is the dock
+? how do I use the dock
+? add to the dock
+? remove from the dock
+? the row of icons at the bottom
+! The dock is the row of icons at the foot of Home, to reach notes and folders in one tap. Add one from its menu with Add to the dock, or carry it onto the dock. Remove from the dock takes it out of the dock only: nothing is deleted, and a favourite stays a favourite.
+! Anything you make a favourite also goes into the dock. After that the two are separate. The dock holds as many as you like: when they do not fit, scroll it sideways (swipe on the phone, the wheel or the thin bar on the PC). Each device has its own dock.
+
+# favourites
+= Favourites
+? what are favourites
+? add to favourites
+? remove from favourites
+? where are my favourites
+! Favourites are the notes and folders you want at hand. Add to favourites is in each one's menu. They are all listed in the Favourites icon on Home, in the order you drag them into. A new favourite also goes into the dock; removing a favourite does not take it out of the dock.
+
+# share
+= Sharing a note or a folder
+? how do I share a note
+? share a folder
+? share with someone
+? how to send a note to someone
+! Open the note or folder's menu and go to Sync and sharing, then Share. Pick people from your contacts, or a whole group, and choose what each may do: Can read, Can write, or Admin. They are asked whether to accept it. From then on it keeps itself up to date both ways: what each of you writes is merged.
+! You can also ask me: "share Grocery with Carol", or "share Grocery with Carol read only".
+> SHARE
+
+# roles
+= Who may do what
+? what is an owner
+? what is an admin
+? can write can read
+? why can I not change the role
+? change the rights
+? roles
+! Owner: whoever made the thing. Can do everything, including changing anyone's role and removing anyone. An owner's role never changes.
+! Admin: can share it on and change the roles of those who can write or read. Can write: reads and writes in it. Can read: reads it, and what they type is not sent.
+! Roles are changed in the Share box (Who has access) or on a person's page, from the drop-down beside each thing. Where there is no drop-down, the line under it says why: only the owner or an admin can change it.
+
+# addsomeone
+= Adding someone
+? how do I add someone
+? add a contact
+? add a person
+? connect with a friend
+? pair with someone
+! Open People and devices and press + by People, or ask me "add a contact". Then either scan their code (or paste their link), or show them your code (or send them your link) for them to scan. Once both have accepted, they are in your People and you can share with them.
+> ADD_CONTACT
+@ PEOPLE
+
+# mydevices
+= My other devices
+? add my phone
+? add my pc
+? add another device
+? my devices
+? sync my devices
+! Your own devices, your phone and your PC for example, are linked the same way as a person: in People and devices, Add my device, then scan the code of one on the other. Once linked, everything you choose to share with your devices keeps itself up to date on all of them. A device of yours can be set to Can read if it should only look.
+@ PEOPLE
+
+# whatsnew
+= What is new
+? what is new
+? what changed
+? new things
+? the new window
+! New lists what changed since you last looked: notes others wrote in, things shared with you, files that came. Each opens with one click, and opening it is what makes it no longer new. On the PC it is the new button at the top; on the phone it is in the menu. Ask me "what is new?" for a quick list.
+> WHAT_NEW
+
+# todo
+= Your todo list
+? what is on my todo list
+? add to my todo list
+? todo
+? tasks
+! Make a note called Todo (or To do, Tasks, À faire) and I can read it to you and add lines to it: "what is on my todo list?", "add buy bread to my todo list", or simply "todo: buy bread". To add to another note, name it: "add milk to Grocery".
+> TODO_SHOW
+
+# marks
+= The sync marks
+? what does the mark mean
+? what does the tick mean
+? green tick
+? amber arrow
+? red exclamation mark
+? grey ring
+? is my note synced
+! The mark on a note, a folder or a tile says where it stands with the devices it reaches. An empty grey ring: only on this device, not shared. An amber arrow: changes waiting to go; press it to send now. Three amber dots: sent, waiting for the others to say they have it. A green tick: everybody has this version, files included. Two grey bars: paused, this device is not taking in their changes. A red exclamation mark: a device has not been heard from for more than three days while something waits for it.
+
+# notsyncing
+= A note does not sync
+? my note is not syncing
+? not syncing
+? why does it not sync
+? the other device does not get my changes
+! First look at the mark: amber means it is on its way, red means a device has not been reached for days. Mininotes keeps trying by itself. Open Mininotes on the other device, connected to the internet, and leave it a moment: what waits is sent and answered.
+! If a strip at the top of the app names a contact in trouble, press What to do: it says what is wrong, what Mininotes does about it, and what you can do. Sync now, in Sync and sharing, sends at once.
+
+# trouble
+= The strip at the top
+? red strip at the top
+? contact in trouble
+? what to do strip
+! When something is wrong with a contact, for example a device not reached for days, one that is locked, or one whose Mininotes is too old, a strip says so at the top of the app. Mininotes tries again by itself; What to do explains what is wrong and what you can do about it.
+
+# connected
+= Connected, offline, encrypted
+? what does connected mean
+? offline
+? what does encrypted mean
+? chiffre
+? connection
+! Connected means this device has found a way to reach your contacts: through the relays, or directly on the same network. Offline means it has not yet; it keeps retrying. Encrypted (Chiffré) means your notebook is locked with your password on this device. Every note is also sealed end to end on its way to another device, whatever this says. Click either word to see the details.
+
+# lock
+= Locking and encryption
+? how do I lock mininotes
+? password
+? encrypt my notes
+? recovery words
+! In Settings, Security, Lock Mininotes encrypts the notebook, its files and your backups on this device. It then opens with your password (or your fingerprint or screen lock on the phone), and 12 recovery words are a spare key. Keep those words somewhere safe: without the password or the words, nobody can open the notebook, not even us.
+@ SECURITY
+
+# relays
+= Relays and going direct
+? what are relays
+? does it need internet
+? same wifi
+? how does it travel
+! Notes travel between devices sealed end to end, through Maxima relays, or straight from door to door when both devices are on the same network. The relays only pass on sealed messages they cannot read. Connection details are in your Profile.
+
+# filelink
+= Sharing a file through Mininotes
+? share a file through mininotes
+? linked file
+? spreadsheet sync
+? keep a file in sync
+? ods docx sync
+! On the PC, Share a file through Mininotes (in Sync and sharing) links a file that stays where it is on your PC and opens in its own program, for example a spreadsheet in LibreOffice. Each time you save it, that version goes to your other devices, and a version saved elsewhere is written back into it.
+! What travels is the whole file, the latest version: changes inside a spreadsheet or a document are not merged. If it changed here and elsewhere before they met, Mininotes asks which version to keep and replaces nothing until you answer. Remove from Mininotes puts the link in the bin on this PC only; the file itself is never deleted.
+
+# openwith
+= Opening files
+? open a file
+? open with
+? which program opens it
+? change the program
+! A file opens in the program Windows uses for its kind; the menu says which, for example Open in LibreOffice. Open with… lets you choose another program for that kind, for Mininotes only, without changing Windows' own choice.
+
+# temp
+= Temp
+? what is temp
+? temporary
+? note to self
+? send to my other devices
+! Temp is for things you only need for a while, and to pass things between your own devices, like notes to self. What you put in Temp goes to your other devices and is gone everywhere when its time is up. Temporary… in a thing's menu sets how long.
+@ TEMP
+
+# archive
+= Archive and Bin
+? archive
+? bin
+? delete a note
+? restore a note
+? where did my note go
+? trash
+! Archive puts a note or folder away, out of sight but kept. Move to bin puts it in the bin. Both are on Home, with a way back out: open the archive or the bin and put it back. Nothing in the bin is gone until you empty it.
+@ ARCHIVE
+@ BIN
+
+# versions
+= Versions
+? versions
+? go back to an older version
+? undo changes
+? history of a note
+! Every version of a note is kept. Versions, in the note's menu, lists them, newest first, and puts any of them back. Whatever arrives from someone else is kept as a version too, so nobody's writing is ever lost.
+
+# backup
+= Backups
+? backup
+? export backup
+? recovery writing
+? save my notes
+? restore from backup
+! Export backup, in the menu under Backup, writes one file with every folder, note and file. Add from backup brings one back, and asks whether to add to what is here or replace it. On the PC, Recovery writing… shows writing that could not be saved into its note and was kept aside, so you can put it back.
+@ BACKUP
+
+# colour
+= Colours and icons
+? change the colour
+? colour of a note
+? change the icon
+? picture on a folder
+! Colour, at the top of a thing's menu, colours a note or a folder, with a strength you can set. Icon… gives it an icon or a picture of your own. Home's own colour colours the whole app.
+
+# writingcolours
+= Writing colours
+? whose writing
+? writing colour
+? colour of text from others
+! In a shared note, what each person wrote can be shown in their colour, so you see who wrote what. Press a person's round on the note to change the colour their writing is shown in. The colour you choose for yourself travels with your writing.
+
+# tabs
+= Tabs in a note
+? add a tab
+? tabs
+? pages in a note
+! A note can have tabs, like index cards: Add a tab, in the note's menu or with + beside the tabs. Each tab is its own page of the same note.
+
+# translate
+= Translating
+? translate a note
+? translation
+? other language
+! Translate…, in a note's menu, puts the tab in front of you into another language, on this device. Nothing is sent to a translation service.
+
+# language
+= The app's language
+? change the language
+? language
+? french
+? english
+! Language, in the menu under Mininotes, sets the language of the app. Mininotes speaks eleven languages.
+@ LANGUAGE
+
+# textsize
+= Text size
+? bigger text
+? text size
+? font size
+! A− and A+ at the top of the menu make the text smaller or bigger. On the PC, Text size in My profile sets the size of the whole app.
+@ TEXT_SIZE
+
+# search
+= Finding things
+? search
+? find a note
+? where is my note
+? tree
+! The search field at the foot of Home finds notes, folders and files by their words. Tree shows every folder and note at once. You can also ask me: "find soup".
+> FIND
+
+# invitations
+= Shared with me
+? shared with me
+? accept a shared note
+? refuse
+? invitation
+! Something another person shares with you waits in Shared with me until you accept it. Before accepting you see what it is and who sent it, and you choose where to put it. Refuse tells them, quietly.
+@ SHARED_WITH_ME
+
+# groups
+= Groups
+? groups
+? share with a group
+? make a group
+! In People and devices, Groups gather people. Share with a group and everyone in it gets the same role; somebody added to the group later gets it too. My devices is the group of your own devices.
+@ PEOPLE
+
+# update
+= Updates
+? update mininotes
+? new version
+? which version
+! When a newer Mininotes is ready, an Update button appears at the top. The version you have is in the menu, under Mininotes.
+
+# profile
+= Your profile
+? profile
+? my name
+? my code
+? my link
+? settings
+! Your Profile, in Sync and sharing, holds your name, your picture, your colour, your code and link for others to add you, and how this device connects. Settings, under Mininotes in the menu, holds the rest.
+@ PROFILE
+@ SETTINGS
+
+# private
+= Privacy
+? is it private
+? who can read my notes
+? where are my notes kept
+? does mininotes send my data
+! Your notes are kept on your devices. They go only to the people and devices you share them with, sealed end to end on the way. There is no account and no server that keeps them. The Agent itself runs on this device and sends nothing.
+
+# stamp
+= Stamping on Minima
+? stamp a file
+? prove a file existed
+? integritas
+? timestamp on the blockchain
+? verify a stamp
+? where do I put my integritas api key
+? what did I stamp
+! Stamp on Minima, in a file's menu or a note's, records the file's fingerprint (never the file) on the Minima blockchain with the date, through your own Integritas account. Later, Verify on Minima finds that record and gives a PDF report, which proves the file existed then, unchanged: even one changed letter makes another fingerprint.
+! Link your account once in My profile, under Integritas: paste the API key from your profile at integritas.technology. It is kept in your notebook on the device, locked with it, and sent only to Integritas. In the attachments menu you can stamp several files at once.
+@ INTEGRITAS
+@ STAMPED
+
+# parlons
+= Your Parlons! address
+? parlons
+? parlons address
+? chat with my contacts
+? where do I put my parlons address
+! Your Parlons! address, in My profile, is set once and sent by itself to everybody you are paired with, so they can chat with you in one tap.
+@ PARLONS
+
+# describe
+= Describing what each thing does
+? describe what each thing does
+? tooltips
+? turn off the descriptions
+? what does this button do
+! On the PC, a line can say what a menu entry or a button does when the pointer rests on it. Describe what each thing does, in My profile under Text size, turns it on or off.
+@ DESCRIBE
+
+# showonhome
+= Show on Home
+? show on home
+? hide the bin from home
+? what home shows
+? remove recent from home
+! Show on Home, in Settings, chooses which places Home shows: Recent, Temp, Shared with me, the archive and the bin. One that is off is still in the menu.
+@ SHOW_ON_HOME
+
+# sentfiles
+= Sent files
+? sent files
+? files I sent
+? did my file arrive
+? file transfers
+! Sent files…, in the menu, lists the files you sent and those on their way to you, with where each one stands.
+@ SENT_FILES

@@ -192,23 +192,4 @@ public class DesktopHomeRulesTest {
         assertArrayEquals("above the first row",new int[]{0,2},DesktopHome.cellUnder(new Point(left+2*CELL+5,2),none,left,top,9));
         assertArrayEquals("a grid of no width has one column",new int[]{0,0},DesktopHome.cellUnder(new Point(left+500,top+5),none,left,top,0));
     }
-
-    private static NoteStore.Branch fave(String id){return new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,id,Sharing.EVERYTHING,id,"",0,0,false);}
-    private static List<String> ids(List<NoteStore.Branch> lines){List<String> out=new ArrayList<>();for(NoteStore.Branch one:lines)out.add(one.id);return out;}
-
-    @Test public void theDockDrawsTheNotebooksDockThenTheFavouritesPastItButNoneTakenOut() {
-        List<NoteStore.Branch> dock=List.of(fave("a"),fave("b")),beyond=List.of(fave("c"),fave("d"),fave("e"));
-        DesktopHome.Docked wide=DesktopHome.docked(dock,beyond,Set.of(),10);
-        assertEquals(List.of("a","b","c","d","e"),ids(wide.shown()));assertTrue(wide.rest().isEmpty());
-        // d taken out of the dock here: it waits in the Favourites icon, though there is room for it.
-        DesktopHome.Docked out=DesktopHome.docked(dock,beyond,Set.of("d"),10);
-        assertEquals(List.of("a","b","c","e"),ids(out.shown()));assertEquals(List.of("d"),ids(out.rest()));
-        assertTrue("every icon it draws can be taken out",out.shows("e"));assertFalse(out.shows("d"));
-        // Narrow: as many as fit, the rest in the order they were given.
-        DesktopHome.Docked narrow=DesktopHome.docked(dock,beyond,Set.of("d"),3);
-        assertEquals(List.of("a","b","c"),ids(narrow.shown()));assertEquals(List.of("d","e"),ids(narrow.rest()));
-        assertEquals(List.of("b","c","d","e"),ids(DesktopHome.docked(dock,beyond,Set.of(),1).rest()));
-        // One in the notebook's own dock is drawn whatever is kept here: taking it out takes it out of that dock too.
-        assertEquals(List.of("a","b","c"),ids(DesktopHome.docked(dock,beyond,Set.of("a"),3).shown()));
-    }
 }

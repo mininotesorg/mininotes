@@ -1,5 +1,5 @@
 plugins { id 'java'; id 'application' }
-version = '0.3.016'
+version = '0.4.015'
 repositories { mavenCentral() }
 java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 application { mainClass = 'org.mininotes.android.Desktop' }
@@ -11,6 +11,9 @@ dependencies {
     implementation 'net.java.dev.jna:jna-platform:5.18.0'
     implementation 'com.github.sarxos:webcam-capture:0.3.12'
     implementation 'com.formdev:flatlaf:3.6'
+    // A PDF's first page on its card (decision 208): drawn here from its bytes, never by Windows, so no thumbnail of it is
+    // kept outside the notebook.
+    implementation 'org.apache.pdfbox:pdfbox:3.0.3'
     // A picture set on a phone is WebP, which Java cannot read by itself: this ImageIO plugin, pure Java, reads it, so the
     // PC draws the phone's pictures (docs/HOME.md, step 4). Found by ImageIO on its own; nothing here names it.
     runtimeOnly 'com.twelvemonkeys.imageio:imageio-webp:3.15.2'
@@ -20,10 +23,10 @@ dependencies {
 
 // Keep the proven store and wire protocol in one place. Only platform names are
 // adapted; generated files are never edited or committed.
-def portable = ['Arriving','Attachment','Background','Envelope','Feedback','Find','Hello',
+def portable = ['Album','Peek','KeyCard','Arriving','AboutMe','Troubles','Assistant','Integritas','Describe','ReadMe','Sections','Translation','Message','Symbols','Face','Say','Attachment','Background','Envelope','Feedback','Find','Hello','HomeMotion',
     'Merge','Outbox','Pairing','Parcel','Point','Receipt','Reorder','RevisionClock',
-    'SchemaMigrations','SyncStatus','SyncMark','Sha3','Sharing','Tint','Update','Vault','Sealed','Courier','Enclosure','Direct','Nearby','Home','Relays','Given','Drop','DropList','Unsent','Persons','Groups','Parlons','Recording','Linking','NoteLine','Waits','Links','Reading','Writers','Things','Carton','Sleeve','Overview','Grid','Layout','Icons','Thumb','Looks','Marks','Routes','FirstShare','Slots','PrivateSpace','PrivateCode','Shrink','Help']
-def adapted = ['NoteStore','Post','Node']
+    'SchemaMigrations','SyncStatus','SyncMark','Sha3','Sharing','Tint','Update','Vault','Sealed','Courier','Enclosure','Direct','Nearby','Home','Relays','Given','Drop','DropList','Unsent','Persons','Groups','Parlons','Called','Recording','Linking','NoteLine','Waits','Links','Reading','Writers','Things','Carton','Sleeve','Overview','Grid','Layout','Icons','Thumb','Looks','Marks','Routes','FirstShare','Slots','PrivateSpace','PrivateCode','Shrink','Help','NoteFile','Asking','Said']
+def adapted = ['NoteStore','Post','Node','Invites']
 def androidSource = file('../android/app/src/main/java/org/mininotes/android')
 def generated = layout.buildDirectory.dir('generated/sources/shared')
 tasks.register('sharedSources') {
@@ -99,5 +102,7 @@ tasks.register('packageInput', Sync) {
     from('licenses') { into 'licenses' }
     from('../android/maxima-core/NOTICE') { rename { 'MAXIMA-NOTICE.txt' } }
     from('fontconfig/fontconfig.properties')
+    // The translation engine (docs/TRANSLATION.md), built by tools/build-translation-engine.ps1, beside the app's own files.
+    from('../native/build-pc/app') { include 'bergamot.exe'; into 'translate' }
     into layout.buildDirectory.dir('package-input')
 }

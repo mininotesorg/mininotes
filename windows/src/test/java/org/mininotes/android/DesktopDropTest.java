@@ -152,6 +152,14 @@ public class DesktopDropTest {
         assertEquals(1,receiver.store.transfersDue(System.currentTimeMillis()).size());
         fetchAll(one);
         assertTrue(receiver.store.transfer(one.id).allHere());
+        // Already asked about, so it does not wait again: in Shared with me, not loose on Home (decision 122).
+        String id=one.files.get(0).id;
+        boolean inShared=false,onHome=false;
+        for(NoteStore.Branch line:receiver.store.contents(NoteStore.SHARED))if(line.id.equals(id))inShared=true;
+        for(NoteStore.Branch line:receiver.store.contents(Things.HOME))if(line.id.equals(id))onHome=true;
+        assertTrue("in Shared with me",inShared);assertFalse("not on Home",onHome);
+        assertTrue(receiver.store.waitingForYou().isEmpty());
+        assertEquals(0,receiver.store.freshOnHome());
     }
 
     @Test public void aDeviceNotPairedHereSendsNothing() throws Exception {

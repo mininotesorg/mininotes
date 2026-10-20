@@ -1,6 +1,6 @@
 # Mininotes for Windows
 
-A first Windows desktop build, using the existing Android app's Java notebook
+The Windows desktop app uses the existing Android app's Java notebook
 and sharing logic. The interface is Swing; SQLite, preferences and protected
 keys have Windows adapters. Android source files are not modified by this build.
 The launcher, window, header and tray use the mobile notebook logo. Its exact
@@ -16,12 +16,22 @@ Windows x64, JDK 17, and internet access for the first dependency download:
 ```
 
 The script runs the shared and Windows tests and makes
-`dist/latest/Mininotes-Windows-0.3.016.zip` plus its SHA-256 checksum. Extract the whole
+`dist/latest/Mininotes-Windows-0.4.015.zip` plus its SHA-256 checksum. Extract the whole
 ZIP and run `Mininotes/Mininotes.exe`. Keep the runtime and app folders beside
 the executable. No Java installation is required to run this bundle.
 
+Android and Windows use the same version number, currently 0.4.015. Installation
+and verification are recorded separately for each platform.
+
 This is an unsigned portable preview, not an installer or a published release.
 The bundled runtime makes it substantially larger than the Android APK.
+
+In 0.3.029 the scrollbar handle remains visible without hover, on light or dark
+paper. Opening a folder from Recent keeps a Back to Recent action, including
+from the right-hand Recent list. Esc goes back through the browsing trail;
+returning to a list restores its scroll position. Temp and Shared with me use
+the same browsing behavior. This does not move the folder or change where a
+file dragged out of it belongs.
 
 For development:
 
@@ -46,6 +56,59 @@ counts and states only - never a name, an address, a key or a word of a note, so
 it can be sent to whoever helps. It grows to about 1 MB, is then kept as
 `mininotes.1.log` and a new one starts: two files at most. Tests write no log
 unless started with `-Dmininotes.log=<folder>`.
+
+## Recovery writing and a safe switch
+
+Windows 0.3.028 keeps invalid local edits in a desktop-only table in the notebook.
+The complete title, text, original revision/text and available writer information
+commit on the storage worker before Home, another note, New note or Exit proceeds.
+A write failure still blocks leaving. Recovery writing is separate from saved
+notes, Home/search and sharing; it never queues invalid text for delivery.
+When the notebook is locked the table uses the same database encryption, with no
+plaintext journal. An unlocked notebook remains unencrypted.
+
+Use **⋯ → Recovery writing…** after leaving or restarting. **Reopen** displays
+complete writing for shortening and an ordinary save; that save merges against
+the current note. **Save as new note** makes a separate note when within the same
+limits. **Export text…** writes the entire title and body as UTF-8 text, with a
+plaintext warning for a locked notebook. **Discard…** requires explicit confirmation.
+Independent snapshots stay until that exact snapshot is saved or discarded.
+If the original note is gone or read only, reopen and shorten the writing, return
+to Home to keep that shortened draft, then use Save as new note. The shared note
+is never written through a read-only restriction.
+
+**Back up recovery writing…** creates a password-protected `.mnwriting` file.
+Keep that password separately. **Restore recovery writing…** authenticates the
+file and adds drafts alongside those here, without replacing saved notes or other
+drafts. This desktop-only backup is separate from the ordinary portable notebook
+backup. The portable export explicitly warns when recovery writing is pending
+and covers saved notes only. For a complete local backup, export both the portable
+notebook backup and the locked recovery-writing backup. Private-space exports
+remain separate. Test a restore in a separate `--data-dir` notebook before relying
+on a backup; this session's restore tests used synthetic writing only.
+
+The new build cannot retrieve unsaved text from an older process's memory. To
+switch a currently blocked older session safely:
+
+1. Leave the old app running. Manually copy its **complete title and complete body**
+   into a UTF-8 text file in storage you trust. Save it, reopen it, and check both
+   beginning and end, including the last unsaved words. Preserve any other open
+   unsaved writing the same way. A plaintext file needs appropriate protection.
+2. Only after verifying those copies, shorten the old editor to the existing
+   limits and save with Ctrl+S. Export a notebook backup and verify its restore in
+   an isolated notebook. Keep the complete text files and original backup.
+3. Exit the old app normally through **⋯ → Exit Mininotes** (or the tray's Exit).
+   Closing its window may keep it running. Do not kill it or launch the new build
+   to force a handover while writing is unpreserved.
+4. Open `dist/latest/Mininotes-Windows-0.4.015/Mininotes.exe` or the local
+   `dist/latest/Mininotes.lnk`. Paste a preserved oversized edit back into its
+   intended note if needed. Wait for **Writing kept on this PC**, then use Recovery
+   writing to reopen, export or shorten it. Retain the verified external copy.
+
+Packaging retains older runnable app folders and timestamped images, archives
+only older ZIP/checksum files, and creates a new folder on a same-version rebuild.
+It never closes or launches your existing session. `-SkipTests` is only for an
+unchanged build whose full test suite has just passed separately.
 
 ## Using the pad
 
@@ -79,7 +142,7 @@ back to the main page, where the favourites and the search are; Ctrl with the wh
 every page at once, where a page can be dragged to another place, or onto another page to
 change places with it. Carry an icon to the left or right edge and hold it there to take it
 to the page beyond - that is how a new page comes to be; carried above the rows it goes to the
-page above at once, and down to the page's lower edge, to the page below. The dot before the version is green on
+page above with continuous scrolling, and down to the page's lower edge, to the page below. The dot before the version is green on
 the newest version, yellow when a newer one is out. Right-click is everything about what you
 click: on Home, its colour, the text size, and whether the favourites and the search show. The archive and the bin are icons on Home,
 each with how many things wait in it, opening as a card of what is in it (Settings → Window can put them
@@ -136,9 +199,22 @@ yet register `mininotes://` as a system protocol handler; paste links in the app
 - Files kept with a note or a collection are included in backups, and go with it
   to whoever it is shared with, up to 16 MB each (see `docs/SHARING.md`). This
   build has no dark paper, and differs from the phone where `docs/PARITY.md` says.
-- Local input follows the existing backup limits (24,000 characters per note).
+- Saved notes retain portable limits: title 160 and body 24,000 Java string
+  characters (UTF-16 code units). Transport limits count UTF-8 bytes separately.
+  Oversized stored text is displayed in full. Invalid local writing is kept as
+  desktop recovery writing before navigation continues.
   A save failure leaves the writing on screen and blocks navigation/exit; copy
   that text somewhere safe if a storage problem cannot be corrected.
+
+Home uses whole row boundaries and locks empty-space panning to its dominant axis.
+Precise wheel deltas accumulate directly; a notched wheel has restrained smoothing,
+Shift-wheel moves sideways, and Ctrl-wheel opens All pages. The entire centre foot
+is absent on other pages and in All pages. Double-click empty space or Ctrl+Home
+returns smoothly to the centre. Resize keeps the fractional Home position and the
+note's selection and reading anchor; active writing keeps its caret visible.
+Short note windows offer Note tools and retain save/error and recording access.
+The minimum window remains 820×520. Physical touchpad two-axis delivery, touch hold
+and on-screen-keyboard overlap have not been verified on hardware.
 
 ## Maintenance
 

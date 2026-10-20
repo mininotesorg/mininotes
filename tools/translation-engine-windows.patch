@@ -1,0 +1,49 @@
+diff --git a/cmake/FindPCRE2.cmake b/cmake/FindPCRE2.cmake
+index 8ea55cb..3ec1dac 100644
+--- a/cmake/FindPCRE2.cmake
++++ b/cmake/FindPCRE2.cmake
+@@ -51,6 +51,9 @@ if(SSPLIT_USE_INTERNAL_PCRE2)
+     -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE} # Necessary for proper MacOS compilation
+     -DCMAKE_CROSSCOMPILING_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR_WITH_SEMICOLON} # Necessary for proper MacOS compilation
+     -DCMAKE_POSITION_INDEPENDENT_CODE:BOOL=true # Added for pybind11
++    -G ${CMAKE_GENERATOR}
++    -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
++    -DCMAKE_POLICY_DEFAULT_CMP0091=NEW
+     )
+ 
+   # Android platform needs to be explicitly passed given this is an external project.
+@@ -65,7 +68,11 @@ if(SSPLIT_USE_INTERNAL_PCRE2)
+ 
+ 
+   # set include dirs and libraries for PCRE2
+-  set(PCRE2_LIBRARIES ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}/${CMAKE_STATIC_LIBRARY_PREFIX}pcre2-8${CMAKE_STATIC_LIBRARY_SUFFIX})
++  if(MSVC)
++    set(PCRE2_LIBRARIES ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}/pcre2-8-static.lib)
++  else()
++    set(PCRE2_LIBRARIES ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}/${CMAKE_STATIC_LIBRARY_PREFIX}pcre2-8${CMAKE_STATIC_LIBRARY_SUFFIX})
++  endif()
+   set(PCRE2_INCLUDE_DIRS "${CMAKE_BINARY_DIR}/include")
+   set(PCRE2_FOUND TRUE CACHE BOOL "Found PCRE2 libraries" FORCE)
+   
+@@ -76,7 +83,7 @@ if(SSPLIT_USE_INTERNAL_PCRE2)
+     DOWNLOAD_DIR ${PCRE2_SRC_DIR}
+     SOURCE_DIR ${PCRE2_SRC_DIR}
+     CONFIGURE_COMMAND ${CMAKE_COMMAND} ${PCRE2_SRC_DIR} ${PCRE2_CONFIGURE_OPTIONS}
+-    BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR>
++    BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --config Release
+     INSTALL_DIR ${CMAKE_BINARY_DIR}
+     BUILD_BYPRODUCTS ${PCRE2_LIBRARIES})
+ 
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 60e652f..2faf0b0 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -1,5 +1,8 @@
+ include_directories(ssplit)
+ add_library(ssplit STATIC ssplit/ssplit.cpp ssplit/regex.cpp)
++if(MSVC)
++  target_compile_definitions(ssplit PUBLIC PCRE2_STATIC)
++endif()
+ target_link_libraries(ssplit ${EXT_LIBS})
+ 
+ set_target_properties(ssplit PROPERTIES

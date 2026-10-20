@@ -195,6 +195,8 @@ public class ReceiptTest {
         assertEquals("Parisa refused “Saturday market”\n“No thanks”",FirstShare.notice("Parisa","Saturday market"," No thanks "));
         // No long dash and no spaced hyphen in anything said (the owner's rule of 2026-10-03).
         for(String said:new String[]{FirstShare.WAITING,FirstShare.QUIETLY_DOES,FirstShare.TELL_DOES,FirstShare.WORDS_HINT,
+                FirstShare.SEE_SENDER,FirstShare.BLOCK,FirstShare.BLOCKED_SAID,FirstShare.NOBODY_BLOCKED,FirstShare.CAN_SHARE_AGAIN,
+                FirstShare.deleteBlocked("Ana"),
                 FirstShare.refusedSaid(true,1),FirstShare.refusedSaid(true,0),FirstShare.refusedSaid(false,0)})
             assertFalse(said,said.contains("—")||said.contains(" - ")||said.contains("–"));
     }

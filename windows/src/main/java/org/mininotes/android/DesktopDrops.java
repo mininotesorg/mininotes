@@ -37,10 +37,7 @@ final class DesktopDrops {
     static void send(Desktop pad,List<Path> given,String toward) {
         List<Path> chosen=new ArrayList<>(given);
         if(chosen.isEmpty()) {
-            JFileChooser pick=new JFileChooser();pick.setMultiSelectionEnabled(true);pick.setDialogTitle("Send files");
-            if(pick.showOpenDialog(pad.frame)!=JFileChooser.APPROVE_OPTION)return;
-            File[] files=pick.getSelectedFiles();if(files.length==0&&pick.getSelectedFile()!=null)files=new File[]{pick.getSelectedFile()};
-            for(File one:files)chosen.add(one.toPath());
+            chosen.addAll(DesktopPick.open(pad.frame,"Send files",true));
             if(chosen.isEmpty())return;
         }
         pad.disk.submit(()->{
@@ -64,7 +61,13 @@ final class DesktopDrops {
             @SuppressWarnings("unchecked") List<String> refused=(List<String>)loaded[1];
             @SuppressWarnings("unchecked") List<Drop.Device> devices=(List<Drop.Device>)loaded[3];
             if(going.isEmpty()){DesktopUi.tell(pad.frame,"Send files",DesktopUi.note(refused.isEmpty()?"Nothing to send.":Drop.notSent(refused),380,DesktopUi.INK,DesktopUi.BODY));return;}
-            if(devices.isEmpty()){DesktopUi.tell(pad.frame,"Send files",DesktopUi.note("No devices paired yet. Pair one in People and devices, and files can go straight to it.",380,DesktopUi.INK,DesktopUi.BODY));return;}
+            // Nobody paired yet: not a dead end, the way to somebody new (the owner, 2026-10-10; decision 146).
+            if(devices.isEmpty()){
+                JPanel said=DesktopUi.column();
+                DesktopUi.add(said,DesktopUi.note("Nobody added yet. Add someone, then files and messages can go straight to them.",380,DesktopUi.INK,DesktopUi.BODY));
+                JDialog[] none={null};
+                none[0]=DesktopUi.sheet(pad.frame,"Send files",said,DesktopUi.footer(DesktopUi.primary("New person\u2026",()->{none[0].dispose();pad.people(null);})),true);
+                DesktopUi.show(none[0],420,320);return;}
             box(pad,going,refused,(Long)loaded[2],devices,toward);
         },pad::failed);
     }
@@ -100,7 +103,9 @@ final class DesktopDrops {
         };
         list.addMouseListener(new MouseAdapter(){public void mouseClicked(MouseEvent e){if(e.getClickCount()==2)go.run();}});
         JButton send=DesktopUi.primary("Send",go);
-        box[0]=DesktopUi.sheet(pad.frame,"Send files",body,DesktopUi.footer(send),true);
+        // Somebody new, wherever somebody is chosen (decision 146): People and devices, where a code is scanned or shown.
+        JButton anew=DesktopUi.button("New person\u2026",()->{box[0].dispose();pad.people(null);});
+        box[0]=DesktopUi.sheet(pad.frame,"Send files",body,DesktopUi.footer(anew,send),true);
         // More files dropped on the box join these; dropped on a device, they go to that device.
         java.util.function.Consumer<List<Path>> more=added->{
             Drop.Device to=list.getSelectedValue();box[0].dispose();
@@ -207,12 +212,15 @@ final class DesktopDrops {
             if(!(c instanceof JComponent j))continue;
             if(j.getClientProperty(DesktopHome.THING) instanceof NoteStore.Branch thing) {
                 Rectangle all=new Rectangle(j.getSize());
+                // On Temp's icon: kept in Temp, and so given to the devices Temp goes to (the owner, 2026-10-11; decision 150).
+                if(thing.kind==NoteStore.Branch.Kind.TEMP)return new Aim(KEEP,NoteStore.TEMP,"Temp",j,all);
                 if(thing.kind==NoteStore.Branch.Kind.PAGE)return new Aim(ATTACH,thing.id,named(thing),j,all);
                 if(DesktopMoving.shelf(thing.kind))return new Aim(KEEP,thing.id,named(thing),j,all);
                 // A file's icon, or the Favourites': what holds it takes them.
                 continue;
             }
             if(j.getClientProperty(DesktopHome.KEEPS) instanceof NoteStore.Branch place) {
+                if(place.kind==NoteStore.Branch.Kind.TEMP||NoteStore.TEMP.equals(place.id))return new Aim(KEEP,NoteStore.TEMP,"Temp",j,j.getVisibleRect());
                 boolean home=place.kind==NoteStore.Branch.Kind.LIBRARY;
                 return new Aim(KEEP,home?Things.HOME:place.id,home?"Home":named(place),j,j.getVisibleRect());
             }
@@ -224,11 +232,25 @@ final class DesktopDrops {
         }
         return Aim.BOXED;
     }
-    private static String named(NoteStore.Branch b){return b.name==null||b.name.isBlank()?"Untitled":b.name;}
+    private static String named(NoteStore.Branch b){return DesktopHome.named(b);}
 
     /** Files let go where {@code aim} said: attached to that note, kept with that collection or on Home, or sent. Said in the bar. */
     static void dropped(Desktop pad,Aim aim,List<Path> files) {
+        // A Markdown file let go anywhere but on a note: a note kept as that file, where it is (docs/FILES.md, decision 162),
+        // made where it was dropped, or on Home; the other files go as they always went.
+        if(aim.does!=ATTACH) {
+            List<Path> markdown=new ArrayList<>(),rest=new ArrayList<>();
+            for(Path f:files)(NoteFile.markdownFile(f.getFileName().toString())?markdown:rest).add(f);
+            if(!markdown.isEmpty()) {
+                boolean temp=aim.does==KEEP&&NoteStore.TEMP.equals(aim.note);
+                DesktopOnDisk.open(pad,markdown,aim.does==KEEP&&!temp?aim.note:Things.HOME,temp?NoteStore.TEMP:null);
+                if(rest.isEmpty())return;
+                files=rest;
+            }
+        }
         if(aim.does==ATTACH)pad.attach(aim.note,aim.name,files);
+        // Into Temp: kept on Home, as a thing made from Temp's + is, and put in Temp, which sends it on (decision 150).
+        else if(aim.does==KEEP&&NoteStore.TEMP.equals(aim.note))pad.keep(Things.HOME,"Temp",files,NoteStore.TEMP);
         else if(aim.does==KEEP)pad.keep(aim.note,aim.name,files);
         else send(pad,files);
     }
@@ -369,7 +391,7 @@ final class DesktopDrops {
     static void heard(Desktop pad,Post.Landed landed) {
         if(landed.said!=null)pad.notice(landed.said);
         if(landed.asking!=null)ask(pad,landed.asking);
-        pad.refresh();
+        pad.refreshSoon();
     }
 
     /** Somebody who is not one of the owner's devices wants to send files: accept, or refuse. */

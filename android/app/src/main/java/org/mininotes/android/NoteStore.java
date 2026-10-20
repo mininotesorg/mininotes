@@ -49,7 +49,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
          * SHARED is the place Shared with me (decision 94): where a file shared with you on its own shows, unless Settings
          * says otherwise; like Temp, it has no row of its own, and what shows in it is kept on Home.
          */
-        enum Kind { LIBRARY, COLLECTION, BOOK, PAGE, INBOX, ARCHIVE, BIN, NOTICE, FAVOURITES, DROPS, FILE, TOOLS, TEMP, RECENT, WAITING, OPEN, SHARED }
+        enum Kind { LIBRARY, COLLECTION, BOOK, PAGE, INBOX, ARCHIVE, BIN, NOTICE, FAVOURITES, DROPS, FILE, TOOLS, TEMP, RECENT, WAITING, OPEN, SHARED, MESSAGES }
         final Kind kind; final String id,parent,name,detail; final int depth,shared,colour,waiting; final boolean holds;
         final Sharing.State state;
         /** This phone has stopped taking this thing in, or something that holds it. Set as it is listed. */
@@ -58,6 +58,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         boolean kept;
         /** A file that came from another device and has not been opened here yet: it wears a new badge. FILE lines only. */
         boolean fresh;
+        /** Changed on another of the owner's own devices, or a folder with such a note in it, not opened here since: ✓ (decision 220). */
+        boolean updated;
         /** Temporary, deleted for good when its time comes: it wears a timer on its corner, as a favourite wears a star (decision 93). */
         boolean temporary;
         /**
@@ -99,6 +101,11 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         }
         /** Who shared this with you, when somebody did. Empty for everything you made yourself. */
         final String origin;
+        /**
+         * Waiting for an answer in Shared with me (decision 127). Set only on the lines {@link NoteStore#waitingForYou}
+         * builds. A click offers Accept, Refuse and See sender. A file still coming is not one of these.
+         */
+        boolean asking;
         Branch(Kind kind,String id,String parent,String name,String detail,int depth,int shared,boolean holds) {
             this(kind,id,parent,name,detail,depth,shared,holds,Tint.NONE);
         }
@@ -458,8 +465,10 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         Set<String> all=new java.util.LinkedHashSet<>();
         // A file shared on its own: whoever it is shared with, and whoever it came from (see Sleeve).
         if(kind==Branch.Kind.FILE){all.addAll(looseAudience(id).keySet());String from=cameFrom(kind,id);if(!from.isEmpty())all.add(from);return all;}
-        List<Sharing.Rule> rules=shares();
-        for(Outbox.Page page:pagesUnder(kind,id))
+        List<Outbox.Page> pages=pagesUnder(kind,id);
+        // And this owner's own devices that have had a note, wherever it is here (decision 211): see withOwnHolders.
+        List<Sharing.Rule> rules=withOwnHolders(shares(),pages,sent());
+        for(Outbox.Page page:pages)
             all.addAll(Sharing.audience(rules,page.path()).keySet());
         // And whoever a collection reaches by itself: one with no note in it yet goes to them on its own (see Carton).
         if(shelf(kind)&&!home(id))all.addAll(Sharing.audience(rules,pathOf(id)).keySet());
@@ -619,6 +628,19 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * however far up. A map put on a collection is meant for every note in it, so it is offered in all of them
      * rather than only where it was left. Nearest first, so what was put here is the first thing on the strip.
      */
+    /**
+     * Of these files, those not put away on this device: what a note's strip shows, and counts. A note's file put in the bin
+     * is still the note's, and travels as it did, until the bin is emptied (the owner, 2026-10-18: "when deleted they should
+     * go in the bin"; decision 193).
+     */
+    List<Held> notAway(List<Held> files) {
+        Set<String> away=new HashSet<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id FROM files WHERE away>0",null)){while(c.moveToNext())away.add(c.getString(0));}
+        if(away.isEmpty())return files;
+        List<Held> out=new ArrayList<>();for(Held one:files)if(!away.contains(one.id))out.add(one);
+        return out;
+    }
+
     List<Held> filesReaching(Branch.Kind kind,String id) {
         // The library is not a thing anything is kept with, so it reaches only what is kept with it.
         List<Held> found=new ArrayList<>();
@@ -742,11 +764,21 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     List<Enclosure.Listed> enclosed(String note,String address) {
         List<Enclosure.Listed> all=new ArrayList<>();
         if(home(note))return all;
+        // One in the bin here is listed as taken out, so it is taken out of the note everywhere (the owner, 2026-10-18:
+        // "I deleted them all from desktop and added 2 new, on the Pro all of them stayed"; decision 206). A size of nothing
+        // and no place to fetch it from: a build before this one names it and does nothing with it.
+        Set<String> binned=ids(getReadableDatabase(),"SELECT id FROM files WHERE note=? AND away=2",note);
         for(Held file:filesOf(keptWith(note),note))
-            all.add(new Enclosure.Listed(file.id,file.name,file.kind,file.bytes,
-                Enclosure.travels(file.bytes)?manifestFor(file.id,address):""));
+            all.add(binned.contains(file.id)?new Enclosure.Listed(file.id,file.name,file.kind,0,Enclosure.TAKEN_OUT)
+                :new Enclosure.Listed(file.id,file.name,file.kind,file.bytes,Enclosure.travels(file.bytes)?manifestFor(file.id,address):""));
         return all;
     }
+
+    /**
+     * Told when a note's file goes into the bin here or comes back out, with the note or collection it is kept with, so its
+     * list goes to whoever has it now (decision 206). Set by the app; on the disk thread.
+     */
+    volatile java.util.function.Consumer<String> filesOut;
 
     /**
      * A list of a note's files from one device, taken in. Only the newest list from each device counts; an
@@ -760,7 +792,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      */
     boolean listed(String note,String from,long asOf,List<Enclosure.Listed> files) {
         if(files==null||note==null||from==null||home(note))return false;
-        boolean fetch;List<String> drop;
+        boolean fetch;List<String> drop=new ArrayList<>();
         String keptAs=heldIs(keptWith(note));
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
         try {
@@ -769,6 +801,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             }
             ContentValues seen=new ContentValues();seen.put("note",note);seen.put("origin",from);seen.put("at",asOf);
             db.insertWithOnConflict("listed",null,seen,SQLiteDatabase.CONFLICT_REPLACE);
+            // Put back by the device that took it out: no longer let go here, so it is fetched again (decision 206).
+            for(Enclosure.Listed one:files)if(!one.takenOut())db.delete("incoming","id=? AND origin=? AND declined=1 AND taken=1",new String[]{one.id,from});
             Set<String> fromThem=ids(db,"SELECT id FROM files WHERE note=? AND "+keptAs+" AND origin=?",note,from);
             Set<String> waiting=ids(db,"SELECT id FROM incoming WHERE note=? AND origin=? AND declined=0",note,from);
             Set<String> here=new HashSet<>(), declined=new HashSet<>();
@@ -794,6 +828,21 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 db.delete("files","id=?",new String[]{id});db.delete("reached","id=?",new String[]{id});
             }
             for(String id:plan.forget)db.delete("incoming","id=? AND declined=0",new String[]{id});
+            // Taken out of the note at their end: taken out here too, wherever it came from, and let go, so another device
+            // still listing it does not bring it back; only theirs putting it back does (decision 206). One in this device's
+            // own bin stays there, and one shared with this device on its own as well stays, as a dropped one does.
+            for(String id:plan.takeOut) {
+                if(!ids(db,"SELECT target FROM standing WHERE scope='FILE' AND target=? AND level>0",id).isEmpty())continue;
+                Held was=null;
+                try(Cursor c=db.query("files",FILE_ROW,"id=? AND note=?",new String[]{id,note},null,null,null,"1")){if(c.moveToFirst())was=held(c);}
+                if(!ids(db,"SELECT id FROM files WHERE id=? AND away=2",id).isEmpty())continue;
+                db.delete("files","id=?",new String[]{id});db.delete("reached","id=?",new String[]{id});
+                ContentValues v=new ContentValues();
+                v.put("id",id);v.put("note",note);v.put("origin",from);v.put("name",was==null?"":was.name);v.put("kind",was==null?"":was.kind);
+                v.put("bytes",was==null?0:was.bytes);v.put("manifest","");v.put("declined",1);v.put("alone",0);v.put("taken",1);
+                db.insertWithOnConflict("incoming",null,v,SQLiteDatabase.CONFLICT_REPLACE);
+                drop.add(id);
+            }
             // A list names only what the note keeps at the sender's end, so whoever sent it has every file on it. Taken
             // from the list as well as from their word: a device never says it has a file it added itself, and between
             // three devices the other two can have it from the one in the middle - the Pro showed the phone's own file
@@ -801,7 +850,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             // the device it is waited from is out of reach or locked: see Post.fromTheirDoor.
             long now=System.currentTimeMillis();boolean newDoor=false;
             for(Enclosure.Listed one:files) {
-                if(!Enclosure.plainId(one.id))continue;
+                if(!Enclosure.plainId(one.id)||one.takenOut())continue;
                 boolean kept=!ids(db,"SELECT id FROM files WHERE id=? AND note=?",one.id,note).isEmpty();
                 boolean waited=!kept&&!ids(db,"SELECT id FROM incoming WHERE id=? AND note=? AND declined=0",one.id,note).isEmpty();
                 if(!kept&&!waited)continue;
@@ -812,7 +861,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 }
                 db.execSQL("INSERT OR REPLACE INTO reached(id,address,has,at,tells) VALUES(?,?,1,?,0)",new Object[]{one.id,from,now});
             }
-            fetch=!plan.fetch.isEmpty()||!plan.refresh.isEmpty()||newDoor;drop=plan.drop;
+            fetch=!plan.fetch.isEmpty()||!plan.refresh.isEmpty()||newDoor;drop.addAll(plan.drop);
             db.setTransactionSuccessful();
         } finally {db.endTransaction();}
         if(!drop.isEmpty())sweep();
@@ -999,7 +1048,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         try(java.io.OutputStream out=new java.io.BufferedOutputStream(new java.io.FileOutputStream(part))) {
             if(key!=null)Sealed.seal(key,new java.io.ByteArrayInputStream(stored),out);else out.write(stored);
         } catch(java.io.IOException e){part.delete();throw e;}
-        boolean wanted=false,alone=false;
+        boolean wanted=false,alone=false,placed=false,done=false;
         // One that came on its own is shown where Settings says (decision 92): found, or made, before the writing. Unless it
         // is a new version of one here (decision 93), which takes its place.
         String shown=null;long replaces=0;
@@ -1011,7 +1060,11 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             try(Cursor c=db.query("incoming",new String[]{"alone","owner","until","accepted"},"id=? AND declined=0",new String[]{one.id},null,null,null,"1")){wanted=c.moveToFirst();alone=wanted&&c.getInt(0)==1;if(wanted){owner=c.getString(1);until=c.getLong(2);accepted=c.getInt(3);}}
             if(wanted&&(file(one.id)!=null||!alone&&!keeps(one.note)))wanted=false;
             if(wanted) {
+                // Bytes with no row are what an earlier try left when its writing failed: never this file kept, so they go, or
+                // every later try would stop here and the file never come (the owner, 2026-10-11).
+                if(kept.exists()&&file(one.id)==null&&!kept.delete())throw new java.io.IOException("An earlier try could not be cleared.");
                 if(kept.exists()||!part.renameTo(kept))throw new java.io.IOException("The file could not be put in place.");
+                placed=true;
                 keep(db,new Held(one.id,alone?Things.HOME:one.note,Attachment.named(one.name),Attachment.kind(one.kind),plain.length,System.currentTimeMillis(),
                     alone?Branch.Kind.COLLECTION:keptWith(one.note)),false);
                 // From whose it is, where its sleeve named somebody other than the device it came from (decision 93).
@@ -1030,10 +1083,12 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 db.insertWithOnConflict("reached",null,has,SQLiteDatabase.CONFLICT_REPLACE);
                 db.delete("incoming","id=?",new String[]{one.id});
             }
-            db.setTransactionSuccessful();
+            db.setTransactionSuccessful();done=true;
         } finally {
             db.endTransaction();
             if(!wanted)part.delete();
+            // Put in place and then not written down: taken out again, so the next try starts clean.
+            if(placed&&!done)kept.delete();
         }
         return wanted;
     }
@@ -1116,26 +1171,21 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      *
      * @return how big it is now
      */
-    long replaceFile(String id,String kind,java.io.InputStream in) throws java.io.IOException {
+    long replaceFile(String id,String kind,java.io.InputStream in) throws java.io.IOException{return replaceFile(id,kind,in,false);}
+
+    /**
+     * @param exact the bytes kept as they are, never a picture made smaller: a file in a folder kept on disk is the same file
+     *              there and here, or the two would never agree again (docs/FILES.md)
+     */
+    long replaceFile(String id,String kind,java.io.InputStream in,boolean exact) throws java.io.IOException {
         if(!mayChangeFile(id))throw new IllegalStateException(FILE_READ_ONLY);
         Held file=file(id);
         File part=new File(shed(),id+".new");
-        long[] seen={0};
-        byte[] key=fileKey.get();
-        try(java.io.OutputStream out=new java.io.BufferedOutputStream(new java.io.FileOutputStream(part))) {
-            // Counted as it comes, the bytes as they are and not as they are sealed, and stopped where the pad has no room.
-            java.io.InputStream counted=new java.io.FilterInputStream(in){
-                @Override public int read() throws java.io.IOException {int b=super.read();if(b>=0)more(1);return b;}
-                @Override public int read(byte[] b,int off,int len) throws java.io.IOException {int n=super.read(b,off,len);if(n>0)more(n);return n;}
-                private void more(int n) throws java.io.IOException {if((seen[0]+=n)>Attachment.PLENTY)throw new java.io.IOException("That file is too big for this pad.");}
-            };
-            if(key!=null)Sealed.seal(key,counted,out);else{byte[] piece=new byte[16384];int n;while((n=counted.read(piece))!=-1)out.write(piece,0,n);}
-        } catch(java.io.IOException|RuntimeException e){part.delete();throw e;}
-        long size=seen[0];
+        long size=copyIn(in,part);
         // A new version is added as any file is (decision 112): a picture made smaller, anything else packed. A picture whose
         // kind changed is named for what it is now, as a rename names it, so the later name stands everywhere.
         String renamed=null;
-        if(file!=null) {
+        if(file!=null&&!exact) {
             Held made=settle(new Held(id,file.note,file.name,Attachment.kind(kind),size,file.added,file.held),part);
             size=made.bytes;kind=made.kind;if(!made.name.equals(file.name))renamed=made.name;
         }
@@ -1154,6 +1204,39 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             db.setTransactionSuccessful();
         } finally {db.endTransaction();part.delete();}
         return size;
+    }
+
+    /**
+     * The bytes copied to where a kept file lies, sealed on the way while the notebook has a lock, counted as they come (the
+     * bytes as they are, not as they are sealed) and stopped where the pad has no room. Nothing is left of a copy that failed.
+     *
+     * @return how many bytes came
+     */
+    private long copyIn(java.io.InputStream in,File part) throws java.io.IOException {
+        long[] seen={0};
+        byte[] key=fileKey.get();
+        try(java.io.OutputStream out=new java.io.BufferedOutputStream(new java.io.FileOutputStream(part))) {
+            java.io.InputStream counted=new java.io.FilterInputStream(in){
+                @Override public int read() throws java.io.IOException {int b=super.read();if(b>=0)more(1);return b;}
+                @Override public int read(byte[] b,int off,int len) throws java.io.IOException {int n=super.read(b,off,len);if(n>0)more(n);return n;}
+                private void more(int n) throws java.io.IOException {if((seen[0]+=n)>Attachment.PLENTY)throw new java.io.IOException("That file is too big for this pad.");}
+            };
+            if(key!=null)Sealed.seal(key,counted,out);else{byte[] piece=new byte[16384];int n;while((n=counted.read(piece))!=-1)out.write(piece,0,n);}
+        } catch(java.io.IOException|RuntimeException e){part.delete();throw e;}
+        return seen[0];
+    }
+
+    /**
+     * A file put into a folder kept on disk, taken into its collection as it is (docs/FILES.md): never a picture made smaller
+     * nor anything packed, so the file there and the file here stay the same bytes. The row is written once they are here.
+     */
+    Held addFileExact(String collection,String name,String kind,java.io.InputStream in) throws java.io.IOException {
+        Held opened=opening(Branch.Kind.COLLECTION,collection,name,kind,0);
+        File at=fileFor(opened.id);
+        long size=copyIn(in,at);
+        Held kept=new Held(opened.id,collection,opened.name,opened.kind,size,opened.added,Branch.Kind.COLLECTION);
+        keep(kept);
+        return kept;
     }
 
     /**
@@ -1271,7 +1354,9 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         Map<String,String> said=new HashMap<>();
         Set<String> audience=everybodyIn(Branch.Kind.PAGE,note);
         Map<String,Set<String>> has=reachedOn(note);
+        Set<String> away=ids(getReadableDatabase(),"SELECT id FROM files WHERE note=? AND away<>0",note);
         for(Held file:filesOf(Branch.Kind.PAGE,note)) {
+            if(away.contains(file.id))continue;
             String origin=originOf(file.id);int lacking=0;
             for(String address:audience)
                 if(!address.equals(origin)&&!has.getOrDefault(file.id,java.util.Collections.<String>emptySet()).contains(address))lacking++;
@@ -1313,6 +1398,30 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     }
 
     /**
+     * The files of these notes that some device they reach has not said it has, as whereEach counts them: what the box a
+     * press on an amber mark opens lists, each to be opened (the owner, 2026-10-18: "make sure we can browse all files
+     * needed to be synced"; decision 206).
+     */
+    List<Held> filesLacking(List<Outbox.Page> pages) {
+        List<Held> out=new ArrayList<>();
+        if(pages.isEmpty())return out;
+        List<Sharing.Rule> rules=withOwnHolders(shares(),pages,sent());
+        for(Outbox.Page page:pages) {
+            Map<String,Boolean> audience=Sharing.audience(rules,page.path());
+            if(audience.isEmpty()||(!ids(getReadableDatabase(),"SELECT id FROM notes WHERE id=? AND theirs=1",page.id).isEmpty()&&onlyReads(page.id)))continue;
+            Map<String,Set<String>> has=reachedOn(page.id);
+            Set<String> away=ids(getReadableDatabase(),"SELECT id FROM files WHERE note=? AND away<>0",page.id);
+            for(Held file:filesOf(Branch.Kind.PAGE,page.id)) {
+                if(away.contains(file.id)||file.bytes<=0||file.bytes>Enclosure.MOST)continue;
+                String origin=originOf(file.id);boolean up=!manifestOf(file.id).isEmpty();
+                for(String address:audience.keySet())
+                    if(!address.equals(origin)&&(!up||!has.getOrDefault(file.id,java.util.Collections.<String>emptySet()).contains(address))){out.add(file);break;}
+            }
+        }
+        return out;
+    }
+
+    /**
      * The same, in the detail the words need: whether the text is owed, and how many of the files that can go
      * each device has not said it has. See {@link Waits}.
      */
@@ -1320,7 +1429,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         Map<String,Map<String,Waits.Where>> out=new HashMap<>();
         if(pages.isEmpty())return out;
         long now=System.currentTimeMillis();
-        List<Sharing.Rule> rules=shares();
+        // The same audience as what is owed (decision 211): see withOwnHolders.
+        List<Sharing.Rule> rules=withOwnHolders(shares(),pages,sent());
         SQLiteDatabase db=getReadableDatabase();
         Map<String,long[]> sent=new HashMap<>();Map<String,Long> heard=new HashMap<>();
         try(Cursor c=db.query("sent",new String[]{"address","page","revision","agreed","at"},null,null,null,null,null)) {
@@ -1334,6 +1444,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             while(c.moveToNext()){updated.put(c.getString(0),c.getLong(1));if(c.getInt(2)==1)theirs.add(c.getString(0));}
         }
         java.util.Set<String> locked=lockedThere();
+        // What arrived on a device and waits there to be accepted: not "everybody has it" yet. See Asking.
+        Set<String> asking=askedWaiting();
         // Devices from before trees: a note that does not fit three levels is not owed them but waits for them to be
         // updated, and is counted so (Waits.Where#update) - sending it again would change nothing. See Post.waitsForTrees.
         Set<String> old=beforeTrees();
@@ -1343,8 +1455,10 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             while(c.moveToNext())has.add(c.getString(0)+"\n"+c.getString(1));
         }
         Map<String,List<String[]>> files=new HashMap<>();
+        // Only those the note shows: not one in the bin or the archive here, nor one its owner deleted for everybody (the
+        // owner, 2026-10-18: "on the Pro now it says 4 files to sync but only 3 are listed"; decision 206).
         try(Cursor c=db.rawQuery("SELECT f.id,f.note,f.origin,COALESCE(p.manifest,'') FROM files f LEFT JOIN published p ON p.id=f.id"
-                +" WHERE f.held='note' AND f.bytes>0 AND f.bytes<=?",new String[]{String.valueOf(Enclosure.MOST)})) {
+                +" WHERE f.held='note' AND f.away=0 AND f.gone=0 AND f.bytes>0 AND f.bytes<=?",new String[]{String.valueOf(Enclosure.MOST)})) {
             while(c.moveToNext())files.computeIfAbsent(c.getString(1),k->new ArrayList<>())
                 .add(new String[]{c.getString(0),c.isNull(2)?"":c.getString(2),c.getString(3)});
         }
@@ -1369,7 +1483,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 boolean confirmed=got!=null&&got[0]==page.revision&&got[1]==page.revision;
                 each.put(address,new Waits.Where(owed?1:0,lacking,going,confirmed,
                     owed&&SyncMark.stuck(updated.getOrDefault(page.id,0L),heard.getOrDefault(address,0L),now),
-                    locked.contains(address),update?1:0));
+                    locked.contains(address),update?1:0,asking.contains(Asking.key(address,page.id))?1:0));
             }
             out.put(page.id,each);
         }
@@ -1398,6 +1512,107 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         return true;
     }
 
+    /**
+     * A device says a note or file of this device's waits there to be accepted, or that it was accepted (see {@link Asking}).
+     *
+     * @return whether that changed what is kept
+     */
+    boolean asked(String address,String id,boolean accepted) {
+        android.content.SharedPreferences kept=where.getSharedPreferences("post",Context.MODE_PRIVATE);
+        synchronized(ASKING) {
+            Set<String> next=Asking.heard(kept.getStringSet("askedThere",new HashSet<String>()),address,id,accepted);
+            if(next==null)return false;
+            kept.edit().putStringSet("askedThere",next).apply();
+            return true;
+        }
+    }
+
+    /** Forgotten, what one device said about one thing: it refused it. */
+    void unasked(String address,String id) {
+        android.content.SharedPreferences kept=where.getSharedPreferences("post",Context.MODE_PRIVATE);
+        synchronized(ASKING) {
+            Set<String> next=Asking.forget(kept.getStringSet("askedThere",new HashSet<String>()),address,id);
+            if(next!=null)kept.edit().putStringSet("askedThere",next).apply();
+        }
+    }
+
+    /** What waits to be accepted on another device, as {@link Asking#key}s. */
+    Set<String> askedWaiting() {
+        return Asking.waiting(where.getSharedPreferences("post",Context.MODE_PRIVATE).getStringSet("askedThere",new HashSet<String>()));
+    }
+
+    /** One device told that something here waits to be accepted: told again, that it was accepted, once it is. */
+    void toldWaits(String address,Branch.Kind kind,String id) {
+        android.content.SharedPreferences kept=where.getSharedPreferences("post",Context.MODE_PRIVATE);
+        synchronized(ASKING) {
+            Set<String> next=new HashSet<>(kept.getStringSet("toldWaits",new HashSet<String>()));
+            if(next.add(Asking.told(address,kind.name(),id)))kept.edit().putStringSet("toldWaits",next).apply();
+        }
+    }
+
+    /** The devices told that something here waits, each {address, kind, id}. */
+    List<String[]> toldWaits() {
+        List<String[]> out=new ArrayList<>();
+        for(String one:where.getSharedPreferences("post",Context.MODE_PRIVATE).getStringSet("toldWaits",new HashSet<String>())) {
+            String[] said=Asking.told(one);
+            if(said!=null)out.add(said);
+        }
+        return out;
+    }
+
+    /** One device no longer to be told about one thing: told it was accepted, or the thing is gone. */
+    void doneTelling(String address,String kind,String id) {
+        android.content.SharedPreferences kept=where.getSharedPreferences("post",Context.MODE_PRIVATE);
+        synchronized(ASKING) {
+            Set<String> next=new HashSet<>(kept.getStringSet("toldWaits",new HashSet<String>()));
+            if(next.remove(Asking.told(address,kind,id)))kept.edit().putStringSet("toldWaits",next).apply();
+        }
+    }
+
+    /** Whether a note or a file is here, accepted, and so can be said to be accepted. */
+    boolean acceptedHere(String kind,String id) {
+        Branch.Kind k;
+        try{k=Branch.Kind.valueOf(kind);}catch(IllegalArgumentException unknown){return false;}
+        if(k==Branch.Kind.FILE)return !waits(k,id)&&!ids(getReadableDatabase(),"SELECT id FROM files WHERE id=? AND gone=0",id).isEmpty();
+        if(k!=Branch.Kind.PAGE)return false;
+        return waitsUnder(k,id)==null&&!ids(getReadableDatabase(),"SELECT id FROM notes WHERE id=? AND deleted=0",id).isEmpty();
+    }
+
+    /** How many times a file has been written here or come anew, or -1 for one not here: a folder kept on disk follows it. */
+    long keptFileRevision(String id) {
+        try(Cursor c=getReadableDatabase().query("files",new String[]{"revision"},"id=? AND gone=0",new String[]{id},null,null,null,"1")) {
+            return c.moveToFirst()?c.getLong(0):-1;
+        }
+    }
+
+    /** Whether a file is put away here: archived or in the bin (see putAway), which only this device says. */
+    boolean fileAway(String id) {
+        try(Cursor c=getReadableDatabase().query("files",new String[]{"away"},"id=? AND gone=0",new String[]{id},null,null,null,"1")) {
+            return c.moveToFirst()&&c.getInt(0)!=0;
+        }
+    }
+
+    /** Whether a note or a file is still here at all, accepted or waiting. */
+    boolean stillHere(String kind,String id) {
+        if(Branch.Kind.FILE.name().equals(kind))return !ids(getReadableDatabase(),"SELECT id FROM files WHERE id=? AND gone=0",id).isEmpty()
+            ||!ids(getReadableDatabase(),"SELECT id FROM incoming WHERE id=? AND declined=0",id).isEmpty();
+        return Branch.Kind.PAGE.name().equals(kind)&&!ids(getReadableDatabase(),"SELECT id FROM notes WHERE id=? AND deleted=0",id).isEmpty();
+    }
+
+    /** Whether anything in this thing waits on somebody's device to be accepted: what its Share box says. See {@link Asking}. */
+    boolean waitsAcceptance(Branch.Kind kind,String id) {
+        Set<String> asking=askedWaiting();
+        if(asking.isEmpty())return false;
+        Set<String> ids=new HashSet<>();
+        if(kind==Branch.Kind.FILE)ids.add(id);
+        else for(Outbox.Page page:pagesUnder(kind,id))ids.add(page.id);
+        for(String one:asking){int tab=one.lastIndexOf('	');if(tab>0&&ids.contains(one.substring(tab+1)))return true;}
+        return false;
+    }
+
+    /** The two lists of {@link Asking} are each read, changed and written back whole: one at a time. */
+    private static final Object ASKING=new Object();
+
     /** The devices whose notebook is locked, as they last said: by address. */
     java.util.Set<String> lockedThere() {
         java.util.Set<String> out=new java.util.HashSet<>();
@@ -1410,6 +1625,16 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
 
     /** The mark one thing wears, worked out from everything under it: see {@link SyncMark#of}. */
     SyncMark markOf(Branch.Kind kind,String id) {
+        // Temp: the worst of what is in it that reaches anybody, so its card can say whether something waits to go.
+        if(kind==Branch.Kind.TEMP) {
+            List<SyncMark> all=new ArrayList<>();
+            for(Branch one:temporary(System.currentTimeMillis())) {
+                if(one.kind!=Branch.Kind.PAGE&&!shelf(one.kind)&&one.kind!=Branch.Kind.FILE)continue;
+                SyncMark mark=markOf(one.kind,one.id);
+                if(mark!=SyncMark.HERE)all.add(mark);
+            }
+            return all.isEmpty()?SyncMark.HERE:SyncMark.worst(all);
+        }
         boolean shared=kind==Branch.Kind.LIBRARY?!shares().isEmpty():sharedAtAll(kind,id);
         return SyncMark.of(pausedHere(kind,id),shared,false,SyncMark.worst(marksUnder(kind,id)));
     }
@@ -1424,8 +1649,27 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         for(Map<String,SyncMark> each:standing(pagesUnder(kind,id)).values())all.addAll(each.values());
         if(!cartonsForUpdate(kind,id).isEmpty())all.add(SyncMark.WAITING);
         // A file shared on its own: amber while its sleeve is owed to anybody, as a note waiting is.
-        if(kind==Branch.Kind.FILE&&!sleevesOwed(id,false).isEmpty())all.add(SyncMark.WAITING);
+        if(kind==Branch.Kind.FILE&&fileOwed(id,looseAudience(shares(),id),!originOf(id).isEmpty())>0)all.add(SyncMark.WAITING);
+        // And sent, not "everybody has it", while it waits on somebody's device to be accepted (see Asking).
+        if(kind==Branch.Kind.FILE) {
+            Set<String> asking=askedWaiting();
+            for(String address:looseAudience(shares(),id).keySet())if(asking.contains(Asking.key(address,id))){all.add(SyncMark.SENT);break;}
+        }
         return all;
+    }
+
+    /**
+     * How many a file shared on its own is still on its way to: those its sleeve is owed to, and, once it went, those who
+     * have not said they have its bytes (the owner, 2026-10-11: "the screenshot shared in Temp from the laptop says it is
+     * synced but it is not on the Graphene"). Only for this device's own: what came from elsewhere is its sender's to wait for.
+     */
+    int fileOwed(String id,Map<String,Boolean> loose,boolean theirs) {
+        if(loose==null||loose.isEmpty())return 0;
+        int owed=sleevesOwed(id,false).size();
+        if(owed>0||theirs)return owed;
+        Set<String> have=new HashSet<>(holders(id));
+        for(String address:loose.keySet())if(!have.contains(address))owed++;
+        return owed;
     }
 
     /**
@@ -1891,6 +2135,12 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 v.put("id",one.id);v.put("note",Things.HOME);v.put("held",heldAs(Branch.Kind.COLLECTION));v.put("name",Attachment.named(name));
                 v.put("kind",Attachment.kind(kind));v.put("bytes",plain.length);v.put("added",now);v.put("place",-now);
                 v.put("origin",from==null?"":from);v.put("fresh",1);
+                // Somebody else's file is shown in Shared with me, not loose on Home (decision 122). One from this owner's
+                // own device stays on Home, as send to my devices does. Settings that send Shared with me to Home leave it there.
+                boolean mine=mineDevice(from==null?"":from,"");
+                String place="";
+                if(!mine){String to=sharedWithMe();if(to!=null&&!to.isEmpty())place=to;}
+                v.put("theirs",mine?0:1);v.put("shown",place);
                 if(db.insert("files",null,v)<0)throw new java.io.IOException("The file could not be kept on Home.");
             }
             db.setTransactionSuccessful();
@@ -2145,12 +2395,31 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         // And how strongly its colour lands here (decision 107), which is this device's and no page's to say either; and when
         // its colour and its strength were last decided (decision 108), which only deciding them moves.
         // And whether it waits to be accepted here (decision 109): written in again, by them or by a save, it still waits.
-        try(Cursor c=db.query("notes",new String[]{"icon","image","dock","tone","colourDecided","toneDecided","accepted","helpOnOpen","helpTo","helpWords"},"id=?",new String[]{n.id},null,null,null,"1")) {
+        try(Cursor c=db.query("notes",new String[]{"icon","image","dock","tone","colourDecided","toneDecided","accepted","helpOnOpen","helpTo","helpWords","shown",
+                "until","pause","cell","page","myicon","myimage","touched","docked"},"id=?",new String[]{n.id},null,null,null,"1")) {
             if(c.moveToFirst()){v.put("icon",c.getString(0));v.put("image",c.getString(1));v.put("dock",n.pinned?c.getInt(2):0);v.put("tone",c.getInt(3));
                 v.put("colourDecided",c.getLong(4));v.put("toneDecided",c.getLong(5));v.put("accepted",c.getInt(6));
                 // And whether it sends a help request when opened, to whom, and with what words (decision 113): this
                 // device's, kept when the page is written in again.
-                v.put("helpOnOpen",c.getInt(7));v.put("helpTo",c.getString(8));v.put("helpWords",c.getString(9));}
+                v.put("helpOnOpen",c.getInt(7));v.put("helpTo",c.getString(8));v.put("helpWords",c.getString(9));
+                // Where it is shown here, Shared with me included (decision 122): the page is replaced whole, and that
+                // place is this device's, so a later writing must not put it back on Home.
+                if(!c.isNull(10))v.put("shown",c.getString(10));
+                // And when it is to be gone (Temp), how long it waits before it is sent, where it stands on Home, the icon
+                // and picture this device gave it, and when it was last opened: none of them the page's to say, each set
+                // by its own doing. Written in again, a note made from Temp's + was no longer temporary, and went to the
+                // owner's phones as an ordinary note, onto Home rather than into Temp (the owner, 2026-10-11).
+                v.put("until",c.getLong(11));v.put("pause",c.getInt(12));v.put("cell",c.getInt(13));v.put("page",c.getInt(14));
+                v.put("myicon",c.getString(15));v.put("myimage",c.getString(16));v.put("touched",c.getLong(17));
+                // And its place in this device's dock, which is not the page's either (decision 190).
+                v.put("docked",c.getInt(18));}
+            // New here, in a temporary folder: temporary with it, as what was in it when it was made temporary is (the owner,
+            // 2026-10-11: "the setting at a level like the folder should apply at everything in it"; decision 152).
+            else{long folder=untilIn(db,n.book);if(folder>0)v.put("until",folder);
+                // And its folder's colour, strength and icon, until it is given its own (the owner, 2026-10-11; decision 153).
+                // Never decided here, so a look decided anywhere is taken over it, and a change to the folder's follows.
+                Object[] look=folderLook(db,n.book);
+                if(look!=null){if(n.colour==Tint.NONE)v.put("colour",(Integer)look[0]);v.put("tone",(Integer)look[1]);v.put("icon",(String)look[2]);}}
         }
         if(db.insertWithOnConflict("notes",null,v,SQLiteDatabase.CONFLICT_REPLACE)<0)throw new IllegalStateException("Could not save the note");
         if(runs!=null)keepWriters(db,n.id,body,runs);
@@ -2404,6 +2673,13 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         return textAt(note,revision);
     }
 
+    /** Whether a version is kept at exactly this revision, from here or from that address. */
+    private boolean exactAt(String note,long revision,String address) {
+        try(Cursor c=getReadableDatabase().query("versions",new String[]{"id"},"note=? AND revision=? AND (source='' OR source=?)",
+                new String[]{note,String.valueOf(revision),address==null?"":address},null,null,null,"1")){return c.moveToFirst();}
+    }
+    private static int lines(String text){return text==null?-1:text.isEmpty()?0:text.split("\n",-1).length;}
+
     /** Whatever a note said when an address was last given it: the text a merge is weighed against. */
     String textAt(String note,long revision) {
         try(Cursor c=getReadableDatabase().query("versions",new String[]{"body"},"note=? AND revision<=?",
@@ -2446,6 +2722,14 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
         try {
             Note here=get(id);
+            // The very revision and words already here, sent again (Graphene, 2026-10-17: the same note arriving fifteen times
+            // while its answer waited): nothing to weigh, keep or write, only that they have it, so they stop sending it.
+            if(here!=null&&here.revision==revision&&here.body!=null&&here.body.equals(body==null?"":body)
+                &&(here.title==null?"":here.title).equals(title==null?"":title)) {
+                agreedOn(from,id,revision);
+                db.setTransactionSuccessful();
+                return new Arriving.Decision(Arriving.What.NEWER,here.body,revision,false);
+            }
             // What this phone believes they have, and what they say they had: the older of the two.
             long baseRevision=Arriving.agreed(here==null?0:lastSeen(id,from),basedOn);
             String base=here==null?null:textAt(id,baseRevision,from);
@@ -2454,6 +2738,12 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             boolean iHadTheirs=here!=null&&heldHere(id).contains(Arriving.trace(body));
             Arriving.Decision said=Arriving.weigh(here==null?null:here.body,here==null?0:here.revision,
                 base,baseRevision,body,revision,theyHadMine,iHadTheirs);
+            // How it was weighed, in counts and never in words: what a text that comes back after it was deleted is traced by
+            // (the owner's Live note, 2026-10-14). Whether the text agreed on was found at its own revision, or an older one.
+            if(here!=null&&said.what!=Arriving.What.NEW)android.util.Log.i("Mininotes/Weigh",said.what+": here "+here.revision
+                +", theirs "+revision+", agreed "+baseRevision+(base==null?" (no text)":exactAt(id,baseRevision,from)?"":" (an older text)")
+                +(theyHadMine?", they held mine":"")+(iHadTheirs?", I held theirs":"")
+                +", lines here/base/theirs/result "+lines(here.body)+"/"+lines(base)+"/"+lines(body)+"/"+lines(said.text));
             // What arrived is kept as it arrived, whether or not it is what the page ends up showing.
             keepVersion(id,revision,from,title==null?"":title,body==null?"":body);
             if(said.what!=Arriving.What.OLDER) {
@@ -2470,8 +2760,9 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 // What is new here is theirs; what was here keeps whoever wrote it (see Writers).
                 now.by=writerOf(from);
                 save(db,now);
-                // New on Home from another person: kept, and shown nowhere until it is accepted (decision 109).
-                if(here==null&&waitsOnArrival(from,book))db.execSQL("UPDATE notes SET accepted=0 WHERE id=?",new Object[]{id});
+                // New on Home from another person: kept, shown in Shared with me, and shown nowhere until it is accepted
+                // (decisions 109 and 122). One from this owner's own device stays on Home and is not asked about.
+                if(here==null)shownAsShared(db,"notes",id,from,book);
             }
             // Whoever sent it has it. Where what is kept is exactly what arrived, that is all there is
             // to say, and saying it is what stops this phone "owing" a note straight back to the phone
@@ -2565,7 +2856,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 now.revision=said.revision;now.updated=System.currentTimeMillis();
                 now.by=writerOf(from);
                 save(db,now);
-                if(here==null&&waitsOnArrival(from,book))db.execSQL("UPDATE notes SET accepted=0 WHERE id=?",new Object[]{id});
+                if(here==null)shownAsShared(db,"notes",id,from,book);
                 agreedOn(from,id,revision);
             }
             db.setTransactionSuccessful();
@@ -2631,7 +2922,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             // Here already. Only what they call it, and the icon they give it, are followed; where you put it is yours.
             ContentValues rename=new ContentValues();rename.put("name",called);
             if(icon!=null)rename.put("icon",iconFrom(icon));
-            getWritableDatabase().update("things",rename,"id=? AND theirs=1",new String[]{id});
+            String wasIcon=folderIcon(id);
+            if(getWritableDatabase().update("things",rename,"id=? AND theirs=1",new String[]{id})>0&&icon!=null)followIcon(getWritableDatabase(),id,wasIcon,iconFrom(icon));
             return id;
         }
         long now=System.currentTimeMillis();
@@ -2640,8 +2932,11 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         v.put("icon",iconFrom(icon));v.put("tint",Tint.known(tint)?tint:Tint.NONE);
         v.put("ordinal",ordinal);v.put("made",now);v.put("updated",now);
         v.put("theirs",1);v.put("origin",address);
-        // New on Home from another person, it waits to be accepted; inside something here, it is as that is (decision 109).
-        v.put("accepted",waitsOnArrival(address,parent)?0:1);
+        // New on Home from another person, it waits in Shared with me; inside something here, it is as that is
+        // (decisions 109 and 122). One from this owner's own device stays on Home.
+        boolean waits=waitsOnArrival(address,parent);
+        v.put("accepted",waits?0:1);
+        if(waits){String to=sharedWithMe();if(to!=null&&!to.isEmpty())v.put("shown",to);}
         return getWritableDatabase().insert("things",null,v)<0?"":id;
     }
 
@@ -2652,6 +2947,9 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     private String shelfId(String address,String theirs) {
         if(theirs==null||theirs.trim().isEmpty())return "";
         Contact who=address(address);
+        // Photos, made under one id on every device of the owner (decision 217): from one of the owner's own devices, the same
+        // folder here as there, not a copy of it beside this device's own.
+        if(who!=null&&who.mine&&theirs.equals(photosShared()))return theirs;
         String by=who==null||who.signing.length==0?address:canonical(who.signing);
         List<String> own=new ArrayList<>();
         if(theirs.startsWith(Parcel.FROM))
@@ -2887,6 +3185,18 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      */
     private boolean waitsOnArrival(String from,String parent){return home(parent)&&!mineDevice(from,"");}
 
+    /**
+     * A new note from somebody else, landing on Home, is shown in Shared with me and waits there (decision 122). Nothing
+     * where it does not wait: one from this owner's own device, or one that arrived inside a folder already here. Settings
+     * that send Shared with me to Home leave the shown place empty, which is Home.
+     */
+    private void shownAsShared(SQLiteDatabase db,String table,String id,String from,String parent) {
+        if(!waitsOnArrival(from,parent))return;
+        String to=sharedWithMe();
+        if(to!=null&&!to.isEmpty())db.execSQL("UPDATE "+table+" SET accepted=0, shown=? WHERE id=?",new Object[]{to,id});
+        else db.execSQL("UPDATE "+table+" SET accepted=0 WHERE id=?",new Object[]{id});
+    }
+
     /** Whether a code taken up here offered this thing, by its sender's id or its id here. */
     private boolean takenUp(String... ids) {
         for(String one:ids) {
@@ -2935,9 +3245,21 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     }
 
     /**
-     * Accepted (decision 109): shown from now on. A note or a folder is on Home already, where it was kept hidden, in the
-     * first free cell as anything new is; a file is where files shared on their own go (decision 94's setting), which it was
-     * given as it came. Everything inside a folder goes with it: nothing in it waited by itself.
+     * Where Accept says the thing is now (decision 122): Shared with me where it was shown there as it arrived, Home where
+     * that is where it was kept. A file still coming uses the Shared with me setting, which is where its bytes will show.
+     */
+    String acceptedWhere(Branch.Kind kind,String id) {
+        if(kind==Branch.Kind.FILE||kind==Branch.Kind.WAITING) {
+            String to=sharedWithMe();
+            return to==null||to.isEmpty()?"Home":SHARED.equals(to)?SHARED_WITH_ME:collectionName(to);
+        }
+        Branch.Kind real=kind==Branch.Kind.PAGE?Branch.Kind.PAGE:Branch.Kind.COLLECTION;
+        return shownWords(shownIn(real,id),"Home").replaceFirst("^in ","");
+    }
+
+    /**
+     * Accepted (decision 109): shown from now on, in Shared with me where it was put as it arrived (decision 122), or on
+     * Home where that is where it was kept. Everything inside a folder goes with it: nothing in it waited by itself.
      */
     void acceptShared(Branch.Kind kind,String id) {
         ContentValues v=new ContentValues();v.put("accepted",1);
@@ -2978,6 +3300,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             String who=origin.isEmpty()?"":nameFor(origin);
             Branch line=new Branch(kind,kind==Branch.Kind.WAITING?COMING+id:id,Sharing.EVERYTHING,(String)one[3],FirstShare.from(who,level),0,0,
                 kind==Branch.Kind.COLLECTION,(Integer)one[4],0,Sharing.State.THEIRS,origin);
+            line.asking=true;
             lines.add(line);
         }
         dress(lines);
@@ -3009,6 +3332,57 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         Set<String> still=new HashSet<>();for(Branch one:waitingForYou())still.add(one.id);
         said.retainAll(still);
         kept.edit().putStringSet(WAITING_SAID,said).apply();
+    }
+
+    /**
+     * Senders blocked on this device only (decision 127): one line each in settings, the address, a tab, and the name
+     * shown, newest last. Not a row in the notebook, so it does not travel and a migration is not the place for it.
+     * Deleting one removes this record. Notes already kept stay. A later message from that address is dropped.
+     */
+    static final String BLOCKED="blockedSenders";
+
+    /** Whether a later message from this address is dropped. */
+    boolean senderBlocked(String address) {
+        if(address==null||address.isEmpty())return false;
+        for(String[] one:blockedSenders())if(address.equals(one[0]))return true;
+        return false;
+    }
+
+    /** Blocked senders, each {address, name}, in the order they were blocked. */
+    List<String[]> blockedSenders() {
+        List<String[]> out=new ArrayList<>();
+        String raw=where.getSharedPreferences("settings",Context.MODE_PRIVATE).getString(BLOCKED,"");
+        if(raw==null||raw.isEmpty())return out;
+        for(String line:raw.split("\n",-1)) {
+            int tab=line.indexOf('\t');
+            if(tab<=0)continue;
+            String address=line.substring(0,tab).trim();
+            if(address.isEmpty())continue;
+            out.add(new String[]{address,line.substring(tab+1).trim()});
+        }
+        return out;
+    }
+
+    /** Block this sender. A second block of the same address changes nothing. The name is one line. */
+    void blockSender(String address,String name) {
+        if(address==null||address.isEmpty()||senderBlocked(address))return;
+        String safe=name==null?"":name.replace('\n',' ').replace('\t',' ').trim();
+        String line=address+"\t"+safe;
+        android.content.SharedPreferences kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
+        String raw=kept.getString(BLOCKED,"");
+        kept.edit().putString(BLOCKED,raw==null||raw.isEmpty()?line:raw+"\n"+line).apply();
+    }
+
+    /** The blocked-sender record gone, so they can share again. Nothing already kept is touched. */
+    void forgetBlocked(String address) {
+        if(address==null||address.isEmpty())return;
+        StringBuilder next=new StringBuilder();
+        for(String[] one:blockedSenders()) {
+            if(address.equals(one[0]))continue;
+            if(next.length()>0)next.append('\n');
+            next.append(one[0]).append('\t').append(one[1]==null?"":one[1]);
+        }
+        where.getSharedPreferences("settings",Context.MODE_PRIVATE).edit().putString(BLOCKED,next.toString()).apply();
     }
 
     /**
@@ -3419,14 +3793,51 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * that does not have it yet, to read and write, so it goes to them with its time and is gone from them with it. Where
      * this device may not share the thing, nobody is added. How many were.
      */
+    /** The devices of mine Temp goes to, chosen on this device: null for all of them, as it always went (decision 150). */
+    Set<String> tempDevices() {
+        android.content.SharedPreferences settings=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
+        if(!"true".equals(settings.getString("tempDevicesChosen","false")))return null;
+        String kept=settings.getString("tempDevices","");
+        Set<String> out=new HashSet<>();for(String one:kept.split("\n"))if(!one.isEmpty())out.add(one);
+        return out;
+    }
+    /** Chosen: null for every device of mine, as before; a set (empty too) for those alone. */
+    void setTempDevices(Set<String> chosen) {
+        android.content.SharedPreferences.Editor e=where.getSharedPreferences("settings",Context.MODE_PRIVATE).edit();
+        e.putString("tempDevicesChosen",String.valueOf(chosen!=null)).putString("tempDevices",chosen==null?"":String.join("\n",chosen));
+        e.apply();
+    }
+
+    /**
+     * The people, not devices of mine, Temp goes to as well (the owner, 2026-10-11: "make sure we can share Temp not only with
+     * my devices but also with other people"; decision 151): none unless chosen, to read, with Temp's time. Kept on this device.
+     */
+    Set<String> tempPeople() {
+        String kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE).getString("tempPeople","");
+        Set<String> out=new HashSet<>();for(String one:kept.split("\n"))if(!one.isEmpty())out.add(one);
+        return out;
+    }
+    void setTempPeople(Set<String> chosen) {
+        where.getSharedPreferences("settings",Context.MODE_PRIVATE).edit().putString("tempPeople",String.join("\n",chosen)).apply();
+    }
+
     int toMyDevices(Sharing.Scope scope,String target) {
         if(!mayGive(scope,target).contains(Sharing.Level.WRITE))return 0;
         Set<String> has=new HashSet<>();
         for(Sharing.Rule rule:sharesOn(scope,target))if(rule.level!=Sharing.Level.GONE)has.add(rule.address);
         int added=0;
+        // Only the devices chosen for Temp, where some are (the owner, 2026-10-11: "shared directly with the selected devices").
+        Set<String> chosen=tempDevices();
         for(Contact one:addresses()) {
             if(!one.mine||!one.paired()||has.contains(one.address))continue;
+            if(chosen!=null&&!chosen.contains(one.address))continue;
             setLevel(scope,target,one.address,Sharing.Level.WRITE,one.name);has.add(one.address);added++;
+        }
+        // And the people chosen for Temp, to read (decision 151).
+        Set<String> people=tempPeople();
+        if(!people.isEmpty())for(Contact one:addresses()) {
+            if(one.mine||!one.paired()||has.contains(one.address)||!people.contains(one.address))continue;
+            setLevel(scope,target,one.address,Sharing.Level.READ,one.name);has.add(one.address);added++;
         }
         return added;
     }
@@ -3695,6 +4106,9 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         if(!key.isEmpty())for(Contact one:addresses())if(key.equals(canonical(one.signing)))theirs.add(one.address);
         Sharing.Rule most=null;
         Note here=get(id);
+        // One of my own devices that has had this note writes in it wherever either of us has put it (decision 211): the
+        // same rule as what is owed to it, so a note moved out of a shared folder on one device only is still taken in.
+        if(here!=null)rules=withOwnHolders(rules,java.util.Collections.singletonList(new Outbox.Page(id,above(id),here.revision)),sent());
         if(here!=null)most=Sharing.standing(rules,pathOf(id),theirs,key);
         if(parcel!=null) {
             List<String> sent=sentPath(from,parcel);sent.add(id);
@@ -3945,6 +4359,39 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         return kept;
     }
 
+    /**
+     * What the dock holds, in its order: notes and folders, favourites or not, each left out while it is put away and back
+     * when it returns (decision 190).
+     */
+    private List<Branch> docked() {
+        Tree tree=tree();
+        List<Object[]> all=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name,tint,parent,docked FROM things WHERE docked>0 AND "+LIVE,null)) {
+            while(c.moveToNext()) {
+                List<String> up=tree.above(c.getString(0));
+                if(!tree.live(up))continue;
+                all.add(new Object[]{c.getInt(4),new Branch(Branch.Kind.COLLECTION,c.getString(0),
+                    home(c.getString(3))?Sharing.EVERYTHING:c.getString(3),c.getString(1),
+                    up.isEmpty()?"folder":"folder in "+tree.names(up),0,0,true,c.getInt(2))});
+            }
+        }
+        Map<String,Integer> at=new HashMap<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,docked FROM notes WHERE docked>0",null)){while(c.moveToNext())at.put(c.getString(0),c.getInt(1));}
+        try(Cursor c=getReadableDatabase().query("notes",ROW,"docked>0 AND "+HERE,null,null,null,ORDER)) {
+            while(c.moveToNext()) {
+                Note page=read(c,false);
+                List<String> up=tree.aboveIn(page.book);
+                if(!tree.live(up))continue;
+                all.add(new Object[]{at.getOrDefault(page.id,0),new Branch(Branch.Kind.PAGE,page.id,home(page.book)?Sharing.EVERYTHING:page.book,page.heading(),
+                    "note in "+bookName(page.book),0,0,false,page.colour)});
+            }
+        }
+        all.sort((one,other)->Integer.compare((Integer)one[0],(Integer)other[0]));
+        List<Branch> out=new ArrayList<>();
+        for(Object[] one:all)out.add((Branch)one[1]);
+        return out;
+    }
+
     /** What was written in most recently, newest first. Notes: a shelf is not a thing you write on. */
     List<Branch> lately(int most) {
         List<Branch> recent=new ArrayList<>();
@@ -4049,8 +4496,9 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     }
 
     /**
-     * Kept to hand, or not. A new favourite goes into the dock where it has room, as the first ones went when the
-     * notebook was moved to things (see {@link Things#dock}); one that stops being a favourite leaves it.
+     * Kept to hand, or not. A new favourite goes into the dock too, at its end, and to the end of the favourites' order; one
+     * that stops being a favourite leaves that order and stays in the dock (the owner, 2026-10-18: "removing a favourite
+     * dont take it off the dock"; decision 190).
      */
     void keepToHand(Branch.Kind kind,String id,boolean kept) {
         // A file is starred on this device and listed among the favourites, after them; it has no place in the dock.
@@ -4058,21 +4506,21 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         String table=shelf(kind)?"things":"notes";
         ContentValues v=new ContentValues();v.put(shelf(kind)?"favourite":"pinned",kept?1:0);
         if(!kept)v.put("dock",0);
-        else try(Cursor c=getReadableDatabase().query(table,new String[]{"dock"},"id=?",new String[]{id},null,null,null,"1")) {
-            if(c.moveToFirst()&&c.getInt(0)==0){int slot=freeSlot();if(slot>0)v.put("dock",slot);}
+        else try(Cursor c=getReadableDatabase().query(table,new String[]{"dock","docked"},"id=?",new String[]{id},null,null,null,"1")) {
+            if(c.moveToFirst()&&c.getInt(0)==0)v.put("dock",lastOf("dock")+1);
+            if(c.moveToFirst()&&c.getInt(1)==0)v.put("docked",lastOf("docked")+1);
         }
         getWritableDatabase().update(table,v,"id=?",new String[]{id});
     }
 
-    /** The first place in the dock nothing is in, or 0 where it is full. */
-    private int freeSlot() {
-        Set<Integer> taken=new HashSet<>();
+    /** The highest place given in this order, dock (the favourites') or docked (the dock's), 0 where none is. */
+    private int lastOf(String column) {
+        int most=0;
         for(String table:new String[]{"things","notes"})
-            try(Cursor c=getReadableDatabase().rawQuery("SELECT dock FROM "+table+" WHERE dock>0",null)) {
-                while(c.moveToNext())taken.add(c.getInt(0));
+            try(Cursor c=getReadableDatabase().rawQuery("SELECT MAX("+column+") FROM "+table,null)) {
+                if(c.moveToFirst())most=Math.max(most,c.getInt(0));
             }
-        for(int slot=1;slot<=Things.DOCK_PHONE;slot++)if(!taken.contains(slot))return slot;
-        return 0;
+        return most;
     }
 
     /**
@@ -4233,7 +4681,10 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * What sits inside one level: on Home, its collections and then its notes; in a collection at any depth, the
      * collections it holds and then its notes, each in the owner's order.
      */
-    Level inside(Branch.Kind level,String id) {
+    Level inside(Branch.Kind level,String id){return inside(level,id,false);}
+
+    /** @param dock with {@link Branch.Kind#FAVOURITES}, what the dock holds instead of the favourites (see {@link #dock}) */
+    private Level inside(Branch.Kind level,String id,boolean dock) {
         // A collection level that names Home is Home: what a screen drawn before collections nested can ask for.
         if(shelf(level)&&home(id)){level=Branch.Kind.LIBRARY;id=Sharing.EVERYTHING;}
         List<Sharing.Rule> rules=shares();
@@ -4303,7 +4754,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             // Every favourite, as the same line it is where it lives - the same mark, the same colour, the same
             // count - collections first, those on Home and then each level in, and then notes. Walked the way the
             // shelves are, so what is in the archive or the bin, or inside something that is, is not here.
-            for(Branch one:favourites()) {
+            for(Branch one:dock?docked():favourites()) {
                 if(one.kind==Branch.Kind.COLLECTION){lines.add(shelfLine(tree,one.id,rules,reachedUnder,owedIn,theirsUnder,notesIn));continue;}
                 Outbox.Page page=byId.get(one.id);
                 Note note=page==null?null:get(one.id);
@@ -4379,6 +4830,15 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         boolean seen=place.equals(Things.HOME)||place.equals(SHARED)||place.equals(TEMP)||shelfLive(place);
         return seen?here.equals(place):here.equals(real);
     }
+    /** Where a search line says a thing shown somewhere other than where it is kept (decision 122). */
+    private String shownWords(String shown,String whereItIs) {
+        if(shown==null||shown.isEmpty()||home(shown))return whereItIs;
+        if(SHARED.equals(shown))return "in "+SHARED_WITH_ME;
+        if(TEMP.equals(shown))return "in Temp";
+        String name=collectionName(shown);
+        return name==null||name.isEmpty()?whereItIs:"in "+name;
+    }
+
     private boolean shelfLive(String id) {
         try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM things WHERE id=? AND "+LIVE,new String[]{id})){return c.moveToFirst();}
     }
@@ -4431,6 +4891,52 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         }
     }
 
+    /**
+     * Whether a note or a folder came from another person: what a move only shows somewhere else on this device. One from the
+     * owner's own devices is the owner's to put anywhere, and is moved for real (the owner, 2026-10-18; decision 195).
+     */
+    boolean someoneElses(Branch.Kind kind,String id) {
+        if(kind!=Branch.Kind.PAGE&&!shelf(kind))return false;
+        try(Cursor c=getReadableDatabase().query(table(kind),new String[]{"theirs","origin"},"id=?",new String[]{id},null,null,null,"1")) {
+            if(!c.moveToFirst()||c.getInt(0)!=1)return false;
+            return !mineDevice(c.isNull(1)?"":c.getString(1),"");
+        }
+    }
+
+    /**
+     * Everything in a shared folder shared (the owner, 2026-10-18: "when I share a folder, everything in it is shared even if
+     * this would create a duplicate"; decision 195). A note only shown in a folder that reaches somebody is put in it for
+     * real: the owner's own moved there; another person's copied there as the owner's own, its files with it, and itself
+     * back where it really is. Cheap where nothing is shown elsewhere, so it is asked whenever Home is read.
+     *
+     * @return the notes now really in a shared folder, to be sent
+     */
+    List<String> intoSharedFolders() {
+        List<String[]> shown=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,shown FROM notes WHERE shown IS NOT NULL AND shown<>'' AND "+HERE,null)) {
+            while(c.moveToNext())shown.add(new String[]{c.getString(0),c.getString(1)});
+        }
+        List<String> done=new ArrayList<>();
+        for(String[] one:shown) {
+            String id=one[0],folder=one[1];
+            if(home(folder)||SHARED.equals(folder)||TEMP.equals(folder)||!shelfLive(folder))continue;
+            if(everybodyIn(Branch.Kind.COLLECTION,folder).isEmpty())continue;
+            if(!someoneElses(Branch.Kind.PAGE,id)){movePage(id,folder);shownWhereItIs(Branch.Kind.PAGE,id);done.add(id);continue;}
+            Note was=get(id);if(was==null)continue;
+            Note copy=new Note();copy.book=folder;copy.title=was.title;copy.body=was.body;copy.colour=was.colour;copy.lines=was.lines;copy.by=Writers.ME;
+            save(copy);
+            for(Held file:notAway(filesOf(Branch.Kind.PAGE,id)))
+                try {
+                    Held made=opening(Branch.Kind.PAGE,copy.id,file.name,file.kind,file.bytes);
+                    java.nio.file.Files.copy(fileFor(file.id).toPath(),fileFor(made.id).toPath());
+                    keep(made);
+                } catch(Exception notCopied){/* the note goes without that file; the original keeps it */}
+            shownWhereItIs(Branch.Kind.PAGE,id);
+            done.add(copy.id);
+        }
+        return done;
+    }
+
     List<Branch> contents(String collection) {
         boolean top=home(collection);
         String here=top?Things.HOME:collection;
@@ -4440,18 +4946,27 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         Map<String,long[]> at=new HashMap<>();
         // And what is shown here from elsewhere, by where it really is; what is here and shown elsewhere is not drawn here.
         Map<String,String> visiting=new HashMap<>();
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,ordinal,updated,cell,page,shown,parent FROM things WHERE (parent=? OR shown=?) AND "+LIVE,new String[]{here,here})) {
+        // What is temporary is in Temp, and on Home as well only where Temp's "Also show on Home" says so (the owner,
+        // 2026-10-11: "show also on home is off but it still shows there"; decision 98 widened to notes and folders).
+        boolean tempOff=top&&!tempOnHome();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,ordinal,updated,cell,page,shown,parent,until FROM things WHERE (parent=? OR shown=?) AND "+LIVE,new String[]{here,here})) {
             while(c.moveToNext()) {
                 String id=c.getString(0),shown=c.getString(5),parent=c.getString(6);
                 if(!showsHere(here,parent,shown))continue;
+                if(tempOff&&c.getLong(7)>0)continue;
                 if(!here.equals(parent))visiting.put(id,parent);
                 at.put(id,new long[]{c.getLong(1),c.getLong(2),c.getLong(3),c.getLong(4)});
             }
         }
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,place,updated,cell,page,shown,book FROM notes WHERE (book=? OR shown=?) AND "+HERE,new String[]{here,here})) {
+        // Read me on Home only while Show on Home says so (the owner, 2026-10-19: "we have to add the Read me in the list of
+        // items to show or not on the home page"; decision 214). It stays in Recent and search either way.
+        Set<String> readMe=top&&!readMeOnHome()?ids(getReadableDatabase(),"SELECT id FROM notes WHERE title IN (?,?)",READ_ME_TITLES):Set.of();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,place,updated,cell,page,shown,book,until FROM notes WHERE (book=? OR shown=?) AND "+HERE,new String[]{here,here})) {
             while(c.moveToNext()) {
                 String id=c.getString(0),shown=c.getString(5),book=home(c.getString(6))?Things.HOME:c.getString(6);
                 if(!showsHere(here,book,shown))continue;
+                if(readMe.contains(id))continue;
+                if(tempOff&&c.getLong(7)>0)continue;
                 if(!here.equals(book))visiting.put(id,book);
                 at.put(id,new long[]{c.getLong(1),c.getLong(2),c.getLong(3),c.getLong(4)});
             }
@@ -4476,9 +4991,10 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         // And one that came on its own is drawn where it was shown when it came (Shared with me, unless Settings said
         // otherwise) and not where it is kept, which is Home (decision 92); where that collection is gone, on Home again.
         Set<String> elsewhere=new HashSet<>(),theirs=new HashSet<>();List<String> visitingFiles=new ArrayList<>();
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,cell,page,away,note,shown,theirs,accepted FROM files WHERE (note=? OR shown=?) AND gone=0",new String[]{here,here})) {
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,cell,page,away,note,shown,theirs,accepted,until FROM files WHERE (note=? OR shown=?) AND gone=0",new String[]{here,here})) {
             while(c.moveToNext()) {
                 String id=c.getString(0),real=home(c.getString(4))?Things.HOME:c.getString(4);
+                if(tempOff&&c.getLong(8)>0){elsewhere.add(id);continue;}
                 // Waiting to be accepted (decision 109): drawn nowhere, though it is kept on Home.
                 if(c.getInt(7)!=1){elsewhere.add(id);continue;}
                 if(!showsHere(here,real,c.getString(5))){elsewhere.add(id);continue;}
@@ -4496,7 +5012,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             // Shared on its own: the mark a note wears, from the people it is shared with, amber while it is owed.
             Map<String,Boolean> loose=looseAudience(rules,file.id);
             Sharing.State state=Sharing.state(loose,theirs.contains(file.id));
-            int waiting=loose.isEmpty()?0:sleevesOwed(file.id,false).size();
+            int waiting=fileOwed(file.id,loose,theirs.contains(file.id));
             Branch line=fileLine(file,parent,null,state,waiting);int[] cell=fileCells.get(file.id);
             // Owed to somebody and not up yet: it says it is uploading, since its sleeve waits for that (decision 94).
             line.uploading=waiting>0&&!sleeveReady(file.id);
@@ -4582,8 +5098,9 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
 
     /** How many files on Home are new: come from another device, and not opened here yet. */
     int freshOnHome() {
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(*) FROM files WHERE note=? AND "+heldIs(Branch.Kind.COLLECTION)+" AND fresh=1 AND accepted=1",
-                new String[]{Things.HOME})) {
+        // Shown in Shared with me, or in a folder, is not new on Home (decision 122).
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(*) FROM files WHERE note=? AND "+heldIs(Branch.Kind.COLLECTION)+" AND fresh=1 AND accepted=1 AND (shown IS NULL OR shown='' OR shown=?)",
+                new String[]{Things.HOME,Things.HOME})) {
             return c.moveToFirst()?c.getInt(0):0;
         }
     }
@@ -4596,7 +5113,128 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      */
     Shelf addCollectionIn(String parent,String name) {
         if(!home(parent)&&!there("things",parent))throw new IllegalArgumentException("Only a folder can hold a folder.");
-        return made(parent,name==null||name.trim().isEmpty()?UNTITLED:name.trim());
+        Shelf made=made(parent,name==null||name.trim().isEmpty()?UNTITLED:name.trim());
+        // Made in a temporary folder: temporary with it (decision 152).
+        long until=untilIn(getReadableDatabase(),parent);
+        if(until>0)getWritableDatabase().execSQL("UPDATE things SET until=? WHERE id=?",new Object[]{until,made.id});
+        // And with its folder's colour, strength and icon, until it is given its own (decision 153).
+        Object[] look=folderLook(getReadableDatabase(),parent);
+        if(look!=null){getWritableDatabase().execSQL("UPDATE things SET tint=?,tone=?,icon=? WHERE id=?",new Object[]{look[0],look[1],look[2],made.id});
+            return new Shelf(made.id,made.name,0,(Integer)look[0]);}
+        return made;
+    }
+    // ---- Photos, and the folders shown as albums (decision 217; see Album) -------------------------------------------------
+
+    /**
+     * Photos on Home, made once on this device, at a start, a new install's or an update's (the owner, 2026-10-19: "It should
+     * come by default on the Home page for new installs and updates"; decision 217): the same id on every device of the owner,
+     * from the person's id (Album.photosId), so the devices that sync everything have one Photos between them. Not while this
+     * device knows no person yet: it is made at a later start, never with an id of its own. Never again once made here, even
+     * deleted or renamed; and where one with that id came from another device, that one is it. Shown as an album here.
+     *
+     * @return its id where it was made now, else null
+     */
+    String photosOnce() {
+        android.content.SharedPreferences kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
+        if(!kept.getString(PHOTOS_MADE,"").isEmpty())return null;
+        String person=kept.getString("person","");
+        if(!Persons.isId(person))return null;
+        String id=Album.photosId(person);boolean make=!there("things",id);
+        if(make) {
+            long now=System.currentTimeMillis();
+            ContentValues v=new ContentValues();v.put("id",id);v.put("parent",Things.HOME);v.put("kind","collection");v.put("name",Album.PHOTOS);
+            v.put("icon",Album.ICON);v.put("made",now);v.put("updated",now);v.put("ordinal",-now);
+            if(getWritableDatabase().insert("things",null,v)<0)return null;
+        }
+        showAsAlbum(id,true);
+        kept.edit().putString(PHOTOS_MADE,id).putString(PHOTOS_OWN,make?id:"").apply();
+        return make?id:null;
+    }
+    /** Photos' id for the person this device belongs to, or empty while it knows none (see Album.photosId). */
+    String photosShared() {
+        String person=where.getSharedPreferences("settings",Context.MODE_PRIVATE).getString("person","");
+        return Persons.isId(person)?Album.photosId(person):"";
+    }
+    /** The setting that says Photos was made on this device, or found here from another (decision 217): its id. */
+    static final String PHOTOS_MADE="photosMade";
+    /** And the one this device made itself, where it did: only that one is ever let go (see {@link #photosFollow}). */
+    static final String PHOTOS_OWN="photosOwn";
+
+    /**
+     * The person this device belongs to, now one with another device of theirs (see Post.keepMe): Photos made here before, under
+     * the id this device had alone, is let go while it is still as it was made, empty and called Photos, since the other
+     * device's comes under the id they now share; that one is an album here too. Nothing anybody put in it is ever let go.
+     */
+    void photosFollow(String was,String now) {
+        if(was==null||now==null||was.equals(now)||!Persons.isId(now))return;
+        android.content.SharedPreferences kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
+        String made=kept.getString(PHOTOS_OWN,"");
+        String shared=Album.photosId(now);
+        // None made here yet (a new device, one person with another before its first Photos): theirs is it, as it is there,
+        // and none is made here at a later start. Made here then, it came back on every device where the owner had deleted it.
+        if(made.isEmpty()&&kept.getString(PHOTOS_MADE,"").isEmpty()){showAsAlbum(shared,true);kept.edit().putString(PHOTOS_MADE,shared).apply();return;}
+        if(made.isEmpty()||!made.equals(Album.photosId(was)))return;
+        SQLiteDatabase db=getWritableDatabase();
+        boolean untouched;
+        try(Cursor c=db.rawQuery("SELECT (SELECT COUNT(*) FROM things WHERE parent=?)+(SELECT COUNT(*) FROM notes WHERE book=?)+(SELECT COUNT(*) FROM files WHERE note=?),"
+                +"(SELECT COUNT(*) FROM things WHERE id=? AND name=? AND parent=? AND binned=0 AND archived=0)",new String[]{made,made,made,made,Album.PHOTOS,Things.HOME})) {
+            untouched=c.moveToFirst()&&c.getLong(0)==0&&c.getLong(1)==1;
+        }
+        if(untouched)db.execSQL("DELETE FROM things WHERE id=?",new Object[]{made});
+        showAsAlbum(shared,true);
+        kept.edit().putString(PHOTOS_MADE,shared).putString(PHOTOS_OWN,"").apply();
+    }
+
+    /** The folders this device shows as albums: its own view, kept in its settings, never sent (decision 217). */
+    Set<String> albums() {
+        Set<String> kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE).getStringSet(ALBUMS,new HashSet<String>());
+        return kept==null?new HashSet<>():new HashSet<>(kept);
+    }
+    boolean album(String id){return id!=null&&albums().contains(id);}
+    /** Show as an album, from a folder's menu, on or off, here only. */
+    void showAsAlbum(String id,boolean on) {
+        if(id==null||id.isEmpty())return;
+        Set<String> all=albums();
+        if(on?all.add(id):all.remove(id))where.getSharedPreferences("settings",Context.MODE_PRIVATE).edit().putStringSet(ALBUMS,all).apply();
+    }
+    static final String ALBUMS="albums";
+
+    /** A folder's colour, strength and icon, for what is made in it; null for Home and for a folder not here. */
+    private Object[] folderLook(SQLiteDatabase db,String folder) {
+        if(folder==null||home(folder))return null;
+        try(Cursor c=db.query("things",new String[]{"tint","tone","icon"},"id=?",new String[]{folder},null,null,null,"1")) {
+            return c.moveToFirst()?new Object[]{c.getInt(0),c.getInt(1),c.isNull(2)?"":c.getString(2)}:null;
+        }
+    }
+
+    /**
+     * A folder's colour or strength, changed here or arriving, followed by what is in it that never had one decided of its
+     * own, at any depth, as a setting on a folder is (the owner, 2026-10-11: "the setting at a level like the folder should
+     * apply at everything in it, notes and subfolders, as long as it is not overwritten in the elements"; decision 153).
+     * Nothing is owed for it: every device that has the folder does the same when its look comes.
+     */
+    private void followLook(SQLiteDatabase db,String folder,boolean colour,int value) {
+        String decided=colour?"colourDecided":"toneDecided";
+        db.execSQL("UPDATE notes SET "+(colour?"colour":"tone")+"=? WHERE book=? AND "+decided+"=0",new Object[]{value,folder});
+        List<String> inner=new ArrayList<>();
+        try(Cursor c=db.query("things",new String[]{"id"},"parent=? AND "+decided+"=0",new String[]{folder},null,null,null)){while(c.moveToNext())inner.add(c.getString(0));}
+        for(String one:inner){db.execSQL("UPDATE things SET "+(colour?"tint":"tone")+"=? WHERE id=?",new Object[]{value,one});followLook(db,one,colour,value);}
+    }
+    /** A folder's icon, changed: followed by what in it still wore the one it had, with no picture of its own (decision 153). */
+    private void followIcon(SQLiteDatabase db,String folder,String was,String now) {
+        if(folder==null||was==null||now==null||was.equals(now))return;
+        db.execSQL("UPDATE notes SET icon=? WHERE book=? AND IFNULL(icon,'')=? AND IFNULL(image,'')=''",new Object[]{now,folder,was});
+        List<String> inner=new ArrayList<>();
+        try(Cursor c=db.rawQuery("SELECT id FROM things WHERE parent=? AND IFNULL(icon,'')=? AND IFNULL(image,'')=''",new String[]{folder,was})){while(c.moveToNext())inner.add(c.getString(0));}
+        for(String one:inner){db.execSQL("UPDATE things SET icon=? WHERE id=?",new Object[]{now,one});followIcon(db,one,was,now);}
+    }
+    private String folderIcon(String folder) {
+        try(Cursor c=getReadableDatabase().query("things",new String[]{"icon"},"id=?",new String[]{folder},null,null,null,"1")){return c.moveToFirst()&&!c.isNull(0)?c.getString(0):"";}
+    }
+    /** When the folder a thing is made in is to be gone; 0 for never, and for Home. */
+    private long untilIn(SQLiteDatabase db,String folder) {
+        if(folder==null||home(folder))return 0L;
+        try(Cursor c=db.query("things",new String[]{"until"},"id=?",new String[]{folder},null,null,null,"1")){return c.moveToFirst()?c.getLong(0):0L;}
     }
 
     /**
@@ -4715,42 +5353,175 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     }
 
     /**
-     * The dock: the favourites with a place in it, in that order, each the line the Favourites collection shows for it.
-     * Kept on this device and never sent. A favourite put away - binned, archived, or inside something that is - keeps
-     * its place and is not shown until it comes back.
+     * The dock, in its order, each the line the Favourites collection shows for a thing: as many as were put there, favourites
+     * or not (decision 190). Kept on this device and never sent. One put away - binned, archived, or inside something that
+     * is - keeps its place and is not shown until it comes back.
      */
-    List<Branch> dock() {
-        Map<String,Integer> slots=dockSlots();
-        List<Branch> docked=new ArrayList<>();
-        // The first places of the favourites' one order: the rest of it is the Favourites collection's (decision 74).
-        for(Branch one:inside(Branch.Kind.FAVOURITES,FAVOURITES).holds){Integer at=slots.get(dockKey(one.kind,one.id));if(at!=null&&at<=Things.DOCK_PHONE)docked.add(one);}
-        docked.sort((one,other)->Integer.compare(slots.get(dockKey(one.kind,one.id)),slots.get(dockKey(other.kind,other.id))));
-        return docked;
+    List<Branch> dock(){return inside(Branch.Kind.FAVOURITES,FAVOURITES,true).holds;}
+
+    // ---- stamps on Minima, through Integritas (decision 199) ----------------------------------------------------------
+
+    /** One of this device's secrets, an Integritas key: empty where there is none. In the notebook, so locked with it. */
+    String secret(String name) {
+        try(Cursor c=getReadableDatabase().query("secrets",new String[]{"value"},"name=?",new String[]{name},null,null,null,"1")){return c.moveToFirst()?c.getString(0):"";}
+    }
+    /** Kept, or forgotten with an empty value. */
+    void setSecret(String name,String value) {
+        if(value==null||value.isEmpty()){getWritableDatabase().delete("secrets","name=?",new String[]{name});return;}
+        ContentValues v=new ContentValues();v.put("name",name);v.put("value",value);
+        getWritableDatabase().insertWithOnConflict("secrets",null,v,SQLiteDatabase.CONFLICT_REPLACE);
     }
 
+    /** What a thing was stamped as, here: its fingerprint then and when. */
+    record Stamp(String hash,long at) {}
     /**
-     * The favourites with no place in the dock, as the Favourites collection lists them: collections, those on Home first,
-     * then notes. What the Favourites collection holds, first on Home whenever it holds anything.
+     * One stamp made here, all that is kept of it (decisions 203 and 218): its row, what, its name then, its fingerprint, when,
+     * the request, what Integritas said and the Minima address it sent to, how far it is ({@link #STAMP_WAITING}, {@link #STAMP_CONFIRMED}
+     * or {@link #STAMP_UNSEEN}), how often and when it was last looked for, and where on Minima it landed: the block, the date
+     * recorded there, the transaction (txpow) and its transaction id. {@code kept}: a note's stamped text is here to read.
+     * {@code nft} and {@code nftTx}: the NFT Integritas minted for a verification with its report, its coin id and the
+     * transaction that made it, empty until one was asked for (decision 224).
      */
-    List<Branch> favouritesBeyondDock() {
+    record StampRow(long n,String id,String kind,String name,String hash,long at,String request,String said,String address,String state,
+                    int tries,long checked,long block,String txpow,String tx,String recorded,boolean kept,String nft,String nftTx) {
+        boolean confirmed(){return block>0||STAMP_CONFIRMED.equals(state);}
+        boolean waiting(){return !confirmed()&&STAMP_WAITING.equals(state);}
+        boolean note(){return "note".equals(kind);}
+    }
+    /** Sent, and looked for on Minima until found. */
+    static final String STAMP_WAITING="waiting";
+    /** Found on Minima. */
+    static final String STAMP_CONFIRMED="confirmed";
+    /** Not found on Minima in the time it was looked for: Verify again looks once more. */
+    static final String STAMP_UNSEEN="unseen";
+    private static final String[] STAMP_COLUMNS={"n","id","kind","name","hash","at","request","said","address","state","tries","checked","block","txpow","tx","recorded","words IS NOT NULL","nft","nfttx"};
+    private static StampRow stampRow(Cursor c) {
+        return new StampRow(c.getLong(0),c.getString(1),c.getString(2),c.getString(3),c.getString(4),c.getLong(5),c.getString(6),c.getString(7),c.getString(8),
+            c.getString(9),c.getInt(10),c.getLong(11),c.getLong(12),c.getString(13),c.getString(14),c.getString(15),c.getInt(16)!=0,c.getString(17),c.getString(18));
+    }
+    private List<StampRow> stampRows(String where,String[] args) {
+        List<StampRow> out=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().query("stamped",STAMP_COLUMNS,where,args,null,null,"at DESC, n DESC")){while(c.moveToNext())out.add(stampRow(c));}
+        return out;
+    }
+    /**
+     * Every stamp made here, the newest first (the Integritas window, decision 203); those of a fingerprint found on Minima
+     * first made to say so (see {@link #stampsAgree}).
+     */
+    List<StampRow> stamps(){stampsAgree();return stampRows(null,null);}
+    /** Every stamp of one note or file, the newest first: each version stamped (decision 218). */
+    List<StampRow> stampsOf(String id){return stampRows("id=?",new String[]{id});}
+    /** Those still being looked for on Minima, for a start of the app to go on looking. */
+    List<StampRow> stampsWaiting(){return stampRows("state=? AND block=0",new String[]{STAMP_WAITING});}
+    /** One stamp, by its row, or null. */
+    StampRow stampRow(long n){List<StampRow> one=stampRows("n=?",new String[]{String.valueOf(n)});return one.isEmpty()?null:one.get(0);}
+    /** A note's stamped version, exactly as its fingerprint was made: {title, text}, or null where none was kept (before 0.4.010). */
+    String[] stampedWords(long n) {
+        try(Cursor c=getReadableDatabase().query("stamped",new String[]{"title","words"},"n=? AND words IS NOT NULL",new String[]{String.valueOf(n)},null,null,null,"1")) {
+            return c.moveToFirst()?new String[]{c.getString(0)==null?"":c.getString(0),c.getString(1)}:null;
+        }
+    }
+    /**
+     * A file or a note stamped from this device, under the name it had, waiting for Minima, or already found there; for a note
+     * its title and the exact text fingerprinted, kept in the notebook, locked with it (decision 218). Its row.
+     */
+    long stamped(String id,String kind,String name,String hash,long at,String request,String said,String address,String title,String words) {
+        ContentValues v=new ContentValues();v.put("id",id);v.put("kind",kind);v.put("name",name==null?"":name);v.put("hash",hash);v.put("at",at);
+        v.put("request",request==null?"":request);v.put("said",said==null?"":said);v.put("address",address==null?"":address);v.put("state",STAMP_WAITING);
+        if(words!=null){v.put("title",title==null?"":title);v.put("words",words);}
+        long n=getWritableDatabase().insert("stamped",null,v);
+        if(n<0)throw new IllegalStateException("Could not keep that stamp");
+        return n;
+    }
+    /** Looked for on Minima once more and not found yet: how many times, when, and whether it is still looked for. */
+    void stampChecked(long n,int tries,long checked,String state) {
+        ContentValues v=new ContentValues();v.put("tries",tries);v.put("checked",checked);v.put("state",state);
+        getWritableDatabase().update("stamped",v,"n=? AND block=0",new String[]{String.valueOf(n)});
+    }
+    /** Found on Minima: the block, the transaction and its id, and the date it was recorded there. */
+    void stampLanded(long n,long block,String txpow,String tx,String recorded,int tries,long checked) {
+        ContentValues v=new ContentValues();v.put("state",STAMP_CONFIRMED);v.put("block",block);v.put("txpow",txpow==null?"":txpow);v.put("tx",tx==null?"":tx);
+        v.put("recorded",recorded==null?"":recorded);v.put("tries",tries);v.put("checked",checked);
+        getWritableDatabase().update("stamped",v,"n=?",new String[]{String.valueOf(n)});
+        stampsAgree();
+    }
+    /** Where on Minima a stamp was found by Verify on Minima, kept with those of the same fingerprint not yet found. */
+    void stampFound(String hash,long block,String txpow,String recorded) {
+        ContentValues v=new ContentValues();v.put("state",STAMP_CONFIRMED);v.put("block",block);v.put("txpow",txpow==null?"":txpow);v.put("recorded",recorded==null?"":recorded);v.put("checked",System.currentTimeMillis());
+        getWritableDatabase().update("stamped",v,"hash=? AND block=0",new String[]{hash});
+    }
+    /**
+     * A stamp not found on Minima while the same fingerprint is, by another stamp of it: found too, at the oldest record kept
+     * (the owner, 2026-10-19, of a line "not found yet" in Stamped on Minima… beside a stamp of the same note in block 2374505;
+     * decision 224). An older stamp, given up on or copied in from before 0.4.010 as not seen, stood apart from the one the
+     * watch found, since the watch keeps only the row it looks for. Nothing found is changed; nothing is said found that is not.
+     */
+    void stampsAgree() {
+        getWritableDatabase().execSQL("UPDATE stamped SET state='"+STAMP_CONFIRMED+"', "
+            +"block=(SELECT f.block FROM stamped f WHERE f.hash=stamped.hash AND f.block>0 ORDER BY f.block LIMIT 1), "
+            +"txpow=(SELECT f.txpow FROM stamped f WHERE f.hash=stamped.hash AND f.block>0 ORDER BY f.block LIMIT 1), "
+            +"tx=(SELECT f.tx FROM stamped f WHERE f.hash=stamped.hash AND f.block>0 ORDER BY f.block LIMIT 1), "
+            +"recorded=(SELECT f.recorded FROM stamped f WHERE f.hash=stamped.hash AND f.block>0 ORDER BY f.block LIMIT 1) "
+            +"WHERE block=0 AND EXISTS(SELECT 1 FROM stamped f WHERE f.hash=stamped.hash AND f.block>0)");
+    }
+    /** The NFT a verification with its report minted, kept with every stamp of that fingerprint (decision 224). */
+    void stampNft(String hash,String coin,String tx) {
+        if((coin==null||coin.isEmpty())&&(tx==null||tx.isEmpty()))return;
+        ContentValues v=new ContentValues();if(coin!=null&&!coin.isEmpty())v.put("nft",coin);if(tx!=null&&!tx.isEmpty())v.put("nfttx",tx);
+        getWritableDatabase().update("stamped",v,"hash=?",new String[]{hash});
+    }
+    /** When a thing was last stamped from here, or null. */
+    Stamp stampOf(String id) {
+        try(Cursor c=getReadableDatabase().query("stamped",new String[]{"hash","at"},"id=?",new String[]{id},null,null,"at DESC, n DESC","1")){return c.moveToFirst()?new Stamp(c.getString(0),c.getLong(1)):null;}
+    }
+    /**
+     * A note's stamped version put back as its text (decision 218), as Versions puts one back: what it says now kept as a
+     * version first, then the stamped title and text written as a new revision. False on a note this device only reads.
+     */
+    boolean putStampedBack(long n) {
+        StampRow row=stampRow(n);String[] words=stampedWords(n);
+        if(row==null||words==null||!row.note())return false;
+        if(Boolean.TRUE.equals(readOnlyHere(row.id())[0]))return false;
+        keepVersion(row.id(),"");
+        Note now=get(row.id());
+        if(now==null)return false;
+        now.title=words[0];now.body=words[1];now.updated=System.currentTimeMillis();now.revision++;
+        save(now);
+        return true;
+    }
+
+    /** Whether a note or a folder is in this device's dock: what its menu offers, Add to the dock or Remove from the dock. */
+    boolean inDock(Branch.Kind kind,String id) {
+        if(kind!=Branch.Kind.PAGE&&!shelf(kind))return false;
+        try(Cursor c=getReadableDatabase().query(shelf(kind)?"things":"notes",new String[]{"docked"},"id=?",new String[]{id},null,null,null,"1")) {
+            return c.moveToFirst()&&c.getInt(0)>0;
+        }
+    }
+
+    /** The favourites, in their own order: those put in one first, then the rest as they come (decision 74). */
+    private List<Branch> favouritesOrdered() {
         Map<String,Integer> slots=dockSlots();
         List<Branch> ordered=new ArrayList<>(),rest=new ArrayList<>();
-        for(Branch one:inside(Branch.Kind.FAVOURITES,FAVOURITES).holds) {
-            Integer at=slots.get(dockKey(one.kind,one.id));
-            if(at==null)rest.add(one);else if(at>Things.DOCK_PHONE)ordered.add(one);
-        }
-        // Those put in an order past the dock's places, in it; then those never put in one, as before.
+        for(Branch one:inside(Branch.Kind.FAVOURITES,FAVOURITES).holds)(slots.containsKey(dockKey(one.kind,one.id))?ordered:rest).add(one);
         ordered.sort((one,other)->Integer.compare(slots.get(dockKey(one.kind,one.id)),slots.get(dockKey(other.kind,other.id))));
         ordered.addAll(rest);
         return ordered;
     }
 
+    /** The favourites not in the dock, in their order: what the Favourites icon on Home is there for, with the rest. */
+    List<Branch> favouritesBeyondDock() {
+        Set<String> docked=new HashSet<>();for(Branch one:dock())docked.add(one.id);
+        List<Branch> out=new ArrayList<>();
+        for(Branch one:favouritesOrdered())if(!docked.contains(one.id))out.add(one);
+        return out;
+    }
+
     /**
      * Every favourite, however many (the owner, 2026-10-03: "the user can put as many favourites as he wants and these all
-     * show in the favourites section"): the dock's in its order, then the rest in theirs. What the Favourites card lists.
+     * show in the favourites section"), in their order. What the Favourites card lists.
      */
     List<Branch> favouritesAll() {
-        List<Branch> all=new ArrayList<>(dock());all.addAll(favouritesBeyondDock());
+        List<Branch> all=new ArrayList<>(favouritesOrdered());
         // And the files starred here, the newest starred first (decision 87).
         all.addAll(filesWhere("starred>0 AND away=0","starred DESC",null));
         return all;
@@ -4773,7 +5544,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 // Shared on its own: its mark here as on Home (decision 93), amber while it is owed.
                 Map<String,Boolean> loose=looseAudience(rules,file.id);
                 Branch line=fileLine(file,home(file.note)?Sharing.EVERYTHING:file.note,says==null?in:says.apply(new long[]{until}),
-                    Sharing.state(loose,c.getInt(FILE_ROW.length+1)==1),loose.isEmpty()?0:sleevesOwed(file.id,false).size());
+                    Sharing.state(loose,c.getInt(FILE_ROW.length+1)==1),fileOwed(file.id,loose,c.getInt(FILE_ROW.length+1)==1));
                 line.temporary=until>0;
                 out.add(line);
             }
@@ -4783,8 +5554,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     }
 
     /**
-     * The favourites put in this order, as the Favourites card is dragged into it: the first places are the dock's. Lines that
-     * are not a note or a collection are passed over. One transaction.
+     * The favourites put in this order, as the Favourites card is dragged into it; the dock keeps its own (decision 190).
+     * Lines that are not a note or a collection are passed over. One transaction.
      */
     void orderFavourites(List<Branch> order) {
         List<String> keys=new ArrayList<>();
@@ -4796,69 +5567,59 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     /** How many favourites there are on the shelves, in the dock or beyond it. */
     int favouriteCount(){return keptCount();}
 
+    /** The favourites' order written as this one, numbered from 1; whatever had a place and is not in it loses it. */
+    private static void writeDock(SQLiteDatabase db,List<String> order){writeOrder(db,"dock",order);}
+    private static void writeOrder(SQLiteDatabase db,String column,List<String> order) {
+        db.execSQL("UPDATE things SET "+column+"=0 WHERE "+column+">0");
+        db.execSQL("UPDATE notes SET "+column+"=0 WHERE "+column+">0");
+        for(int at=0;at<order.size();at++) {
+            String key=order.get(at);
+            db.execSQL("UPDATE "+(key.startsWith("n:")?"notes":"things")+" SET "+column+"=? WHERE id=?",new Object[]{at+1,key.substring(2)});
+        }
+    }
+
     /**
-     * The dock's keys in the order its places are written in: what it shows, in its order, and then what is put away,
-     * so that a place counted on the screen is a place here, and what is put away is the first pushed out.
-     *
-     * @param shown filled with what it shows, in its order
+     * The dock's keys in its order: what it shows, then what is put away and keeps its place, so a place counted on the
+     * screen is a place here.
      */
-    private List<String> dockOrder(List<String> shown) {
-        for(Branch one:dock())shown.add(dockKey(one.kind,one.id));
-        List<String> order=new ArrayList<>(shown);
-        Map<String,Integer> slots=dockSlots();
+    private List<String> dockedOrder() {
+        List<String> order=new ArrayList<>();
+        for(Branch one:dock())order.add(dockKey(one.kind,one.id));
+        Map<String,Integer> slots=new HashMap<>();
+        for(String table:new String[]{"things","notes"})
+            try(Cursor c=getReadableDatabase().rawQuery("SELECT id,docked FROM "+table+" WHERE docked>0",null)) {
+                while(c.moveToNext())slots.put(("notes".equals(table)?"n:":"c:")+c.getString(0),c.getInt(1));
+            }
         List<String> away=new ArrayList<>(slots.keySet());away.removeAll(order);
         away.sort((one,other)->slots.get(one).equals(slots.get(other))?one.compareTo(other):Integer.compare(slots.get(one),slots.get(other)));
         order.addAll(away);
         return order;
     }
 
-    /** The dock written as this order, numbered from 1; whatever had a place and is not in it leaves the dock. */
-    private static void writeDock(SQLiteDatabase db,List<String> order) {
-        db.execSQL("UPDATE things SET dock=0 WHERE dock>0");
-        db.execSQL("UPDATE notes SET dock=0 WHERE dock>0");
-        for(int at=0;at<order.size();at++) {
-            String key=order.get(at);
-            db.execSQL("UPDATE "+(key.startsWith("n:")?"notes":"things")+" SET dock=? WHERE id=?",new Object[]{at+1,key.substring(2)});
-        }
-    }
-
     /**
-     * A thing put in the dock at a place, 1 the first, counted as the dock shows: made a favourite if it was not, taken
-     * from wherever it was in the dock, and the rest moved along. Whatever is pushed past the end of the phone's dock
-     * leaves it and stays a favourite, in the Favourites collection (see {@link Things#intoDock}). One transaction.
+     * A note or a folder put in the dock at a place, 1 the first, counted as the dock shows: taken from wherever it was in
+     * it, the rest moved along. Whether it is a favourite does not change (decision 190). One transaction.
      */
     void toDock(Branch.Kind kind,String id,int slot) {
+        if(kind!=Branch.Kind.PAGE&&!shelf(kind))return;
         String key=dockKey(kind,id);
-        List<String> shown=new ArrayList<>(),order=dockOrder(shown);
-        shown.remove(key);
-        // Put at its place in the one order of every favourite: what is pushed past the dock's places keeps its place after
-        // them, in the Favourites collection (decision 74).
-        List<String> now=Things.intoDock(order,key,Math.max(1,Math.min(slot,shown.size()+1)),Integer.MAX_VALUE);
+        List<String> order=dockedOrder();
+        int shown=dock().size();
+        boolean was=order.remove(key);
+        order.add(Math.max(0,Math.min(slot-1,Math.min(order.size(),was?shown-1:shown))),key);
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
-        try {
-            ContentValues v=new ContentValues();v.put(shelf(kind)?"favourite":"pinned",1);
-            db.update(shelf(kind)?"things":"notes",v,"id=?",new String[]{id});
-            writeDock(db,now);
-            db.setTransactionSuccessful();
-        } finally {db.endTransaction();}
+        try{writeOrder(db,"docked",order);db.setTransactionSuccessful();}finally{db.endTransaction();}
     }
 
-    /** A thing taken out of the dock: it stays a favourite, in the Favourites collection, and the rest close up. */
+    /** At the dock's end: Add to the dock in a menu. */
+    void toDockEnd(Branch.Kind kind,String id){toDock(kind,id,Integer.MAX_VALUE);}
+
+    /** A thing taken out of the dock: whether it is a favourite does not change, and the rest close up. */
     void outOfDock(Branch.Kind kind,String id) {
-        // Its place let go of; the dock's own places close up, and the favourites past the dock keep theirs, so the room it
-        // leaves is not filled by the next one (decision 74).
-        String gone=dockKey(kind,id);
-        Map<String,Integer> slots=dockSlots();
-        List<String> docked=new ArrayList<>();
-        for(Map.Entry<String,Integer> one:slots.entrySet())if(one.getValue()<=Things.DOCK_PHONE&&!one.getKey().equals(gone))docked.add(one.getKey());
-        docked.sort((x,y)->Integer.compare(slots.get(x),slots.get(y)));
+        List<String> order=dockedOrder();
+        order.remove(dockKey(kind,id));
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
-        try {
-            db.execSQL("UPDATE "+(gone.startsWith("n:")?"notes":"things")+" SET dock=0 WHERE id=?",new Object[]{id});
-            for(int at=0;at<docked.size();at++){String key=docked.get(at);
-                db.execSQL("UPDATE "+(key.startsWith("n:")?"notes":"things")+" SET dock=? WHERE id=?",new Object[]{at+1,key.substring(2)});}
-            db.setTransactionSuccessful();
-        } finally {db.endTransaction();}
+        try{writeOrder(db,"docked",order);db.setTransactionSuccessful();}finally{db.endTransaction();}
     }
 
     // ---- looking for anything, from the foot of Home -------------------------------------------------------------
@@ -4877,7 +5638,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         String like=Find.like(tidy);
         Tree tree=tree();
         Set<String> kept=keptIds();
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,title,body,colour,book FROM notes WHERE "+HERE
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,title,body,colour,book,shown FROM notes WHERE "+HERE
                 +" AND (title LIKE ? ESCAPE '\\' OR body LIKE ? ESCAPE '\\') ORDER BY updated DESC LIMIT 200",new String[]{like,like})) {
             while(c.moveToNext()) {
                 List<String> up=tree.aboveIn(c.getString(4));
@@ -4886,24 +5647,33 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 page.id=c.getString(0);page.title=c.getString(1)==null?"":c.getString(1);
                 page.body=c.getString(2)==null?"":c.getString(2);page.preview=page.body;
                 String said=Find.around(Find.holds(page.title,tidy)?page.title:page.body,tidy);
+                String where=whereIs(tree,up);
+                String shown=c.getString(5);
+                if(home(c.getString(4)))where=shownWords(shown,where);
                 Branch line=new Branch(Branch.Kind.PAGE,page.id,home(c.getString(4))?Sharing.EVERYTHING:c.getString(4),page.heading(),
-                    whereIs(tree,up)+(said.isEmpty()?"":" · "+said),0,0,false,c.getInt(3));
+                    where+(said.isEmpty()?"":" · "+said),0,0,false,c.getInt(3));
                 line.kept=kept.contains(page.id);found.add(line);
             }
         }
-        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name,parent,tint FROM things WHERE "+LIVE
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name,parent,tint,shown FROM things WHERE "+LIVE
                 +" AND name LIKE ? ESCAPE '\\' ORDER BY "+ORDINAL+" LIMIT 120",new String[]{like})) {
             while(c.moveToNext()) {
                 List<String> up=tree.above(c.getString(0));
                 if(!tree.live(up))continue;
+                String where=whereIs(tree,up);
+                String shown=c.isNull(4)?"":c.getString(4);
+                // Kept on Home and shown in Shared with me says that, as a note and a file do (decision 122).
+                if(home(c.getString(2)))where=shownWords(shown,where);
                 Branch line=new Branch(Branch.Kind.COLLECTION,c.getString(0),home(c.getString(2))?Sharing.EVERYTHING:c.getString(2),
-                    c.getString(1),whereIs(tree,up),0,0,true,c.getInt(3));
+                    c.getString(1),where,0,0,true,c.getInt(3));
                 line.kept=kept.contains(line.id);found.add(line);
             }
         }
-        try(Cursor c=getReadableDatabase().query("files",FILE_ROW,"name LIKE ? ESCAPE '\\' AND gone=0 AND accepted=1",new String[]{like},null,null,"added DESC","120")) {
+        String[] fileColumns=java.util.Arrays.copyOf(FILE_ROW,FILE_ROW.length+1);fileColumns[FILE_ROW.length]="shown";
+        try(Cursor c=getReadableDatabase().query("files",fileColumns,"name LIKE ? ESCAPE '\\' AND gone=0 AND accepted=1",new String[]{like},null,null,"added DESC","120")) {
             while(c.moveToNext()) {
                 Held file=held(c);
+                String shown=c.isNull(FILE_ROW.length)?"":c.getString(FILE_ROW.length);
                 String where,parent;
                 if(file.held==Branch.Kind.PAGE) {
                     // Kept with a note: where the note is, and the note by its name.
@@ -4916,7 +5686,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                     if(!tree.live(up))continue;
                     where="in "+(up.isEmpty()?"":tree.names(up)+" › ")+note.heading();parent=note.id;
                 } else if(home(file.note)) {
-                    where="on Home";parent=Sharing.EVERYTHING;
+                    where=shownWords(shown,"on Home");parent=SHARED.equals(shown)?SHARED:Sharing.EVERYTHING;
                 } else {
                     Row row=tree.rows.get(file.note);
                     if(row==null||row.away)continue;
@@ -5253,6 +6023,13 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         // A file holds no note: read as Home it was every note there is, and taking somebody off a file shared on its own
         // would have let go of what waited for them in every note.
         if(kind==Branch.Kind.FILE)return pages;
+        // Temp: the notes in it, and in the folders in it.
+        if(kind==Branch.Kind.TEMP) {
+            Set<String> seen=new HashSet<>();
+            for(Branch inTemp:temporary(System.currentTimeMillis()))
+                if(inTemp.kind==Branch.Kind.PAGE||shelf(inTemp.kind))for(Outbox.Page page:pagesUnder(inTemp.kind,inTemp.id))if(seen.add(page.id))pages.add(page);
+            return pages;
+        }
         Tree tree=tree();
         // Only what is on the shelves is owed: a page inside an archived or binned collection, at any depth, has
         // gone away with it, and nothing that is put away should be pushed at anybody.
@@ -5399,7 +6176,9 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                     if(!carton.name.trim().isEmpty())look.put("name",carton.name.trim());
                     look.put("icon",iconFrom(carton.icon));
                 }
+                String wasIcon=folderIcon(made);
                 getWritableDatabase().update("things",look,"id=?",new String[]{made});
+                if(mine)followIcon(getWritableDatabase(),made,wasIcon,iconFrom(carton.icon));
             }
         }
         // Its colour and its strength, from whoever its name and icon are followed from: by when each was decided, not by
@@ -5494,7 +6273,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             if(rule.scope==Sharing.Scope.FILE&&(only==null||only.equals(rule.target)))byFile.computeIfAbsent(rule.target,any->new ArrayList<>()).add(rule);
         if(byFile.isEmpty())return owed;
         Map<String,Long> sent=sent();
-        Set<String> own=myOtherDevices();
+        Set<String> own=myOtherDevices(),allMine=new HashSet<>();
+        for(Contact one:addresses())if(one.mine&&one.paired())allMine.add(one.address);
         for(Map.Entry<String,List<Sharing.Rule>> one:byFile.entrySet()) {
             String id=one.getKey();
             long revision,changed;boolean gone,away,theirs;String origin;
@@ -5511,10 +6291,12 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             boolean says=owner||mine==Sharing.Level.ADMIN, wrote=!says&&mine!=null&&mine.writes()&&changed>0;
             // Come from another device of mine and not changed here: that device sends it to the rest of mine itself, so
             // nothing of it is owed from here, and it does not wait here for them (the owner's report of 2026-10-05).
-            boolean relayed=theirs&&changed==0&&own.contains(origin);
+            // Any device paired as mine counts here, bonded or not: the owner's are paired as his own and not bonded, and a
+            // screenshot let go on Temp on his phone stood amber on his laptop, owed to his Pro (the owner, 2026-10-11).
+            boolean relayed=theirs&&changed==0&&(own.contains(origin)||allMine.contains(origin));
             for(Map.Entry<String,Boolean> reached:sleeveAudience(one.getValue(),id,!owner,gone,own).entrySet()) {
                 boolean ours=own.contains(reached.getKey());
-                if(ours&&relayed)continue;
+                if((ours||allMine.contains(reached.getKey()))&&relayed)continue;
                 if(!ours&&!says&&!wrote)continue;
                 // What they have to have: all of it, or, from a writer to anybody else, what it changed.
                 long floor=ours||says?revision:changed;
@@ -5583,7 +6365,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     }
 
     /**
-     * This owner's other devices bonded with this one (Connect my other device, which shares everything with them), paired
+     * This owner's other devices bonded with this one (Add my device, which shares everything with them), paired
      * and marked My device, by address: who has a note through the bond, as {@link #ownDevicesFor} lists them.
      */
     Set<String> myOtherDevices() {
@@ -5632,15 +6414,30 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         // Whose it is: this device's own, or where it came from, which since this build is its owner wherever it was had.
         String origin=cameFrom(Branch.Kind.FILE,file);
         String owner=origin.isEmpty()?myAddress:origin, ownerKey=origin.isEmpty()?mySigningKey:keyOf(origin);
-        boolean writes=myOtherDevices().contains(address);
+        // A device of mine writes in it as it writes in everything: only where its bond says Can write (decision 163, a
+        // device of mine may only read).
+        boolean writes=false;
+        if(myOtherDevices().contains(address))for(Sharing.Rule rule:shares())
+            if(rule.scope==Sharing.Scope.LIBRARY&&rule.address.equals(address)&&rule.level.writes())writes=true;
         for(Sharing.Rule rule:sharesOn(Sharing.Scope.FILE,file))if(rule.address.equals(address)&&rule.level.writes())writes=true;
         // Its time on Temp, to this owner's other devices only (decision 95): Temp is a note to oneself, nobody else's. Any
         // device of this owner's, bonded or only paired as one of theirs, as Temp's own giving reaches (toMyDevices).
         boolean mine=mineDevice(address,"");
         long until=mine&&!gone?untilOf(Branch.Kind.FILE,file):0;
+        // Linked to a file on this device's disk, to this owner's other devices only: said there (see linkedOn).
+        String linked=mine&&!gone?clipped(linkedHere.apply(file)):"";
         return new Sleeve.Sent(file,clipped(name),clipped(kind),bytes,manifest,writes,Sharing.Scope.FILE.name(),file,
-            travelling(Sharing.Scope.FILE,file),true,gone,owner,ownerKey,named,manifest.isEmpty()?0:replaced,until);
+            travelling(Sharing.Scope.FILE,file),true,gone,owner,ownerKey,named,manifest.isEmpty()?0:replaced,until,linked);
     }
+
+    /**
+     * The name of this device where a file is linked to a file on its disk, else empty: set by the PC (Share a file through
+     * Mininotes), which a phone has nothing of.
+     */
+    static volatile java.util.function.Function<String,String> linkedHere=id->"";
+
+    /** The device of the owner's where a file is linked to a file on its disk, as its sleeve last said; empty for none. */
+    String linkedOn(String id){return id==null?"":where.getSharedPreferences("linked",0).getString(id,"");}
 
     /** A name cut to what a field of a parcel holds, at a letter: a long file name never stops a file going. */
     private static String clipped(String said) {
@@ -5722,6 +6519,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * @return {@link #SLEEVE_NOT} where nothing was written; else what was done
      */
     int sleeveArrived(String from,long revision,Sleeve.Sent sleeve) {
+        // Where it is linked to a file on disk, from the owner's own devices: kept to be said in its menu.
+        if(mineDevice(from,"")&&!sleeve.linked.equals(linkedOn(sleeve.id)))where.getSharedPreferences("linked",0).edit().putString(sleeve.id,sleeve.linked).apply();
         String id=sleeve.id;
         if(!Enclosure.plainId(id))return SLEEVE_NOT;
         // Let go here already, by its owner's word or this device's own: never brought back by a sleeve (see drop).
@@ -5982,7 +6781,9 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         // Read me first, so My first note, a moment later, is first on Home and the note opened last.
         String[][] notes={{READ_ME,READ_ME_SAYS},{FIRST_NOTE,FIRST_NOTE_SAYS}};
         for(int at=0;at<notes.length;at++) {
-            try(Cursor c=getReadableDatabase().query("notes",new String[]{"id"},"title=? AND "+HERE,new String[]{notes[at][0]},null,null,null,"1")){if(c.moveToFirst())continue;}
+            // A README come as Read me from a device not yet on 0.4.010 is one too (decision 221).
+            String[] named=at==0?READ_ME_TITLES:new String[]{notes[at][0],notes[at][0]};
+            try(Cursor c=getReadableDatabase().query("notes",new String[]{"id"},"title IN (?,?) AND "+HERE,named,null,null,null,"1")){if(c.moveToFirst())continue;}
             Note note=new Note();note.title=notes[at][0];note.body=notes[at][1];note.book=Things.HOME;
             note.updated=now+at;note.place=-(now+at);note.revision=1;
             save(note);
@@ -5993,7 +6794,14 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     /** The setting that says the two notes were written on this device, and by which version (see {@link #welcome}). */
     static final String WELCOMED="welcomed";
     static final String FIRST_NOTE="My first note", FIRST_NOTE_SAYS="Write anything here. It is saved as you type.";
-    static final String READ_ME="Read me", READ_ME_0_2=String.join("\n",
+    /**
+     * README since 0.4.010 (the owner, 2026-10-19: "name it this way too, README, as people are used to see it everywhere
+     * including on GitHub"; decision 221); Read me before, the name an untouched one is renamed from (see {@link
+     * #readMeAgain}) and one somebody wrote in keeps. Both are the README for Show on Home and its icon.
+     */
+    static final String READ_ME="README", READ_ME_WAS="Read me";
+    static final String[] READ_ME_TITLES={READ_ME,READ_ME_WAS};
+    static final String READ_ME_0_2=String.join("\n",
         "Mininotes keeps your notes on your devices. No account, nothing to sign up for. What you share is sealed from your device to theirs.",
         "",
         "**Home**",
@@ -6188,35 +6996,104 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         "**Keeping it safe**",
         "- Settings, Security: lock Mininotes with your fingerprint or a password. You get 12 recovery words: write them down.",
         "- Menu, Backup: export a backup. Without the lock, it asks for a password for that backup.");
-    static final String READ_ME_SAYS=READ_ME_0_3_016;
+    /** 0.3.050: private and privatespace do the same, open the space that answers or make one (the owner, 2026-10-12). */
+    static final String READ_ME_0_3_050=READ_ME_0_3_016
+        .replace("- In any note, type the word privatespace, then //: and your password, all together with nothing between them, and press Enter. Then type the same password again: a new private space opens, on a screen of its own, as an empty folder.",
+            "- In any note, type the word private (or privatespace), then //: and your password, all together with nothing between them, and press Enter. The space that password opens comes up on a screen of its own. With a password never used before, type it again and a new, empty space is made.")
+        .replace("- To open a space again, type the word private, then //: and your password, all together, and press Enter. It only opens, it never makes anything.\n","")
+        .replace("- Because nothing records them, typing the word privatespace and //: with a password you have never used, or mistyping an old one, makes another space, which can sit over an earlier one and lose part of it. So write each password down, and open a space you already have with the word private and //:, never privatespace.",
+            "- Because nothing records them, a mistyped password asks to be typed again as a new space: if that happens when you meant an existing one, close the box and try again. A new space can sit over an earlier one and lose part of it, so write each password down.");
     /**
-     * Every Read me an earlier build wrote, word for word: one still saying exactly that is said again (see {@link #readMeAgain}).
-     * The 0.3.008 one also as the guard leaves it once it was saved again (decision 114), its codes and their lines gone.
+     * 0.4.008 (the owner, 2026-10-19: "Read me needs the emergency contact description; let's remove privatespace and only
+     * mention private as a way to activate"; "the app is built to make the private notes invisible from a code observer but
+     * we can't confirm it is 100% safe, keep inside non-critical elements"; decision 214): private alone, its limits said
+     * plainly, the help request described, and what came since 0.3.050 in a few lines.
      */
-    static final String[] READ_ME_BEFORE={READ_ME_0_2,READ_ME_0_3_008,PrivateCode.scrub(READ_ME_0_3_008),READ_ME_0_3_011,READ_ME_0_3_012,READ_ME_0_3_013,READ_ME_0_3_015};
+    static final String READ_ME_0_4_008=READ_ME_0_3_050
+        .replace("- In any note, type the word private (or privatespace), then //: and your password, all together with nothing between them, and press Enter.",
+            "- In any note, type the word private, then //: and your password, all together with nothing between them, and press Enter.")
+        .replace("- Tip: you can keep a believable space under one password and the real one under another, and use the believable one now and then so it looks lived in.",
+            "- Tip: you can keep a believable space under one password and the real one under another, and use the believable one now and then so it looks lived in.\n"
+            +"- Private spaces are built so that nobody reading the app's files or its code can see them, or tell how many there are. That cannot be confirmed to be 100% safe, so keep only things there that would not harm you if they were found.\n"
+            +"\n"
+            +"**Emergency contact**\n"
+            +"- A help request sends your location, and the words you chose, to the people you chose, the moment a private note is opened. It is for when you may be in danger and someone might make you open Mininotes.\n"
+            +"- To set one, open a private space, open one of its notes, type the word help, then //:, all together, and press Enter. The code disappears at once and a box asks who to tell and what to say. The note you typed it in is the one that sends it.\n"
+            +"- Once set it is never shown again, anywhere: no menu says it, and the box always opens empty.\n"
+            +"- To take away every help request of a space, type the word erase, then //:, in one of its notes. That code disappears at once too.\n"
+            +"- Mininotes asks for the phone's location permission for this, and the system shows when it is used.")
+        .replace("**Keeping it safe**",
+            "**Files in a note**\n"
+            +"- A PDF shows its first page on its card, a document its first lines. Copy, Send with another app, Save on my phone or Save on my computer are in a file's menu. On the phone, Choose several… ticks several at once.\n"
+            +"- A file put in the bin leaves the note on all your devices. Put back brings it back everywhere.\n"
+            +"\n"
+            +"**The Agent**\n"
+            +"- Ask it a question, or ask for something to be done: what is new, add milk to Grocery, share a note with someone. It runs on your device, sends nothing, and offers to take you to the right place.\n"
+            +"\n"
+            +"**Stamp on Minima**\n"
+            +"- With an Integritas account, Stamp on Minima… in a file's or a note's menu records its fingerprint on the Minima blockchain with the date: proof it existed, unchanged, from that moment. Verify on Minima… checks it later. Your API key goes in My profile.\n"
+            +"\n"
+            +"**Keeping it safe**");
+    /** 0.4.009: Photos, an album on Home (the owner, 2026-10-19: "would be nice to have a type of folder specific for photos"; decision 217). */
+    static final String READ_ME_0_4_009=READ_ME_0_4_008
+        .replace("**Files in a note**",
+            "**Photos**\n"
+            +"- Photos on Home is an album: every picture in it in a grid, opened large with the next and the previous a swipe or an arrow away. Add photos with its +, or take one. Any folder can be shown as an album from its menu.\n"
+            +"\n"
+            +"**Files in a note**");
+    /**
+     * The README the repository shows, as the note writes it (decision 221): help/README.md, the root README.md's copy,
+     * through {@link ReadMe#text}. 0.4.009's, the last written by hand, only where that copy could not be read.
+     */
+    static final String READ_ME_SAYS=ReadMe.text()!=null?ReadMe.text():READ_ME_0_4_009;
+    /**
+     * Every Read me an earlier build wrote by hand, word for word: one still saying exactly that is said again (see {@link
+     * #readMeAgain}). The 0.3.008 one also as the guard leaves it once it was saved again (decision 114), its codes and their
+     * lines gone. Those made from the README since 0.4.010 are known by their SHA-256 instead ({@link ReadMe#shipped}).
+     */
+    static final String[] READ_ME_BEFORE={READ_ME_0_2,READ_ME_0_3_008,PrivateCode.scrub(READ_ME_0_3_008),READ_ME_0_3_011,READ_ME_0_3_012,READ_ME_0_3_013,READ_ME_0_3_015,READ_ME_0_3_016,READ_ME_0_3_050,READ_ME_0_4_008,READ_ME_0_4_009};
+
+    /** Whether a README's body is one a build wrote and nobody changed: by hand before 0.4.010, from the README since. */
+    static boolean readMeUntouched(String body) {
+        if(body==null)return false;
+        if(body.equals(READ_ME_SAYS)||ReadMe.shipped(body))return true;
+        for(String before:READ_ME_BEFORE)if(before.equals(body))return true;
+        return false;
+    }
 
     /**
-     * Read me said again where it still says exactly what an earlier build wrote, so a notebook that has one learns about
-     * private notes too (decision 111). One somebody changed is theirs, and is left as it is. Written as typing it would be:
-     * the old words kept as a version, a revision more, and to whoever has it, as anything written here.
+     * README said again where it still says exactly what a build wrote, so a notebook that has one learns what came since
+     * (decisions 111, 221), and an untouched Read me renamed README with it (the owner, 2026-10-19: "name it this way too,
+     * README"; decision 221). One somebody changed is theirs, and is left as it is, under its name. Written as typing it would
+     * be: the old words kept as a version, a revision more, and to whoever has it, as anything written here.
      *
      * @return whether one was said again
      */
     boolean readMeAgain() {
+        // README wears an icon of its own, not a page's (the owner, 2026-10-19: "Read me needs a specific icon, not the
+        // generic file one"; decision 214), where nobody gave it another, under either name.
+        boolean dressed=false;
+        for(String id:ids(getReadableDatabase(),"SELECT id FROM notes WHERE title IN (?,?) AND (icon IS NULL OR icon='')",READ_ME_TITLES))
+            if(!onlyReads(id))try{setIcon(Branch.Kind.PAGE,id,READ_ME_ICON);dressed=true;}catch(RuntimeException notNow){/* as it was */}
         List<String> ids=new ArrayList<>();
-        try(Cursor c=getReadableDatabase().query("notes",new String[]{"id","body"},"title=? AND "+HERE,new String[]{READ_ME},null,null,null)) {
-            while(c.moveToNext())for(String before:READ_ME_BEFORE)if(before.equals(c.getString(1)))ids.add(c.getString(0));
+        try(Cursor c=getReadableDatabase().query("notes",new String[]{"id","title","body"},"title IN (?,?) AND "+HERE,READ_ME_TITLES,null,null,null)) {
+            while(c.moveToNext()) {
+                String body=c.getString(2);
+                if(READ_ME.equals(c.getString(1))&&READ_ME_SAYS.equals(body))continue;// already said
+                if(readMeUntouched(body))ids.add(c.getString(0));
+            }
         }
         boolean said=false;
         for(String id:ids) {
             if(onlyReads(id))continue;
             Note n=get(id);if(n==null||!n.complete)continue;
             keepVersion(id,"");
-            n.body=READ_ME_SAYS;n.writers=null;n.revision=n.revision+1;n.updated=System.currentTimeMillis();
+            n.title=READ_ME;n.body=READ_ME_SAYS;n.writers=null;n.revision=n.revision+1;n.updated=System.currentTimeMillis();
             save(n);said=true;
         }
-        return said;
+        return said||dressed;
     }
+    static final String READ_ME_ICON="book-open-text";
 
     /** What one thing owes, ready to be counted or shown by name. */
     List<Outbox.Wait> owed(Branch.Kind kind,String id) {
@@ -6225,9 +7102,42 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         // Not a copy this phone may only read. Every other holder refuses what a reader sends (Post.arrived
         // weighs the sender's standing), so counting it as owed only kept its mark waiting and the retries
         // going every quarter of an hour, for ever, for something nobody would ever take.
-        for(Outbox.Wait wait:Outbox.waiting(shares(),pagesUnder(kind,id),sent()))
+        List<Outbox.Page> pages=pagesUnder(kind,id);Map<String,Long> sent=sent();
+        for(Outbox.Wait wait:Outbox.waiting(withOwnHolders(shares(),pages,sent),pages,sent))
             if(!reads.computeIfAbsent(wait.page,this::onlyReads))owed.add(wait);
         return owed;
+    }
+
+    /**
+     * The rules, and beside them a rule on each note itself for every one of this owner's own devices that has had it: a
+     * note one of my devices holds stays in step with it wherever either of them puts it (the owner, 2026-10-19: "we have to
+     * make sure it stays in sync even if we move it out of a folder only on one device"; decision 211). A device of mine with
+     * no bond with everything has a note through the folder it is in, and moved out of that folder on one device only, it
+     * went to nobody from there: that device's writing and files stopped, while the other went on sending its own, each
+     * answered as put with what was there, and the two never came together. Not for a device whose bond with everything
+     * says what it may do already, nor one taken off the note or a folder above it, nor a device no longer paired as mine.
+     *
+     * @param sent what reached whom, as {@link #sent} reads it: a device has had a note where it has a row there
+     */
+    List<Sharing.Rule> withOwnHolders(List<Sharing.Rule> rules,java.util.Collection<Outbox.Page> pages,Map<String,Long> sent) {
+        if(pages.isEmpty())return rules;
+        List<Sharing.Rule> every=everyRule();
+        Set<String> bonded=new HashSet<>();
+        for(Sharing.Rule rule:every)if(rule.scope==Sharing.Scope.LIBRARY)bonded.add(rule.address);
+        List<Contact> mine=new ArrayList<>();
+        for(Contact one:addresses())if(one.mine&&one.paired()&&!bonded.contains(one.address))mine.add(one);
+        if(mine.isEmpty())return rules;
+        List<Sharing.Rule> all=new ArrayList<>(rules);
+        for(Outbox.Page page:pages) {
+            List<String> path=page.path();
+            for(Contact one:mine) {
+                if(!sent.containsKey(Outbox.mark(one.address,page.id)))continue;
+                boolean off=false;
+                for(Sharing.Rule rule:every)if(rule.level==Sharing.Level.GONE&&rule.address.equals(one.address)&&Sharing.covers(rule,path))off=true;
+                if(!off)all.add(new Sharing.Rule(Sharing.Scope.PAGE,page.id,one.address,true));
+            }
+        }
+        return all;
     }
 
     /** A note that came from somebody and that this phone was given to read, not to write in. */
@@ -6276,6 +7186,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             boolean moves=kind!=Branch.Kind.PAGE||!onlyReads(id);
             db.execSQL("UPDATE "+table+" SET "+column+"=?,"+decided+"=?"+(moves?",revision=revision+1":"")+" WHERE id=?",
                 new Object[]{value,System.currentTimeMillis(),id});
+            if(shelf(kind))followLook(db,id,!"tone".equals(column),value);
             db.setTransactionSuccessful();
         } finally {db.endTransaction();}
     }
@@ -6308,6 +7219,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             if(colourAt>here[2]&&(colour==Tint.NONE||Tint.known(colour))){v.put(note?"colour":"tint",colour);v.put("colourDecided",colourAt);}
             if(toneAt>here[3]){v.put("tone",Tint.toned(tone)?tone:Tint.USUAL);v.put("toneDecided",toneAt);}
             boolean changed=v.size()>0&&db.update(table(kind),v,"id=?",new String[]{id})>0;
+            if(changed&&!note){if(v.containsKey("tint"))followLook(db,id,true,colour);if(v.containsKey("tone"))followLook(db,id,false,Tint.toned(tone)?tone:Tint.USUAL);}
             db.setTransactionSuccessful();
             return changed;
         } finally {db.endTransaction();}
@@ -6576,6 +7488,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             if(theirs&&(note?onlyReads(id):myLevel(Sharing.Scope.THING,id)==Sharing.Level.READ))
                 throw new IllegalArgumentException(note?"That note is read only here.":"That folder is read only here.");
             db.execSQL("UPDATE "+table(kind)+" SET icon=?,image=?,revision=revision+1 WHERE id=?",new Object[]{nowIcon,nowImage,id});
+            if(!note)followIcon(db,id,wasIcon,nowIcon);
             db.setTransactionSuccessful();
         } finally {db.endTransaction();}
     }
@@ -6587,7 +7500,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      */
     void dress(List<Branch> lines) {
         if(lines==null||lines.isEmpty())return;
-        timed(lines);toned(lines);
+        timed(lines);toned(lines);unseen(lines);
         Set<String> notes=new HashSet<>(),things=new HashSet<>();
         for(Branch one:lines)if(one.kind==Branch.Kind.PAGE)notes.add(one.id);else if(shelf(one.kind))things.add(one.id);
         Map<String,String[]> worn=looks("notes",notes);worn.putAll(looks("things",things));
@@ -6608,6 +7521,117 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         for(String table:new String[]{"things","notes"})
             try(Cursor c=getReadableDatabase().query(table,new String[]{"id","tone"},"tone>=0",null,null,null,null)){while(c.moveToNext())own.put(c.getString(0),c.getInt(1));}
         for(Branch one:lines)if(one.kind==Branch.Kind.PAGE||shelf(one.kind)){Integer tone=own.get(one.id);one.tone=tone!=null&&Tint.toned(tone)?tone:Tint.USUAL;}
+    }
+
+    /**
+     * The notes somebody else changed that have not been opened here since (the owner, 2026-10-14: "as we have the mention
+     * new on elements in Temp, let's have the same everywhere a change hasn't been viewed, on notes when an update is
+     * shared"), by id. Kept in this device's settings, as the files' "new" is kept on this device: never sent, nothing in a
+     * note's row, so a save that writes the whole row cannot undo it.
+     */
+    private static final String UNSEEN="unseen";
+
+    /** Changed here by somebody else, and not seen yet: it wears "new" until it is opened. */
+    void unseen(String note) {
+        if(note==null||note.isEmpty())return;
+        android.content.SharedPreferences kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
+        synchronized(ASKING) {
+            Set<String> next=new HashSet<>(kept.getStringSet(UNSEEN,new HashSet<String>()));
+            if(next.add(note))kept.edit().putStringSet(UNSEEN,next).apply();
+        }
+    }
+
+    /** Opened, or open as it changed: no longer new, nor updated. */
+    void seen(String note) {
+        if(note==null)return;
+        android.content.SharedPreferences kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
+        synchronized(ASKING) {
+            Set<String> next=new HashSet<>(kept.getStringSet(UNSEEN,new HashSet<String>()));
+            if(next.remove(note))kept.edit().putStringSet(UNSEEN,next).apply();
+            Set<String> mine=new HashSet<>(kept.getStringSet(UPDATED,new HashSet<String>()));
+            if(mine.remove(note))kept.edit().putStringSet(UPDATED,mine).apply();
+        }
+    }
+
+    /**
+     * Changed on another of the owner's own devices and not opened here since (the owner, 2026-10-19: "we have to display
+     * clearly the updated folder and note: when I push an update from the laptop, the updated notes on phones should present
+     * it in their icon; maybe we need one more icon with the check mark to illustrate something freshly updated"; decision
+     * 220). Kept beside "new", in this device's settings, and cleared as a note is opened.
+     */
+    private static final String UPDATED="updated";
+    void updatedHere(String note) {
+        if(note==null||note.isEmpty())return;
+        android.content.SharedPreferences kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
+        synchronized(ASKING) {
+            Set<String> next=new HashSet<>(kept.getStringSet(UPDATED,new HashSet<String>()));
+            if(next.add(note))kept.edit().putStringSet(UPDATED,next).apply();
+        }
+    }
+    Set<String> updatedNotes(){return new HashSet<>(where.getSharedPreferences("settings",Context.MODE_PRIVATE).getStringSet(UPDATED,new HashSet<String>()));}
+
+    /** The notes that wear "new", by id. */
+    Set<String> unseenNotes() {
+        return new HashSet<>(where.getSharedPreferences("settings",Context.MODE_PRIVATE).getStringSet(UNSEEN,new HashSet<String>()));
+    }
+
+    /**
+     * Which lines are new: a note somebody else changed, not opened since, and every folder it is in, however deep; and every
+     * folder a file that came and was not opened yet is in (the owner, 2026-10-14: "to guide the user it should be at the
+     * folder level too").
+     */
+    private void unseen(List<Branch> lines) {
+        // Updated on another of my own devices (decision 220): ✓ on the note and the folders it is in, where nothing says new.
+        Set<String> mine=updatedNotes();
+        if(!mine.isEmpty()) {
+            Set<String> inside=new HashSet<>();for(String note:mine)inside.addAll(above(note));
+            for(Branch one:lines)
+                if(one.kind==Branch.Kind.PAGE&&mine.contains(one.id)||shelf(one.kind)&&inside.contains(one.id))one.updated=true;
+        }
+        Set<String> notes=unseenNotes();
+        boolean any=false;
+        for(Branch one:lines)if(shelf(one.kind)){any=true;break;}
+        Set<String> folders=any?foldersWithNew(notes):new HashSet<>();
+        if(notes.isEmpty()&&folders.isEmpty())return;
+        for(Branch one:lines) {
+            if(one.kind==Branch.Kind.PAGE&&notes.contains(one.id))one.fresh=true;
+            else if(shelf(one.kind)&&folders.contains(one.id))one.fresh=true;
+        }
+    }
+
+    /** The folders anything new is in, however deep: a note somebody else changed, a file that came, neither opened since. */
+    private Set<String> foldersWithNew(Set<String> notes) {
+        Set<String> folders=new HashSet<>();
+        for(String note:notes)folders.addAll(above(note));
+        Tree tree=null;
+        for(String in:ids(getReadableDatabase(),"SELECT note FROM files WHERE fresh=1 AND gone=0 AND accepted=1 AND "+heldIs(Branch.Kind.COLLECTION))) {
+            if(in==null||home(in))continue;
+            if(tree==null)tree=tree();
+            folders.add(in);folders.addAll(tree.above(in));
+        }
+        return folders;
+    }
+
+    /**
+     * What is new here: files that came and notes somebody else changed, not opened since, files first, the newest first.
+     * What the "new" at the top of Home lists, each a tap from being opened (the owner, 2026-10-14).
+     */
+    List<Branch> whatIsNew() {
+        List<Branch> out=new ArrayList<>(filesWhere("fresh=1","added DESC",null));
+        for(String id:unseenNotes()) {
+            Note n=get(id);
+            if(n==null||n.deleted||n.archived)continue;
+            out.add(new Branch(Branch.Kind.PAGE,n.id,n.book,n.heading(),"",0,0,false,n.colour));
+        }
+        return out;
+    }
+
+    /** Whether anything in Temp is new: what its tile says, as a folder with something new in it says. */
+    boolean tempHasNew() {
+        List<Branch> in=temporary(System.currentTimeMillis());
+        unseen(in);
+        for(Branch one:in)if(one.fresh)return true;
+        return false;
     }
 
     /** Which lines are temporary (decision 71), so each wears its timer wherever it is drawn (decision 93). */
@@ -6692,6 +7716,10 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * on. Kept as a string, as the PC keeps every setting, so both apps read it here.
      */
     static final String TEMP_ON_HOME="tempOnHome";
+    /** Whether Read me stands on Home: yes unless switched off in Show on Home (decision 214). */
+    boolean readMeOnHome(){return !"false".equals(where.getSharedPreferences("settings",Context.MODE_PRIVATE).getString(READ_ME_ON_HOME,"true"));}
+    void setReadMeOnHome(boolean on){where.getSharedPreferences("settings",Context.MODE_PRIVATE).edit().putString(READ_ME_ON_HOME,String.valueOf(on)).apply();}
+    static final String READ_ME_ON_HOME="show_readme";
     boolean tempOnHome(){return "true".equals(where.getSharedPreferences("settings",Context.MODE_PRIVATE).getString(TEMP_ON_HOME,"false"));}
     /** Switched, and so for those already here: each temporary file from my other devices shown in Temp or on Home moves. */
     void setTempOnHome(boolean on) {
@@ -6706,6 +7734,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
 
     /** Shared with me, the place (decision 94): its id, which a file's {@code shown} names when it shows there. */
     static final String SHARED="shared-with-me";
+    /** Messages, the place (decision 145): brief messages with the people paired here. */
+    static final String MESSAGES="messages";
 
     // ---- Temp, Recent, and what is on its way (docs/HOME.md, decisions 70 to 73) ----------------------------------------
 
@@ -6829,13 +7859,36 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     /** A note or a collection opened here, now: what Recent lists. Never sent. */
     void touch(Branch.Kind kind,String id) {
         if((kind!=Branch.Kind.PAGE&&!shelf(kind))||id==null||home(id))return;
+        // Opened, so what somebody else changed in it has been seen.
+        if(kind==Branch.Kind.PAGE)seen(id);
         ContentValues v=new ContentValues();v.put("touched",System.currentTimeMillis());
         getWritableDatabase().update(table(kind),v,"id=?",new String[]{id});
+    }
+
+    /**
+     * A note or a folder taken out of Recent (the owner, 2026-10-11: "the option to take the element out of Recent"; decision
+     * 154): kept on this device with when, so it is back once it is opened or written in again after that.
+     */
+    void outOfRecent(String id) {
+        if(id==null||id.isEmpty())return;
+        Map<String,Long> out=outOfRecent();out.put(id,System.currentTimeMillis());
+        StringBuilder kept=new StringBuilder();long old=System.currentTimeMillis()-90L*86_400_000L;
+        for(Map.Entry<String,Long> one:out.entrySet())if(one.getValue()>old)kept.append(one.getKey()).append('\t').append(one.getValue()).append('\n');
+        where.getSharedPreferences("settings",Context.MODE_PRIVATE).edit().putString("recentOut",kept.toString()).apply();
+    }
+    private Map<String,Long> outOfRecent() {
+        Map<String,Long> out=new HashMap<>();
+        for(String line:where.getSharedPreferences("settings",Context.MODE_PRIVATE).getString("recentOut","").split("\n")) {
+            String[] part=line.split("\t");
+            if(part.length==2)try{out.put(part[0],Long.parseLong(part[1]));}catch(NumberFormatException damaged){/* left out */}
+        }
+        return out;
     }
 
     /** What was opened or written in since {@code since}, the latest first: notes and collections, at most fifty. */
     List<Branch> recent(long since) {
         List<Object[]> found=new ArrayList<>();
+        Map<String,Long> taken=outOfRecent();
         Tree tree=tree();
         try(Cursor c=getReadableDatabase().rawQuery("SELECT id,name,parent,tint,touched FROM things WHERE touched>=? AND "+LIVE+" ORDER BY touched DESC LIMIT 50",
                 new String[]{String.valueOf(since)})) {
@@ -6843,6 +7896,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 List<String> up=tree.above(c.getString(0));
                 // Inside something waiting to be accepted, or put away, it is not to be seen (decision 109).
                 if(!tree.live(up))continue;
+                if(taken.getOrDefault(c.getString(0),0L)>=c.getLong(4))continue;
                 found.add(new Object[]{c.getLong(4),new Branch(Branch.Kind.COLLECTION,c.getString(0),c.getString(2),c.getString(1),
                     up.isEmpty()?"folder on Home":"folder in "+tree.names(up),0,0,true,c.getInt(3))});
             }
@@ -6855,6 +7909,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 // A note that arrived in a folder still waiting to be accepted is new, and still not to be seen (decision 109).
                 if(!tree.live(tree.aboveIn(page.book)))continue;
                 long at=Math.max(page.updated,whole(c,"touched",0));
+                if(taken.getOrDefault(page.id,0L)>=at)continue;
                 found.add(new Object[]{at,new Branch(Branch.Kind.PAGE,page.id,page.book,page.heading(),
                     home(page.book)?"note on Home":"note in "+bookName(page.book),0,0,false,page.colour)});
             }
@@ -6908,7 +7963,13 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
 
     /** Puts one thing away, or takes it out again. What it holds goes with it, still inside it. */
     void putAway(Branch.Kind kind,String id,boolean bin,boolean away) {
-        if(kind==Branch.Kind.FILE){ContentValues v=new ContentValues();v.put("away",away?(bin?2:1):0);getWritableDatabase().update("files",v,"id=?",new String[]{id});return;}
+        if(kind==Branch.Kind.FILE) {
+            ContentValues v=new ContentValues();v.put("away",away?(bin?2:1):0);getWritableDatabase().update("files",v,"id=?",new String[]{id});
+            // Its note's list goes out again: in the bin, it is taken out of the note everywhere; put back, it is there again.
+            String note=parentOf("files","note",id);java.util.function.Consumer<String> out=filesOut;
+            if(out!=null&&note!=null&&!home(note))out.accept(note);
+            return;
+        }
         ContentValues v=new ContentValues();v.put(bin?(kind==Branch.Kind.PAGE?"deleted":"binned"):"archived",away?1:0);
         getWritableDatabase().update(table(kind),v,"id=?",new String[]{id});
     }
@@ -7014,6 +8075,12 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             }
         }
         away.addAll(filesWhere("away="+(bin?2:1),"added DESC",null));
+        // And a note's own files put there: said with the note they came out of, and put back into it (decision 193).
+        try(Cursor c=getReadableDatabase().query("files",FILE_ROW,"away=? AND gone=0 AND "+heldIs(Branch.Kind.PAGE),
+                new String[]{String.valueOf(bin?2:1)},null,null,"added DESC")) {
+            while(c.moveToNext()){Held file=held(c);Note in=get(file.note);
+                away.add(fileLine(file,file.note,in==null?"file":"file from “"+in.heading()+"”"));}
+        }
         return away;
     }
 
@@ -7109,12 +8176,26 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         }
         Contact(String address,String name,boolean mine,String contact,byte[] agreement,byte[] signing,String person,long named,String via,
                 String parlons,long parlonsDecided) {
+            this(address,name,mine,contact,agreement,signing,person,named,via,parlons,parlonsDecided,"","",false,false,0);
+        }
+        Contact(String address,String name,boolean mine,String contact,byte[] agreement,byte[] signing,String person,long named,String via,
+                String parlons,long parlonsDecided,String sharedName,String picked,boolean showPicked,boolean pickedHere,long pickedAt) {
             this.address=address;this.name=name;this.mine=mine;this.contact=contact;
             this.agreement=agreement;this.signing=signing;this.person=person==null?"":person;this.named=named;
             this.via=via==null?"":via;this.parlons=parlons==null?"":parlons;this.parlonsDecided=parlonsDecided;
+            this.sharedName=sharedName==null?"":sharedName;this.picked=picked==null?"":picked;
+            this.showPicked=showPicked;this.pickedHere=pickedHere;this.pickedAt=pickedAt;
         }
         /** Their Parlons! address, empty where none is set, and when that was decided (see {@link Parlons}, decision 101). */
         final String parlons; final long parlonsDecided;
+        /**
+         * The name they share, and the name we pick for them (decision 124). {@code showPicked} is which one is shown.
+         * {@code pickedHere} keeps the name we pick on this device only. {@code pickedAt} is when that was decided.
+         * Empty and off for a device that has only the name it arrived with, which is then what {@link #name} shows.
+         */
+        final String sharedName,picked; final boolean showPicked,pickedHere; final long pickedAt;
+        /** The name they share: the one kept for that, or the name the row shows where none has been set apart yet. */
+        String shared(){return sharedName==null||sharedName.isEmpty()?name:sharedName;}
         /** How it came to be known here: empty for a code scanned or a device connected, {@link Linking#VIA} for a list. */
         final String via;
         /** Whether this device can be sealed for: an address alone is somewhere to send nothing. */
@@ -7156,7 +8237,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             unwritten(c.getString(c.getColumnIndexOrThrow("signing"))),
             c.getString(c.getColumnIndexOrThrow("person")),c.getLong(c.getColumnIndexOrThrow("named")),
             c.getString(c.getColumnIndexOrThrow("via")),
-            c.getString(c.getColumnIndexOrThrow("parlons")),c.getLong(c.getColumnIndexOrThrow("parlonsDecided")));
+            c.getString(c.getColumnIndexOrThrow("parlons")),c.getLong(c.getColumnIndexOrThrow("parlonsDecided")),
+            said(c,"sharedName",""),said(c,"picked",""),whole(c,"showPicked",0)==1,whole(c,"pickedHere",0)==1,whole(c,"pickedAt",0));
     }
 
     private static byte[] unwritten(String kept) {
@@ -7175,6 +8257,9 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * every test of "is this the same device?" says no — which is how a phone ended up filed twice, once
      * under an address nothing can be sent to. So whichever shape arrives, one shape is written down.
      */
+    /** A key in the one form this table keeps them in, for a card that names a device by its signing key. */
+    String keyOf(byte[] raw){return canonical(raw);}
+
     private static String canonical(byte[] raw) {
         if(raw==null||raw.length==0)return "";
         try{return written(Point.read(raw).getEncoded());}
@@ -7237,7 +8322,15 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             // A device of yours already named among your devices keeps that name: its code carries your name,
             // which is what other people see, not what your own devices call it.
             boolean ownName=already!=null&&already.mine&&already.named>0;
-            v.put("address",address);v.put("name",ownName?already.name:name);
+            String shared=already!=null&&!already.sharedName.isEmpty()?already.sharedName:(ownName?already.name:name);
+            if(shared==null)shared="";
+            v.put("address",address);
+            v.put("name",already!=null&&already.showPicked&&!already.picked.isEmpty()?already.picked:ownName?already.name:name);
+            v.put("sharedName",shared);
+            v.put("picked",already==null?"":already.picked);
+            v.put("showPicked",already!=null&&already.showPicked?1:0);
+            v.put("pickedHere",already!=null&&already.pickedHere?1:0);
+            v.put("pickedAt",already==null?0:already.pickedAt);
             v.put("named",ownName?already.named:0);v.put("person",already==null?"":already.person);
             // Whether this is a device of yours was said once, deliberately, and a re-scan is not the
             // moment to quietly change it back.
@@ -7304,6 +8397,18 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 if(latest!=null&&latest.parlonsDecided>0) {
                     ContentValues parlons=new ContentValues();parlons.put("parlons",latest.parlons);parlons.put("parlonsDecided",latest.parlonsDecided);
                     db.update("addresses",parlons,"address=?",new String[]{keep});
+                }
+                // And the latest name we picked for it, which is the person's, not the row's (decision 124).
+                Contact called=null;
+                for(String other:same){Contact row=address(other);if(row!=null&&(called==null||row.pickedAt>called.pickedAt))called=row;}
+                if(called!=null&&called.pickedAt>0) {
+                    Contact kept=address(keep);
+                    String shared=kept==null||kept.sharedName.isEmpty()?(kept==null?"":kept.name):kept.sharedName;
+                    ContentValues pick=new ContentValues();
+                    pick.put("picked",called.picked);pick.put("showPicked",called.showPicked?1:0);
+                    pick.put("pickedHere",called.pickedHere?1:0);pick.put("pickedAt",called.pickedAt);
+                    pick.put("name",Called.display(shared,called.picked,called.showPicked));
+                    db.update("addresses",pick,"address=?",new String[]{keep});
                 }
                 for(String other:same) {
                     if(other.equals(keep))continue;
@@ -7495,12 +8600,33 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     void addAddress(String address,String name,boolean mine) {
         if(address==null||address.trim().isEmpty())
             throw new IllegalArgumentException("That code carried no address to send to.");
+        Contact already=address(address.trim());
         ContentValues v=new ContentValues();v.put("address",address);v.put("name",name);
+        String shared=already!=null&&!already.sharedName.isEmpty()?already.sharedName:(name==null?"":name);
+        v.put("sharedName",shared);
+        if(already!=null) {
+            v.put("picked",already.picked);v.put("showPicked",already.showPicked?1:0);
+            v.put("pickedHere",already.pickedHere?1:0);v.put("pickedAt",already.pickedAt);
+            if(already.showPicked&&!already.picked.isEmpty())v.put("name",already.picked);
+        }
         v.put("mine",mine?1:0);v.put("added",System.currentTimeMillis());
         if(getWritableDatabase().insertWithOnConflict("addresses",null,v,SQLiteDatabase.CONFLICT_REPLACE)<0)
             throw new IllegalStateException("Could not save the address");
     }
     void removeAddress(String address){getWritableDatabase().delete("addresses","address=?",new String[]{address});}
+
+    /**
+     * Remove this person, its first half (decision 163: "off everything I shared with them, out of my people, and they are
+     * told; with a question"): every thing given to them on its own that this device may change, taken off, as Take off
+     * does each. What is given them through a group stays the group's. The things taken off, to be told about.
+     */
+    List<Sharing.Rule> offEverything(String address) {
+        List<Sharing.Rule> off=new ArrayList<>();
+        long now=System.currentTimeMillis();
+        for(Sharing.Rule rule:shares())
+            if(rule.address.equals(address)&&rule.level!=Sharing.Level.GONE&&!ownerOf(rule)&&mayChange(rule)){decide(rule,Sharing.Level.GONE,now);off.add(rule);}
+        return off;
+    }
 
     /**
      * Whether an address is another device of yours. It decides which way things travel — both ways with
@@ -7524,13 +8650,18 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      */
     boolean ownDeviceNamed(byte[] signing,String name,long decided) {
         if(name==null||name.trim().isEmpty())return false;
-        ContentValues v=new ContentValues();v.put("name",name.trim());v.put("named",decided);
+        String shared=name.trim();
         // Every row filed under its key, not only the first, so no row of it is left with the old name. True only
-        // where something changed, so the same card twice says nothing new.
+        // where something changed, so the same card twice says nothing new. The name they share moves. The name we
+        // pick stays, and keeps being the one shown where that was chosen (decision 124).
         int changed=0;
-        for(String address:everyAddressOf(signing))
-            changed+=getWritableDatabase().update("addresses",v,"address=? AND (name<>? OR named<>?)",
-                new String[]{address,name.trim(),Long.toString(decided)});
+        for(String address:everyAddressOf(signing)) {
+            Contact row=address(address);
+            String shown=Called.display(shared,row==null?"":row.picked,row!=null&&row.showPicked);
+            ContentValues v=new ContentValues();v.put("sharedName",shared);v.put("named",decided);v.put("name",shown);
+            changed+=getWritableDatabase().update("addresses",v,"address=? AND (name<>? OR sharedName<>? OR named<>?)",
+                new String[]{address,shown,shared,Long.toString(decided)});
+        }
         return changed>0;
     }
 
@@ -7745,7 +8876,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     }
 
     /**
-     * This owner's other devices, which have the thing through the bond between them (Connect my other device) and so
+     * This owner's other devices, which have the thing through the bond between them (Add my device) and so
      * have no row on the thing itself: on the list as this device is, at what it may do here, as the weakest decision.
      * Left off, nobody the thing was shared with ever heard of them - the owner, 2026-10-03: the grocery list went
      * between Parisa and the laptop that shared it, and never between Parisa and his phones, whose asking to link she
@@ -7884,6 +9015,18 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     }
 
     /** The devices linked through a list that have not answered yet: nothing of anything goes to them until they do. */
+    /** Whether a device ever answered about anything here: one that never did cannot be said to have an old Mininotes. */
+    boolean everHeard(String address) {
+        try(Cursor c=getReadableDatabase().query("sent",new String[]{"at"},"address=? AND at>0",new String[]{address},null,null,null,"1")){return c.moveToFirst();}
+    }
+
+    /** When this device began waiting for one linked through a list to answer; 0 for one it is not waiting for. */
+    long linkingSince(String address) {
+        try(Cursor c=getReadableDatabase().query("accepting",new String[]{"at"},"scope=? AND address=?",new String[]{Linking.SCOPE,address},null,null,null,"1")) {
+            return c.moveToFirst()?c.getLong(0):0;
+        }
+    }
+
     Set<String> linkingNow() {
         Set<String> waiting=new HashSet<>();
         try(Cursor c=getReadableDatabase().query("accepting",new String[]{"address"},"scope=?",new String[]{Linking.SCOPE},
@@ -8547,6 +9690,201 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         return kept;
     }
 
+    // ---- brief messages, for the Inbox (Message; decision 145) -----------------------------------------------------------
+
+    /** One message, as the notebook keeps it. */
+    static final class Said {
+        final String id,address,words,parlons; final boolean outgoing,delivered,seen; final int kind,tries; final long at,handedAt;
+        Said(String id,String address,boolean outgoing,int kind,String words,String parlons,long at,boolean delivered,boolean seen,int tries,long handedAt) {
+            this.id=id;this.address=address;this.outgoing=outgoing;this.kind=kind;this.words=words==null?"":words;this.parlons=parlons==null?"":parlons;
+            this.at=at;this.delivered=delivered;this.seen=seen;this.tries=tries;this.handedAt=handedAt;
+        }
+        /** What it says on a line. */
+        String line(){return Message.said(kind,words);}
+    }
+
+    private static Said said(Cursor c) {
+        return new Said(c.getString(c.getColumnIndexOrThrow("id")),c.getString(c.getColumnIndexOrThrow("address")),
+            c.getInt(c.getColumnIndexOrThrow("outgoing"))!=0,c.getInt(c.getColumnIndexOrThrow("kind")),
+            c.getString(c.getColumnIndexOrThrow("words")),c.getString(c.getColumnIndexOrThrow("parlons")),
+            c.getLong(c.getColumnIndexOrThrow("at")),c.getInt(c.getColumnIndexOrThrow("delivered"))!=0,
+            c.getInt(c.getColumnIndexOrThrow("seen"))!=0,c.getInt(c.getColumnIndexOrThrow("tries")),c.getLong(c.getColumnIndexOrThrow("handedAt")));
+    }
+
+    /**
+     * A message kept: one written here, to go, or one that arrived. Kept once by its id: a second arrival of the same one,
+     * its answer having gone astray, changes nothing. Whether it was new.
+     */
+    boolean keepMessage(String id,String address,boolean outgoing,int kind,String words,String parlons,long at) {
+        if(id==null||id.isEmpty()||address==null||address.isEmpty())throw new IllegalArgumentException("A message needs an id and a person.");
+        ContentValues v=new ContentValues();
+        v.put("id",id);v.put("address",address);v.put("outgoing",outgoing?1:0);v.put("kind",kind);
+        v.put("words",words==null?"":words);v.put("parlons",parlons==null?"":parlons);v.put("at",at);
+        v.put("delivered",0);v.put("seen",outgoing?1:0);
+        return getWritableDatabase().insertWithOnConflict("messages",null,v,SQLiteDatabase.CONFLICT_IGNORE)!=-1;
+    }
+
+    /** Its far end said it has it. */
+    void messageDelivered(String id){ContentValues v=new ContentValues();v.put("delivered",1);getWritableDatabase().update("messages",v,"id=? AND outgoing=1",new String[]{id});}
+
+    /** Handed on once more, now. */
+    void messageHanded(String id,long at){getWritableDatabase().execSQL("UPDATE messages SET tries=tries+1, handedAt=? WHERE id=?",new Object[]{at,id});}
+
+    /** One person's messages, both ways, oldest first. */
+    List<Said> messagesWith(String address) {
+        List<Said> all=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().query("messages",null,"address=?",new String[]{address},null,null,"at, id")){while(c.moveToNext())all.add(said(c));}
+        return all;
+    }
+
+    /** The latest message with each person, newest first: the Inbox's list. */
+    List<Said> threads() {
+        List<Said> all=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT * FROM messages m WHERE at=(SELECT MAX(at) FROM messages WHERE address=m.address) "
+            +"GROUP BY address ORDER BY at DESC",null)){while(c.moveToNext())all.add(said(c));}
+        return all;
+    }
+
+    /** How many messages came that have not been seen, from anybody, or from one person. */
+    int unseenMessages(){try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(*) FROM messages WHERE outgoing=0 AND seen=0",null)){return c.moveToFirst()?c.getInt(0):0;}}
+    int unseenFrom(String address){try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(*) FROM messages WHERE outgoing=0 AND seen=0 AND address=?",new String[]{address})){return c.moveToFirst()?c.getInt(0):0;}}
+
+    /** Everything from one person seen. */
+    void seenFrom(String address){ContentValues v=new ContentValues();v.put("seen",1);getWritableDatabase().update("messages",v,"address=? AND outgoing=0",new String[]{address});}
+
+    /** Messages written here that their far end has not said it has: what is handed on again. */
+    List<Said> undeliveredMessages() {
+        List<Said> all=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().query("messages",null,"outgoing=1 AND delivered=0",null,null,null,"at")){while(c.moveToNext())all.add(said(c));}
+        return all;
+    }
+
+    /** One message, or null. */
+    Said message(String id) {
+        try(Cursor c=getReadableDatabase().query("messages",null,"id=?",new String[]{id},null,null,null)){return c.moveToFirst()?said(c):null;}
+    }
+
+    /** This person's own Parlons! address, kept here to answer with, or empty. */
+    String myParlons() {
+        try(Cursor c=getReadableDatabase().query("mine",new String[]{"value"},"key='parlons'",null,null,null,null)){return c.moveToFirst()?c.getString(0):"";}
+    }
+
+    /** Kept, checked as any Parlons! address is, and when; empty forgets it. Returns what was kept. */
+    String setMyParlons(String value){return setMyParlons(value,System.currentTimeMillis());}
+    String setMyParlons(String value,long decided) {
+        String kept=value==null||value.trim().isEmpty()?"":Parlons.address(value);
+        ContentValues v=new ContentValues();v.put("key","parlons");v.put("value",kept);
+        getWritableDatabase().insertWithOnConflict("mine",null,v,SQLiteDatabase.CONFLICT_REPLACE);
+        ContentValues at=new ContentValues();at.put("key","parlonsAt");at.put("value",String.valueOf(decided));
+        getWritableDatabase().insertWithOnConflict("mine",null,at,CONFLICT_REPLACE_);
+        return kept;
+    }
+    private static final int CONFLICT_REPLACE_=SQLiteDatabase.CONFLICT_REPLACE;
+
+    /** When this person's own address was last decided, here or on another of their devices; 0 for never. */
+    long myParlonsAt() {
+        try(Cursor c=getReadableDatabase().query("mine",new String[]{"value"},"key='parlonsAt'",null,null,null,null)) {
+            try{return c.moveToFirst()?Long.parseLong(c.getString(0)):0;}catch(NumberFormatException no){return 0;}
+        }
+    }
+
+    /** This person's own address as a card, by this device's key: what goes to the people paired here (decision 147). */
+    Parlons.Card myParlonsCard(){return new Parlons.Card(canonical(mySigningKey),myParlons(),myParlonsAt());}
+
+    /** Whether a card is about the device that sent it: a person giving their own address, not one about somebody else. */
+    boolean aboutSender(Contact from,Parlons.Card card){return from!=null&&card!=null&&!card.key.isEmpty()&&canonical(from.signing).equals(card.key);}
+
+    /** Your own address, decided on another of your devices: kept where it is later than what is here. Whether it changed. */
+    boolean takeMyParlons(Parlons.Card card) {
+        if(card==null||!Parlons.later(card.decided,myParlonsAt()))return false;
+        try{setMyParlons(card.address,card.decided);return true;}catch(IllegalArgumentException notOne){return false;}
+    }
+
+    // ---- a person's picture: see Face (decision 158) ----------------------------------------------------------------------
+
+    /** This person's own picture, as it goes to everybody paired; null for none. */
+    byte[] myFace(){return picture(mineValue("face"));}
+    /** When it was last decided, here or on another of their devices; 0 for never. */
+    long myFaceAt(){try{return Long.parseLong(mineValue("faceAt"));}catch(NumberFormatException never){return 0;}}
+    private String mineValue(String key) {
+        try(Cursor c=getReadableDatabase().query("mine",new String[]{"value"},"key=?",new String[]{key},null,null,null)){return c.moveToFirst()?c.getString(0):"";}
+    }
+    private void mineValue(String key,String value) {
+        ContentValues v=new ContentValues();v.put("key",key);v.put("value",value);
+        getWritableDatabase().insertWithOnConflict("mine",null,v,SQLiteDatabase.CONFLICT_REPLACE);
+    }
+    /** Your picture set, or taken off with null, decided now or at {@code decided}. */
+    void setMyFace(byte[] thumb){setMyFace(thumb,System.currentTimeMillis());}
+    void setMyFace(byte[] thumb,long decided) {
+        if(thumb!=null&&thumb.length>0&&!Thumb.takes(thumb))throw new IllegalArgumentException(Thumb.fits(thumb)?"That is not a picture Mininotes can show.":"That picture is too big to keep.");
+        mineValue("face",kept(thumb));mineValue("faceAt",String.valueOf(decided));
+    }
+    /** Your picture as a card, by this device's key. */
+    Face.Card myFaceCard(){byte[] mine=myFace();return new Face.Card(canonical(mySigningKey),mine,myFaceAt());}
+
+    /** This device's own signing key, in the one form cards carry it. */
+    String myKeyCanonical(){return mySigningKey==null?"":canonical(mySigningKey);}
+    /** Whether a card about whose a device is, is about the device that sent it. */
+    boolean aboutSender(Contact from,AboutMe.Card card){return from!=null&&card!=null&&!card.key.isEmpty()&&canonical(from.signing).equals(card.key);}
+
+    /**
+     * Whose a contact's device is, by their person id, from that device's own card (see AboutMe): kept in the settings, by
+     * address, beside the notebook and not in it. Whether it changed.
+     */
+    boolean belongsTo(String address,String person) {
+        if(address==null||!Persons.isId(person))return false;
+        android.content.SharedPreferences kept=where.getSharedPreferences("persons",0);
+        if(person.equals(kept.getString(address,"")))return false;
+        kept.edit().putString(address,person).apply();
+        return true;
+    }
+    /** Whose a contact's device is, as its card said; empty where it never said. */
+    String personOf(String address){return address==null?"":where.getSharedPreferences("persons",0).getString(address,"");}
+    /** Whether a picture card is about the device that sent it. */
+    boolean aboutSender(Contact from,Face.Card card){return from!=null&&card!=null&&!card.key.isEmpty()&&canonical(from.signing).equals(card.key);}
+    /** Your own picture, decided on another of your devices: kept where it is later. Whether it changed. */
+    boolean takeMyFace(Face.Card card) {
+        if(card==null||card.decided<=myFaceAt())return false;
+        setMyFace(card.removed()?null:card.picture,card.decided);return true;
+    }
+    /** A person's own picture, from them: on every row their device is filed under, where it was decided later. Whether it changed. */
+    boolean takeFace(Face.Card card) {
+        if(card==null)return false;
+        List<String> rows;
+        try{rows=everyAddressOf(java.util.Base64.getDecoder().decode(card.key));}catch(IllegalArgumentException notAKey){return false;}
+        if(rows.isEmpty())return false;
+        long had=0;
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT MAX(faceDecided) FROM addresses WHERE address IN ("+String.join(",",java.util.Collections.nCopies(rows.size(),"?"))+")",rows.toArray(new String[0]))){if(c.moveToFirst())had=c.getLong(0);}
+        if(card.decided<=had)return false;
+        ContentValues v=new ContentValues();v.put("face",kept(card.removed()?null:card.picture));v.put("faceDecided",card.decided);
+        for(String one:rows)getWritableDatabase().update("addresses",v,"address=?",new String[]{one});
+        return true;
+    }
+    /**
+     * The picture a person wears here: the one picked for them on this device, else the one they gave; null for none. Null
+     * address: yours.
+     */
+    byte[] faceOf(String address) {
+        if(address==null)return myFace();
+        try(Cursor c=getReadableDatabase().query("addresses",new String[]{"faceHere","face"},"address=?",new String[]{address},null,null,null,"1")) {
+            if(!c.moveToFirst())return null;
+            byte[] here=picture(c.getString(0));
+            return here!=null?here:picture(c.getString(1));
+        }
+    }
+    /** Whether the picture a person wears here was picked on this device. */
+    boolean faceIsPickedHere(String address) {
+        try(Cursor c=getReadableDatabase().query("addresses",new String[]{"faceHere"},"address=?",new String[]{address},null,null,null,"1")){return c.moveToFirst()&&picture(c.getString(0))!=null;}
+    }
+    /** A picture picked for a person on this device, or taken off with null: on every row their device is filed under. Never sent. */
+    void setFaceHere(String address,byte[] thumb) {
+        if(thumb!=null&&thumb.length>0&&!Thumb.takes(thumb))throw new IllegalArgumentException(Thumb.fits(thumb)?"That is not a picture Mininotes can show.":"That picture is too big to keep.");
+        Contact who=address(address);
+        List<String> rows=who!=null&&who.signing.length>0?everyAddressOf(who.signing):List.of(address);
+        ContentValues v=new ContentValues();v.put("faceHere",kept(thumb));
+        for(String one:rows)getWritableDatabase().update("addresses",v,"address=?",new String[]{one});
+    }
+
     /** A person's Parlons! address, empty where none is set or they are not here. */
     String parlons(String address) {
         Contact who=address==null?null:address(address);
@@ -8590,6 +9928,78 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             db.setTransactionSuccessful();
         } finally {db.endTransaction();}
         return ParlonsTaken.TAKEN;
+    }
+
+    // ---- the name we pick for a person or a device: see Called (decision 124) ---------------------------------------
+
+    /**
+     * The name we pick for a person, or none, and whether it is the one shown. {@code onlyHere} keeps it on this device.
+     * Decided at {@code decided}. On every row their device is filed under. The name they share is left as it was, and
+     * copied off the name the row shows the first time, so picking a name does not forget what they called themselves.
+     */
+    void setCalled(String address,String picked,boolean showPicked,boolean onlyHere,long decided) {
+        Contact who=address(address);
+        if(who==null)throw new IllegalStateException("That person is no longer in People and devices.");
+        String ours=Called.clip(picked);
+        boolean show=showPicked&&!ours.isEmpty();
+        String shared=who.sharedName.isEmpty()?who.name:who.sharedName;
+        ContentValues v=new ContentValues();
+        v.put("sharedName",shared);v.put("picked",ours);v.put("showPicked",show?1:0);
+        v.put("pickedHere",onlyHere?1:0);v.put("pickedAt",decided);
+        v.put("name",Called.display(shared,ours,show));
+        List<String> rows=who.paired()?everyAddressOf(who.signing):new ArrayList<>();
+        if(!rows.contains(address))rows.add(address);
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try {
+            for(String one:rows)db.update("addresses",v,"address=?",new String[]{one});
+            db.setTransactionSuccessful();
+        } finally {db.endTransaction();}
+    }
+
+    /** The name we pick, as a card carries it, or null for a device never paired or never decided. */
+    Called.Card calledCard(String address) {
+        Contact who=address(address);
+        if(who==null||!who.paired()||who.pickedAt<=0)return null;
+        return new Called.Card(canonical(who.signing),who.picked,who.showPicked,who.pickedAt);
+    }
+
+    /** What became of a card from another device of yours. */
+    enum CalledTaken{TAKEN,OLDER,KEPT_HERE,UNKNOWN}
+
+    /**
+     * A card from another device of yours: kept where it was decided later, on every row of that device. A name kept on
+     * this device only is left as it is. Somebody not known here is not made up from it.
+     */
+    CalledTaken takeCalled(Called.Card card) {
+        if(card==null)return CalledTaken.UNKNOWN;
+        List<String> rows;
+        try{rows=everyAddressOf(java.util.Base64.getDecoder().decode(card.key));}catch(IllegalArgumentException notAKey){return CalledTaken.UNKNOWN;}
+        if(rows.isEmpty())return CalledTaken.UNKNOWN;
+        boolean keptHere=false,older=false,wrote=false;
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try {
+            for(String one:rows) {
+                Contact who=address(one);
+                if(who==null)continue;
+                if(who.pickedHere&&who.pickedAt>0){keptHere=true;continue;}
+                if(!Called.later(card.decided,who.pickedAt)){older=true;continue;}
+                String shared=who.sharedName.isEmpty()?who.name:who.sharedName;
+                ContentValues v=new ContentValues();
+                v.put("sharedName",shared);v.put("picked",Called.clip(card.picked));
+                v.put("showPicked",card.showPicked&&!Called.clip(card.picked).isEmpty()?1:0);
+                v.put("pickedAt",card.decided);
+                v.put("name",Called.display(shared,card.picked,card.showPicked));
+                db.update("addresses",v,"address=?",new String[]{one});
+                wrote=true;
+            }
+            db.setTransactionSuccessful();
+        } finally {db.endTransaction();}
+        if(wrote)return CalledTaken.TAKEN;
+        if(keptHere)return CalledTaken.KEPT_HERE;
+        if(older)return CalledTaken.OLDER;
+        return CalledTaken.UNKNOWN;
     }
 
     // ---- backups -----------------------------------------------------------------------------------------

@@ -108,6 +108,11 @@ final class IconFace extends Drawable {
      *
      * @param ring the ring's colour, or 0 for none
      */
+    /** A glyph alone, filling where it sits: a menu row's symbol (decision 157). */
+    static IconFace symbol(MainActivity a,String glyph,int ink) {
+        return new IconFace(Looks.Shows.GLYPH,0,0,0,a.dp(12),a.dp(40),glyph,ink,0.92f,null,0,0,0,0,0,0,0);
+    }
+
     static IconFace bare(MainActivity a,String glyph,int ink,int ring) {
         return new IconFace(Looks.Shows.GLYPH,ring==0?0:a.PAPER,ring,ring==0?0:a.dp(2),a.dp(12),a.dp(40),glyph,ink,0.5f,
             null,0,0,0,0,0,0,0);

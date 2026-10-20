@@ -25,6 +25,10 @@ final class DesktopBackup {
      * written to disk plain: it is sealed as it is made.
      */
     static void write(NoteStore store,Path target,byte[] key,byte[] lock,Slots pages) throws Exception {
+        if(!DesktopRecovery.all(store).isEmpty())throw new IllegalStateException("Recovery writing is pending. Export its full text or make a locked writing backup; portable backups cover saved notes only.");
+        writeSaved(store,target,key,lock,pages);
+    }
+    static void writeSaved(NoteStore store,Path target,byte[] key,byte[] lock,Slots pages) throws Exception {
         Path temp=Files.createTempFile(target.toAbsolutePath().getParent(),".mininotes-backup-",".tmp");
         var db=store.getWritableDatabase();db.beginTransaction();
         try {

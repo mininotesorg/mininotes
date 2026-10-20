@@ -83,10 +83,13 @@ final class DesktopLook {
             public int getIconWidth(){return size;}public int getIconHeight(){return size;}
             public void paintIcon(Component c,Graphics g0,int x,int y) {
                 Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
-                int in=chosen?3:1;
-                g.setColor(Tint.known(colour)?of(colour):DesktopUi.CARD);g.fillOval(x+in,y+in,size-2*in,size-2*in);
-                if(!Tint.known(colour)){g.setColor(DesktopUi.LINE.darker());g.setStroke(new BasicStroke(1f));g.drawOval(x+in,y+in,size-2*in-1,size-2*in-1);}
-                if(chosen){g.setColor(Desktop.INK);g.setStroke(new BasicStroke(1.6f));g.drawOval(x+1,y+1,size-3,size-3);}
+                g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL,RenderingHints.VALUE_STROKE_PURE);
+                // Round and ring about the one centre, in fractions of a pixel (the owner, 2026-10-18: "the circle around the
+                // selected colour is not perfectly aligned with the colour"): drawn in whole pixels they sat half a pixel apart.
+                float cx=x+size/2f,cy=y+size/2f,round=size/2f-(chosen?3f:1f),ring=size/2f-1.3f;
+                g.setColor(Tint.known(colour)?of(colour):DesktopUi.CARD);g.fill(new java.awt.geom.Ellipse2D.Float(cx-round,cy-round,2*round,2*round));
+                if(!Tint.known(colour)){g.setColor(DesktopUi.LINE.darker());g.setStroke(new BasicStroke(1f));g.draw(new java.awt.geom.Ellipse2D.Float(cx-round+0.5f,cy-round+0.5f,2*round-1,2*round-1));}
+                if(chosen){g.setColor(Desktop.INK);g.setStroke(new BasicStroke(1.6f));g.draw(new java.awt.geom.Ellipse2D.Float(cx-ring,cy-ring,2*ring,2*ring));}
                 g.dispose();
             }
         };
@@ -140,19 +143,19 @@ final class DesktopLook {
      * ring moves to the colour picked and the strength under it takes that colour, so it is chosen by looking.
      */
     static JMenu colours(int now,IntConsumer choose,IntSupplier tone,IntConsumer setTone) {
-        JMenu menu=new JMenu("Colour");
+        JMenu menu=new JMenu(Say.t("Colour"));DesktopMenus.symbol(menu,"Colour");
         int[] at={Tint.known(now)?now:Tint.NONE};
         JMenuItem[] lines=new JMenuItem[Tint.count()];
         JComponent strength=strength(()->at[0],tone,setTone);
         Runnable mark=()->{
-            menu.setIcon(Tint.known(at[0])?swatch(at[0],14,false):null);
+            if(Tint.known(at[0]))menu.setIcon(swatch(at[0],14,false));else DesktopMenus.symbol(menu,"Colour");
             for(int c=0;c<lines.length;c++){boolean chosen=c==at[0];lines[c].setIcon(swatch(c,18,chosen));lines[c].getAccessibleContext().setAccessibleName(Tint.NAMES[c]+(chosen?", chosen":""));}
             strength.repaint();
         };
         for(int c=0;c<Tint.count();c++) {
             final int colour=c;
             // A line with a round, not a radio button's dot: its model never turns on, so the ring is the one mark.
-            JRadioButtonMenuItem one=stays(new JRadioButtonMenuItem(Tint.NAMES[c]));one.setModel(new DefaultButtonModel());
+            JRadioButtonMenuItem one=stays(new JRadioButtonMenuItem(Say.t(Tint.NAMES[c])));one.setModel(new DefaultButtonModel());
             one.addActionListener(a->{if(at[0]==colour)return;at[0]=colour;mark.run();choose.accept(colour);});lines[c]=one;menu.add(one);
         }
         mark.run();
@@ -167,9 +170,9 @@ final class DesktopLook {
      * it back to the device's. The page moves as it is chosen, so it is chosen by looking.
      */
     static JMenu sizes(int own,int device,IntConsumer choose) {
-        JMenu menu=new JMenu("Text size");
+        JMenu menu=new JMenu(Say.t("Text size"));DesktopMenus.symbol(menu,"Text size");
         int[] now={own};
-        JCheckBoxMenuItem same=stays(new JCheckBoxMenuItem("Same as other notes",Reading.followsDevice(own)));
+        JCheckBoxMenuItem same=stays(new JCheckBoxMenuItem(Say.t("Same as other notes"),Reading.followsDevice(own)));DesktopMenus.symbol(same,"Same as other notes");
         JComponent ladder=ladder(()->Reading.of(now[0],device),rung->{now[0]=Reading.clamp(rung);choose.accept(now[0]);same.setSelected(false);});
         same.addActionListener(a->{if(Reading.followsDevice(now[0])){same.setSelected(true);return;}now[0]=Reading.NONE;choose.accept(Reading.NONE);});
         menu.add(ladder);menu.addSeparator();menu.add(same);
@@ -227,23 +230,30 @@ final class DesktopLook {
      * The reading ladder, as the phone draws it: A− and A+ either side of ten rungs, each rung taller than the
      * last and the ones up to the page's size filled. Every rung can be clicked; A− and A+ step one at a time.
      */
-    static JComponent ladder(IntSupplier rung,IntConsumer setRung) {
+    static JComponent ladder(IntSupplier rung,IntConsumer setRung){return ladder(PHONE.length,rung,setRung);}
+
+    /**
+     * The same with {@code count} rungs: the size of the whole app in My profile is set on the ladder a note's is (the owner,
+     * 2026-10-19: "let's use the same font scale we have in the menu to set the font size at the app level"; decision 209).
+     */
+    static JComponent ladder(int count,IntSupplier rung,IntConsumer setRung) {
+        java.util.function.IntUnaryOperator clamp=n->Math.max(0,Math.min(count-1,n));
         JPanel row=new JPanel(new BorderLayout(8,0));row.setOpaque(false);row.setBorder(BorderFactory.createEmptyBorder(4,10,4,10));
         JButton smaller=step("A−","Smaller text",14f),bigger=step("A+","Bigger text",19f);
         JPanel rungs=new JPanel(){
             {setOpaque(false);setPreferredSize(new Dimension(170,30));setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-             addMouseListener(new MouseAdapter(){public void mousePressed(MouseEvent e){int each=Math.max(1,getWidth()/PHONE.length);setRung.accept(clamp(e.getX()/each));}});}
+             addMouseListener(new MouseAdapter(){public void mousePressed(MouseEvent e){int each=Math.max(1,getWidth()/count);setRung.accept(clamp.applyAsInt(e.getX()/each));}});}
             @Override protected void paintComponent(Graphics g0) {
                 Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
-                int each=getWidth()/PHONE.length,at=rung.getAsInt();
-                for(int s=0;s<PHONE.length;s++){int high=7+s*2,x=s*each+each/2-1;g.setColor(s<=at?Desktop.ACCENT:DesktopUi.LINE);g.fillRoundRect(x,getHeight()-6-high,3,high,2,2);}
+                int each=getWidth()/count,at=rung.getAsInt();
+                for(int s=0;s<count;s++){int high=7+s*(18/Math.max(1,count-1)),x=s*each+each/2-1;g.setColor(s<=at?Desktop.ACCENT:DesktopUi.LINE);g.fillRoundRect(x,getHeight()-6-high,3,high,2,2);}
                 g.dispose();
             }
         };
-        Runnable mark=()->{int at=rung.getAsInt();smaller.setEnabled(at>0);bigger.setEnabled(at<PHONE.length-1);
-            String said="Text size, step "+(at+1)+" of "+PHONE.length;rungs.setToolTipText(said);rungs.getAccessibleContext().setAccessibleName(said);rungs.repaint();};
-        smaller.addActionListener(e->{setRung.accept(clamp(rung.getAsInt()-1));mark.run();});
-        bigger.addActionListener(e->{setRung.accept(clamp(rung.getAsInt()+1));mark.run();});
+        Runnable mark=()->{int at=rung.getAsInt();smaller.setEnabled(at>0);bigger.setEnabled(at<count-1);
+            String said="Text size, step "+(at+1)+" of "+count;rungs.setToolTipText(said);rungs.getAccessibleContext().setAccessibleName(said);rungs.repaint();};
+        smaller.addActionListener(e->{setRung.accept(clamp.applyAsInt(rung.getAsInt()-1));mark.run();});
+        bigger.addActionListener(e->{setRung.accept(clamp.applyAsInt(rung.getAsInt()+1));mark.run();});
         rungs.addMouseListener(new MouseAdapter(){public void mouseReleased(MouseEvent e){mark.run();}});
         mark.run();
         row.add(smaller,BorderLayout.WEST);row.add(rungs);row.add(bigger,BorderLayout.EAST);

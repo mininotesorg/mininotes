@@ -111,7 +111,7 @@ final class Groups {
 
     /** A group as Who? lists it: "Friends · 3 people", "My devices · 1 device". */
     static String counted(String name,int many,boolean devices) {
-        return name+" · "+many+" "+(devices?(many==1?"device":"devices"):(many==1?"person":"people"));
+        return Say.t(name)+" · "+Say.t(devices?(many==1?"{0} device":"{0} devices"):(many==1?"{0} person":"{0} people"),String.valueOf(many));
     }
 
     /** A group as Who has access lists it: "Friends · Can write". */

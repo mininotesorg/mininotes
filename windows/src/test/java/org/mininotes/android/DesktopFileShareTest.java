@@ -43,7 +43,7 @@ public class DesktopFileShareTest {
         void pair(Device other,String name) throws Exception {
             store.pairedWith(other.at,name,false,other.keys.agreement().getPublic().getEncoded(),other.keys.signing().getPublic().getEncoded());
         }
-        /** Another device of the same owner, bonded as Connect my other device bonds them: My device, and everything shared. */
+        /** Another device of the same owner, bonded as Add my device bonds them: My device, and everything shared. */
         void bond(Device other,String name) throws Exception {
             store.pairedWith(other.at,name,true,other.keys.agreement().getPublic().getEncoded(),other.keys.signing().getPublic().getEncoded());
             store.addShare(new Sharing.Rule(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,other.at,true));
@@ -98,6 +98,28 @@ public class DesktopFileShareTest {
     private static boolean drawnIn(NoteStore store,String place,String file) {
         for(NoteStore.Branch one:store.contents(place))if(one.kind==NoteStore.Branch.Kind.FILE&&one.id.equals(file))return true;
         return false;
+    }
+
+    /**
+     * Shared to read, then made able to write, on the sleeve that really goes (decision 120). B could not change the
+     * file and then can. The same the other way.
+     */
+    @Test public void aReaderMadeAWriterMayChangeTheFile() throws Exception {
+        String file=shared(new byte[]{1,2,3},Sharing.Level.READ);
+        assertEquals(Sharing.Level.READ,b.store.myLevel(Sharing.Scope.FILE,file));
+        assertFalse(b.store.mayChangeFile(file));
+        Sharing.Rule was=null;
+        for(Sharing.Rule rule:a.store.membership(Sharing.Scope.FILE,file))if(rule.address.equals(B_AT))was=rule;
+        long raised=System.currentTimeMillis();
+        a.store.decide(was,Sharing.Level.WRITE,raised);
+        b.hear(a.sleeve(b,file));
+        assertEquals(Sharing.Level.WRITE,b.store.myLevel(Sharing.Scope.FILE,file));
+        assertTrue(b.store.mayChangeFile(file));
+        a.store.decide(a.store.membership(Sharing.Scope.FILE,file).stream().filter(r->r.address.equals(B_AT)).findFirst().orElseThrow(),
+            Sharing.Level.READ,raised+1);
+        b.hear(a.sleeve(b,file));
+        assertEquals(Sharing.Level.READ,b.store.myLevel(Sharing.Scope.FILE,file));
+        assertFalse(b.store.mayChangeFile(file));
     }
 
     /** A file on A's Home shared with B to read: there, theirs, kept on Home and shown in Shared with me. */
@@ -289,6 +311,30 @@ public class DesktopFileShareTest {
      * 98 ("On laptop, the Temp files are also shown on the desktop, where is the setting for that"): only in Temp, not on
      * Home, unless Also show on Home is on, which moves those already there; not temporary any more, it is on Home.
      */
+    /**
+     * The owner, 2026-10-11: a screenshot let go on Temp on the phone wore a green tick there and an orange arrow on the laptop.
+     * Three devices of mine: what came to one of them from another owes nothing from it, before or after Temp's sync there.
+     */
+    @Test public void aTempFileFromMyPhoneOwesNothingOnMyPc() throws Exception {
+        Device pc=new Device("Owners PC",A2_AT),pro=new Device("Owners Pro",B2_AT);
+        for(Device one:new Device[]{pc,pro})a.store.pairedWith(one.at,one==pc?"Owners PC":"Owners Pro",true,one.keys.agreement().getPublic().getEncoded(),one.keys.signing().getPublic().getEncoded());
+        pc.store.pairedWith(A_AT,"Test phone",true,a.keys.agreement().getPublic().getEncoded(),a.keys.signing().getPublic().getEncoded());
+        pc.store.pairedWith(B2_AT,"Owners Pro",true,pro.keys.agreement().getPublic().getEncoded(),pro.keys.signing().getPublic().getEncoded());
+        String file=a.onHome("synthetic screenshot".getBytes(),"Screenshot.png");
+        a.store.makeTemporary(NoteStore.Branch.Kind.FILE,file,System.currentTimeMillis()+3_600_000L);
+        assertEquals(2,a.store.toMyDevices(Sharing.Scope.FILE,file));
+        goesUp(a,file);
+        pc.hear(a.sleeve(pc,file));
+        assertEquals(1,fetches(pc));
+        java.util.List<String> owed=new java.util.ArrayList<>();for(Outbox.Wait one:pc.store.sleevesOwed(file,false))owed.add(one.address.equals(B2_AT)?"pro":one.address.equals(A_AT)?"phone":one.address);
+        String row="";try(org.mininotes.desktop.platform.database.Cursor c=pc.store.getReadableDatabase().rawQuery("SELECT theirs,changed,revision,origin FROM files WHERE id=?",new String[]{file})){if(c.moveToFirst())row="theirs="+c.getInt(0)+" changed="+c.getLong(1)+" revision="+c.getLong(2)+" mine="+pc.store.myOtherDevices().contains(c.getString(3));}
+        assertEquals("nothing owed from the PC on arrival, "+row,java.util.List.of(),owed);
+        pc.store.toMyDevices(Sharing.Scope.FILE,file);
+        owed.clear();for(Outbox.Wait one:pc.store.sleevesOwed(file,false))owed.add(one.address.equals(B2_AT)?"pro":one.address.equals(A_AT)?"phone":one.address);
+        assertEquals("nor after Temp's sync on the PC",java.util.List.of(),owed);
+        assertEquals("so no wait on its mark",0,pc.store.fileOwed(file,pc.store.looseAudience(file),true));
+    }
+
     @Test public void aFileOnTempGoesToMyOtherDevicesWithItsTime() throws Exception {
         Device mine=new Device("Owners other",A2_AT);
         a.store.pairedWith(A2_AT,"Owners other",true,mine.keys.agreement().getPublic().getEncoded(),mine.keys.signing().getPublic().getEncoded());
@@ -319,7 +365,9 @@ public class DesktopFileShareTest {
         assertFalse("off again, in Temp only",drawnIn(mine.store,Things.HOME,file));
         mine.store.makeTemporary(NoteStore.Branch.Kind.FILE,file,0);
         assertTrue("not temporary any more: on Home",drawnIn(mine.store,Things.HOME,file));
-        // A file of this device's own let go on Temp stays where it is, setting or not.
+        // A file of this device's own let go on Temp: in Temp only too, unless Home is switched on (decision 151).
+        assertFalse(drawnIn(a.store,Things.HOME,file));
+        a.store.setTempOnHome(true);
         assertTrue(drawnIn(a.store,Things.HOME,file));
     }
 
@@ -540,6 +588,6 @@ public class DesktopFileShareTest {
         assertTrue(b.store.welcome("0.2.028"));
         int readMe=0;for(NoteStore.Branch one:b.store.contents(Things.HOME))if(NoteStore.READ_ME.equals(one.name))readMe++;
         assertEquals(1,readMe);
-        assertTrue(NoteStore.READ_ME_SAYS.contains("**Keeping it safe**"));
+        assertTrue(NoteStore.READ_ME_SAYS.contains("**Privacy, encryption and keeping it safe**"));
     }
 }

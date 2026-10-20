@@ -20,6 +20,7 @@ public final class SharedPreferences {
     }
     public synchronized String getString(String key,String fallback){return values.optString(key,fallback);}
     public synchronized long getLong(String key,long fallback){return values.optLong(key,fallback);}
+    public synchronized int getInt(String key,int fallback){return values.optInt(key,fallback);}
     public synchronized Set<String> getStringSet(String key,Set<String> fallback) {
         JSONArray array=values.optJSONArray(key);
         if(array==null)return new HashSet<>(fallback);
@@ -28,15 +29,19 @@ public final class SharedPreferences {
         return result;
     }
     public Editor edit(){return new Editor();}
+    /** What Editor.remove puts in place of a value, so the key goes. */
+    private static final Object REMOVED=new Object();
     public final class Editor {
         private final Map<String,Object> changes=new LinkedHashMap<>();
         public Editor putString(String key,String value){changes.put(key,value);return this;}
         public Editor putLong(String key,long value){changes.put(key,value);return this;}
+        public Editor putInt(String key,int value){changes.put(key,value);return this;}
         public Editor putStringSet(String key,Set<String> value){changes.put(key,new JSONArray(value));return this;}
+        public Editor remove(String key){changes.put(key,REMOVED);return this;}
         public void apply() {
             synchronized(SharedPreferences.this) {
                 JSONObject next=new JSONObject(values.toString());
-                changes.forEach(next::put);
+                changes.forEach((key,value)->{if(value==REMOVED)next.remove(key);else next.put(key,value);});
                 try {
                     AtomicFile.write(file,Crypt32Util.cryptProtectData(next.toString().getBytes(StandardCharsets.UTF_8)));
                     values=next;

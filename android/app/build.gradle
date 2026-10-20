@@ -2,16 +2,26 @@ plugins { id 'com.android.application' }
 android {
     namespace 'org.mininotes.android'
     compileSdk 37
+    // Editor instrumentation runs only in the synthetic demo, alongside the owner's app when used on a test device.
+    testBuildType 'demo'
     defaultConfig {
         applicationId 'org.mininotes.android'
         minSdk 28
         targetSdk 35
-        versionCode 3016
-        versionName '0.3.016'
+        versionCode 4015
+        versionName '0.4.015'
+        testInstrumentationRunner 'org.mininotes.android.PadPerformanceProbe'
         // True only in the demo build below: made-up notes on first start and pretend recovery words (see Demo).
         buildConfigField 'boolean','DEMO','false'
     }
     buildFeatures { buildConfig true }
+    // The translation engine (docs/TRANSLATION.md), built by tools/build-translation-engine-android.ps1 into native/jniLibs, which
+    // is never in the tree. Carried as a library and unpacked on install, as Android runs a program only from there.
+    sourceSets { main { jniLibs.srcDirs += [rootProject.file('../native/jniLibs')] } }
+    packaging { jniLibs { useLegacyPackaging true } }
+    // Unpacked, but kept uncompressed in the APK, so Android's 16 KB check can read every library (it said "Unknown error"
+    // for SQLCipher's, compressed by the line above, the owner's Graphene, 2026-10-13).
+    androidResources { noCompress += ['so'] }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 
     // The Maxima transport's IPC is signature-gated: it answers an app signed with its own key and nobody

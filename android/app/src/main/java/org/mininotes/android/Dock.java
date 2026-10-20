@@ -14,11 +14,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The dock, at the foot of Home: up to five favourites, icons only, as a phone's dock is (docs/HOME.md, decisions 3 and
- * 19). Each says its name to a screen reader; a tap opens it, and holding it gives its menu, which offers to take it out
- * of the dock. A note or a collection carried here from anywhere on Home becomes a favourite at the place it is let go,
- * and the one pushed off the end stays a favourite, in the Favourites collection. With nothing in it, it says Favourites,
- * quietly, so the empty strip is not a mystery.
+ * The dock, at the foot of Home: icons only, as a phone's dock is (docs/HOME.md, decisions 3 and 19), five across the
+ * screen and as many more as were put there, swiped across (the owner, 2026-10-18: "make sure we can add multiple elements
+ * to the dock and that we can browse them horizontally"; decision 190). Each says its name to a screen reader; a tap
+ * opens it, and holding it gives its menu, which offers to take it out of the dock. A note or a collection carried here
+ * from anywhere on Home goes in at the place it is let go, a favourite or not as it was. With nothing in it, it says
+ * Dock, quietly, so the empty strip is not a mystery.
  *
  * <p>Above it a short rounded handle, the shape of the phone's own gesture bar, says that it can be swiped up: a swipe
  * that starts on the handle or the dock - or a tap on the handle - opens the overview of what is open.
@@ -26,8 +27,10 @@ import java.util.List;
 final class Dock {
     private final MainActivity a;
     private final HomeScreen home;
-    /** The icons, left to right, each tagged with the favourite it is. */
+    /** The icons, left to right, each tagged with the thing it is. */
     LinearLayout row;
+    /** What the row scrolls in, across, when it holds more than the screen shows. */
+    private android.widget.HorizontalScrollView across;
 
     Dock(MainActivity a,HomeScreen home){this.a=a;this.home=home;}
 
@@ -70,23 +73,27 @@ final class Dock {
         row=new LinearLayout(a);row.setGravity(Gravity.CENTER);
         row.setPadding(a.dp(12),a.dp(2),a.dp(12),a.dp(8));
         row.setMinimumHeight(a.dp(68));
+        // Across, where it holds more than five: the row as wide as it needs, in a strip that scrolls (decision 190).
+        across=new android.widget.HorizontalScrollView(a);across.setHorizontalScrollBarEnabled(false);across.setFillViewport(true);
+        across.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        across.addView(row,new FrameLayout.LayoutParams(-1,-2));
         LinearLayout.LayoutParams place=new LinearLayout.LayoutParams(-1,-2);
         place.setMargins(a.dp(10),0,a.dp(10),a.dp(4));
-        strip.addView(row,place);
+        strip.addView(across,place);
         return strip;
     }
 
     /** The favourites shown or not (decision 47); the handle above them stays, as the way to what is open. */
-    void showRow(int shown){if(row!=null)row.setVisibility(shown);}
+    void showRow(int shown){if(across!=null)across.setVisibility(shown);}
 
-    /** The dock as the notebook has it, in its order: the favourites with a place in it. */
+    /** The dock as the notebook has it, in its order. */
     void fill(List<NoteStore.Branch> docked) {
         if(row==null)return;
         row.removeAllViews();
         if(docked.isEmpty()) {
-            TextView empty=a.label("Favourites",MainActivity.QUIET,a.MUTED);
+            TextView empty=a.label(Say.t("Dock"),MainActivity.QUIET,a.MUTED);
             empty.setGravity(Gravity.CENTER);
-            empty.setContentDescription("The dock. Favourites go here: carry a note or a folder here, or make it a favourite from its menu.");
+            empty.setContentDescription(Say.t("The dock. Carry a note or a folder here, or choose Add to the dock from its menu."));
             row.addView(empty,new LinearLayout.LayoutParams(-1,a.dp(56)));
             return;
         }
@@ -105,13 +112,13 @@ final class Dock {
         }
     }
 
-    /** A favourite tapped in the dock: a note opens; a collection opens its pop-up where it really is. */
+    /** A thing tapped in the dock: a note opens; a collection opens its pop-up where it really is. */
     private void opened(NoteStore.Branch one) {
         if(one.kind==NoteStore.Branch.Kind.PAGE)home.openNote(one.id);
         else home.openCollection(one.id);
     }
 
-    /** Lit while a thing that can be a favourite is carried over it: the place to let go. */
+    /** Lit while a thing that can go in the dock is carried over it: the place to let go. */
     void lit(boolean on) {
         if(row==null)return;
         if(!on){row.setBackground(null);return;}

@@ -318,10 +318,72 @@ final class Layout {
         return null;
     }
 
+    /**
+     * How many rows fill a page, and how tall each is so they fill it. What is left over is shorter than a row, so there
+     * is no empty band between one page and the next that a thing cannot be let go in (decision 129).
+     */
+    static int rowsThatFill(int inner,int row){return inner<=0||row<=0?1:Math.max(1,inner/row);}
+    static int rowThatFills(int inner,int row){int n=rowsThatFill(inner,row);return inner<=0||row<=0?Math.max(1,row):Math.max(row,inner/n);}
+
+    /** How far a finger on empty room moves, in touch slops, before the pages follow it. */
+    static final int ROOM_SLOP=2;
+    /** How far a finger on an icon moves, in touch slops, before that move is a slide of the pages and not a hold. */
+    static final int ICON_SLOP=3;
+
+    /**
+     * A Home grid is laid out again only when the height it is seen in has changed, or the reading size of a row has.
+     * The height a row is stretched to, so the rows fill the page, is not a change (decision 130).
+     */
+    static boolean gridChanged(int seenNow,int seenThen,int readingNow,int readingThen) {
+        return seenNow!=seenThen||readingNow!=readingThen;
+    }
+
+    /**
+     * Whether a move belongs to the pages rather than to an icon (decision 130). Held or carried, the icon keeps the
+     * finger. Down on an icon, the pages take it only as a clear slide that happens before the hold has had its time.
+     * Down on empty room, the pages take it at the usual distance.
+     */
+    static boolean pageTakes(boolean onIcon,boolean held,boolean carrying,float moved,int slop,long waited,long hold) {
+        if(held||carrying||slop<=0)return false;
+        if(onIcon&&hold>0&&waited>=hold)return false;
+        return moved>slop*(onIcon?ICON_SLOP:ROOM_SLOP);
+    }
+
     /** The cell under a point, in a grid of cells this big starting at the origin; null outside the grid's columns. */
     static int[] under(float x,float y,float cellWidth,float cellHeight,int columns) {
         if(x<0||y<0||cellWidth<=0||cellHeight<=0)return null;
         int column=(int)(x/cellWidth),row=(int)(y/cellHeight);
         return column<columns?new int[]{row,column}:null;
+    }
+
+    /**
+     * The least and most page across and down that anything stands on, the centre page always inside:
+     * {minX, maxX, minY, maxY}. Nothing empty is added round them, so a scroll does not begin in a blank page.
+     */
+    static int[] span(Map<String,Spot> drawn) {
+        int minX=0,maxX=0,minY=0,maxY=0;
+        if(drawn!=null)for(Spot one:drawn.values())if(one!=null) {
+            minX=Math.min(minX,one.x());maxX=Math.max(maxX,one.x());
+            minY=Math.min(minY,one.y());maxY=Math.max(maxY,one.y());
+        }
+        return new int[]{minX,maxX,minY,maxY};
+    }
+
+    /**
+     * The page and the cell under a point of a canvas of pages laid edge to edge, each {@code pageW} by {@code pageH},
+     * the least page at the origin. {@code insetX} is the room before a page's first column, the same on every page;
+     * {@code insetY} is the room once, above the first page. Null in that room, past the last column or row, or past
+     * the last page. {pageX, pageY, row, column}.
+     */
+    static int[] underCanvas(float x,float y,float pageW,float pageH,float insetX,float insetY,float cellW,float cellH,
+            int columns,int rows,int minX,int minY,int maxX,int maxY) {
+        if(pageW<=0||pageH<=0||cellW<=0||cellH<=0||x<0||y<insetY)return null;
+        int px=minX+(int)(x/pageW),py=minY+(int)((y-insetY)/pageH);
+        if(px<minX||px>maxX||py<minY||py>maxY)return null;
+        float lx=x-(px-minX)*pageW-insetX,ly=y-insetY-(py-minY)*pageH;
+        if(lx<0||ly<0)return null;
+        int column=(int)(lx/cellW),row=(int)(ly/cellH);
+        if(column>=columns||row>=rows)return null;
+        return new int[]{px,py,row,column};
     }
 }

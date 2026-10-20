@@ -61,7 +61,7 @@ public class PersonsDoorTest {
         c=new Device(33,new Persons.Me("77777777777777777777777777777777",2_000,null,"Bo",10,"Bo's laptop",0));
         for(Device one:List.of(a,b,c)){one.door=one.node.startDirect(0);assertTrue(one.door>0);}
         for(Device one:List.of(a,b,c))for(Device other:List.of(a,b,c))if(one!=other)one.node.storeContact(known(other));
-        // A and B bonded as one owner's devices ("Connect my other device"), each marking the other as theirs;
+        // A and B bonded as one owner's devices ("Add my device"), each marking the other as theirs;
         // both paired with C, which is nobody's device of theirs.
         a.mine.put(b.key(),true);b.mine.put(a.key(),true);
         a.mine.put(c.key(),false);b.mine.put(c.key(),false);c.mine.put(a.key(),false);c.mine.put(b.key(),false);

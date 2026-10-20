@@ -24,7 +24,7 @@ import org.mininotes.desktop.platform.content.Context;
  */
 public class DesktopPrivateTest {
     @Rule public TemporaryFolder temp=new TemporaryFolder();
-    private static final String PASSWORD="correct horse battery staple 1729",TITLE="Diary of private things",
+    private static final String PHRASE="correct horse battery staple 1729",TITLE="Diary of private things",
         WORDS="the treasure is under the old oak",PHOTO="IMG_SECRET_",CAMERA="CAMERA-SECRET-MODEL";
 
     // ---- the proof: a user and a non-user, side by side ------------------------------------------------------------------
@@ -44,8 +44,8 @@ public class DesktopPrivateTest {
                 type(b,b.page,"privatespace//:");
                 await(()->onEdt(()->b.privately.asking!=null&&b.privately.asking.isEditable()));
                 assertFalse("taken out at once",onEdt(()->b.page.getText()).contains("privatespace"));
-                SwingUtilities.invokeAndWait(()->{b.privately.asking.setText(PASSWORD);b.privately.asking.postActionEvent();});
-                answer(b,PASSWORD);
+                SwingUtilities.invokeAndWait(()->{b.privately.asking.setText(PHRASE);b.privately.asking.postActionEvent();});
+                answer(b,PHRASE);
                 await(()->onEdt(()->b.privately.showing()));
                 List<byte[]> photos=new ArrayList<>();for(int i=0;i<50;i++)photos.add(photo(i));
                 List<byte[]> small=new ArrayList<>();for(byte[] one:photos)small.add(DesktopPrivate.shrink(one));
@@ -103,7 +103,7 @@ public class DesktopPrivateTest {
             assertEquals(one.keySet(),two.keySet());
             for(String name:one.keySet())assertEquals(name,one.get(name),two.get(name));
             assertEquals((long)Slots.COUNT*Slots.SLOT,(long)two.get(Slots.NAME));
-            String[] words={PASSWORD,"second phrase","third phrase",TITLE,WORDS,"Second space note","treasure",PHOTO,CAMERA,"privatespace","privatenote","privatefolder","private//:","Diary"};
+            String[] words={PHRASE,"second phrase","third phrase",TITLE,WORDS,"Second space note","treasure",PHOTO,CAMERA,"privatespace","privatenote","privatefolder","private//:","Diary"};
             for(Path root:new Path[]{never,used})for(Path file:all(root)){String found=find(file,words);assertNull(found+" in "+root.relativize(file),found);}
             // The private file is noise from end to end in both: it does not compress.
             for(Path root:new Path[]{never,used})assertTrue(root+" compresses",packed(root.resolve(Slots.NAME))>Files.size(root.resolve(Slots.NAME))*0.999);
@@ -151,8 +151,8 @@ public class DesktopPrivateTest {
             await(()->onEdt(()->pad.privately.asking!=null&&pad.privately.asking.isEditable()));
             assertEquals("Meet at noon ",onEdt(()->pad.page.getText()));
             assertFalse("nothing to undo back into it",onEdt(()->((javax.swing.undo.UndoManager)pad.page.getClientProperty("undo")).canUndo()));
-            SwingUtilities.invokeAndWait(()->{pad.privately.asking.setText(PASSWORD);pad.privately.asking.postActionEvent();});
-            answer(pad,PASSWORD);
+            SwingUtilities.invokeAndWait(()->{pad.privately.asking.setText(PHRASE);pad.privately.asking.postActionEvent();});
+            answer(pad,PHRASE);
             await(()->onEdt(()->pad.privately.showing()));
             SwingUtilities.invokeAndWait(()->pad.privately.close());
             // And in the title, and in the search: the same.
@@ -169,11 +169,11 @@ public class DesktopPrivateTest {
             // The note, its versions, what is owed, and the note as it goes to the phone: none of it.
             NoteStore.Note kept=pad.store.get(n.id);
             assertEquals("Meet at noon ",kept.body);assertEquals("Plan",kept.title);
-            for(NoteStore.Version v:pad.store.versions(n.id))assertFalse(v.body.contains("privatespace")||v.body.contains("privatenote")||v.body.contains(PASSWORD));
+            for(NoteStore.Version v:pad.store.versions(n.id))assertFalse(v.body.contains("privatespace")||v.body.contains("privatenote")||v.body.contains(PHRASE));
             Parcel.Sent going=new Parcel.Sent("","","","",kept.title,kept.body,true,Collections.<Parcel.Member>emptyList(),"PAGE",n.id,false,-1L,false,
                 List.of(),1L,List.of(),pad.store.steps(pad.store.above(n.id)),"",null);
             byte[] plain=Parcel.wrap(going,Envelope.MAX_TEXT);
-            for(String word:new String[]{"privatespace","privatenote","privatefolder","private//:",PASSWORD})assertFalse(word,contains(plain,word));
+            for(String word:new String[]{"privatespace","privatenote","privatefolder","private//:",PHRASE})assertFalse(word,contains(plain,word));
             byte[] sealed=Envelope.seal(page(n.id),kept.revision,1,plain,pad.keys.signing(),phoneKeys.agreement().getPublic());
             Post.arrived(phoneContext,phone,phoneKeys,sealed);
             NoteStore.Note there=phone.get(n.id);
@@ -181,7 +181,7 @@ public class DesktopPrivateTest {
             for(NoteStore.Version v:phone.versions(n.id))assertFalse(v.body.contains("privatespace")||v.body.contains("privatenote"));
             for(Outbox.Wait w:pad.store.owed(NoteStore.Branch.Kind.PAGE,n.id))assertEquals(PHONE,w.address);
         } finally{close(pad);phone.close();}
-        for(Path file:all(folder)){String found=find(file,new String[]{"privatespace","privatenote","privatefolder","private//:",PASSWORD,"nothing answers"});assertNull(found+" in "+folder.relativize(file),found);}
+        for(Path file:all(folder)){String found=find(file,new String[]{"privatespace","privatenote","privatefolder","private//:",PHRASE,"nothing answers"});assertNull(found+" in "+folder.relativize(file),found);}
     }
 
     // ---- nothing answers --------------------------------------------------------------------------------------------
@@ -234,7 +234,7 @@ public class DesktopPrivateTest {
         Desktop a=open(here);
         try {
             a.privately.holdRhythm();
-            fromOutside(a,PrivateCode.Kind.SPACE,PASSWORD);
+            fromOutside(a,PrivateCode.Kind.SPACE,PHRASE);
             SwingUtilities.invokeAndWait(()->{PrivateSpace p=a.privately.shown();PrivateSpace.Thing note=p.newNote("",1);p.text(note.id,"",WORDS,1);try{p.write();}catch(Exception e){throw new RuntimeException(e);}a.privately.close();});
             while(a.privately.slots().anyWaiting())a.privately.batchNow();
             DesktopBackup.write(a.store,zip,null,null,a.privately.slots());
@@ -305,6 +305,29 @@ public class DesktopPrivateTest {
         } finally{close(pad);}
     }
 
+    /** The private password field has the hold-to-show eye, and not FlatLaf's as well (decision 121). */
+    @Test public void aPrivatePasswordFieldHasOneEye() throws Exception {
+        SwingUtilities.invokeAndWait(()->{
+            DesktopUi.install();
+            JPasswordField plain=new JPasswordField(22);
+            JFrame bare=shown(plain);
+            assertTrue("FlatLaf's own eye is on for an ordinary password",toggles(plain)>=1);
+            bare.dispose();
+            JPasswordField field=new JPasswordField(22);
+            field.putClientProperty(com.formdev.flatlaf.FlatClientProperties.STYLE,"margin:8,10,8,10");
+            DesktopPrivate.oneEye(field);
+            JFrame ours=shown(field);
+            assertEquals("the private field keeps that eye off",0,toggles(field));
+            ours.dispose();
+        });
+    }
+    private static JFrame shown(JPasswordField field) {
+        JFrame frame=new JFrame();frame.add(field);frame.pack();frame.setVisible(true);return frame;
+    }
+    private static int toggles(JPasswordField field) {
+        int n=0;for(Component c:field.getComponents())if(c instanceof JToggleButton)n++;return n;
+    }
+
     // ---- helpers --------------------------------------------------------------------------------------------------------
 
     private static void Hashes(){com.eurobuddha.maxima.core.crypto.Hashes.setSha3(Sha3::of);}
@@ -334,7 +357,7 @@ public class DesktopPrivateTest {
     }
 
     /** A password typed after a code: in the search, which every screen has, and Enter. */
-    private void open(Desktop pad,String code) throws Exception {open(pad,code,PASSWORD);}
+    private void open(Desktop pad,String code) throws Exception {open(pad,code,PHRASE);}
     private void open(Desktop pad,String code,String password) throws Exception {
         SwingUtilities.invokeAndWait(()->pad.home.search.requestFocusInWindow());
         type(pad,pad.home.search,code);

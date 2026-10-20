@@ -48,6 +48,26 @@ final class SyncStatus {
      * @param listedIn for somebody not linked, the name of the thing whose list names them; empty otherwise
      * @param listing  for somebody not linked, the rule that lists them, to take them off by; null otherwise
      */
+    /**
+     * The rounds a note's line draws, of everybody it reaches: all of them while they are few, else {@code most}, those that
+     * need a look first (not linked, or not all there yet), and the others counted in one +N round that lists everybody (the
+     * owner, 2026-10-15: "instead of showing the icons of every device on top of the note ... I can imagine having 10 or
+     * more"). Never a +1: that would hide one round only to draw another in its place.
+     */
+    static java.util.List<Person> roundsShown(java.util.List<Person> who,int most) {
+        if(who.size()<=most+1)return who;
+        return lookFirst(who).subList(0,most);
+    }
+    /** Everybody, those that need a look first (not linked, or not all there yet), each part in the note's own order. */
+    static java.util.List<Person> lookFirst(java.util.List<Person> who) {
+        java.util.List<Person> first=new java.util.ArrayList<>(),rest=new java.util.ArrayList<>();
+        for(Person one:who)(!one.linked()||one.mark()!=SyncMark.GONE?first:rest).add(one);
+        first.addAll(rest);
+        return first;
+    }
+    /** How many rounds a phone's line draws before the +N, and a PC's, which has the room for one more. */
+    static final int PHONE_ROUNDS=3,PC_ROUNDS=4;
+
     record Person(String address,String name,SyncMark mark,boolean linked,String listedIn,Sharing.Rule listing,boolean linking,String says) {
         Person(String address,String name,SyncMark mark){this(address,name,mark,true,"",null,false,"");}
         Person(String address,String name,SyncMark mark,boolean linked,String listedIn,Sharing.Rule listing) {
@@ -114,7 +134,42 @@ final class SyncStatus {
             String listedIn=listing==null?"":store.thingName(NoteStore.kindFor(listing.scope),listing.target);
             out.add(new Person(address,store.nameFor(address),owed.getOrDefault(address,SyncMark.GONE),false,listedIn,listing,waiting));
         }
+        // The owner's own devices stay a round each: which of them has it is what their rounds are for.
+        return folded(out,address->{NoteStore.Contact c=store.address(address);return c!=null&&c.mine?"":store.personOf(address);});
+    }
+
+    /**
+     * One round per person, not per device (decision 163): the devices whose cards say they are one person's (see AboutMe),
+     * folded into the first of them, which wears the mark that most needs a look among them and
+     * says how many devices it stands for. Others, and anybody not linked, as they were.
+     *
+     * @param personOf whose a device is, by address: a person id, "mine" for one of the owner's own, empty for unknown
+     */
+    static java.util.List<Person> folded(java.util.List<Person> who,java.util.function.Function<String,String> personOf) {
+        java.util.List<Person> out=new java.util.ArrayList<>();
+        java.util.Map<String,Integer> at=new java.util.HashMap<>();java.util.Map<String,Integer> many=new java.util.HashMap<>();
+        for(Person one:who) {
+            String person=one.linked()?personOf.apply(one.address()):"";
+            if(person==null||person.isEmpty()){out.add(one);continue;}
+            Integer first=at.get(person);
+            if(first==null){at.put(person,out.size());many.put(person,1);out.add(one);continue;}
+            Person was=out.get(first);many.merge(person,1,Integer::sum);
+            SyncMark mark=needier(was.mark(),one.mark());
+            out.set(first,new Person(was.address(),was.name(),mark,true,"",null,false,mark==was.mark()?was.says():one.says()));
+        }
+        for(java.util.Map.Entry<String,Integer> one:at.entrySet()) {
+            int n=many.get(one.getKey());if(n<2)continue;
+            Person was=out.get(one.getValue());
+            String name="mine".equals(one.getKey())?Say.t(Groups.MY_DEVICES):was.name();
+            out.set(one.getValue(),new Person(was.address(),name,was.mark(),true,"",null,false,
+                Say.t("{0} · {1} devices",was.standing(),String.valueOf(n))));
+        }
         return out;
+    }
+    /** Of two marks, the one that needs a look more: stuck, then waiting to go, then sent, paused, only here, all there. */
+    private static SyncMark needier(SyncMark a,SyncMark b){return rank(b)>rank(a)?b:a;}
+    private static int rank(SyncMark m) {
+        switch(m){case STUCK:return 5;case WAITING:return 4;case SENT:return 3;case PAUSED:return 2;case HERE:return 1;default:return 0;}
     }
 
     /**
@@ -137,15 +192,47 @@ final class SyncStatus {
         // updated first: "Ana's phone needs to update Mininotes to receive this" (see Unsent.Why.NEEDS_UPDATE).
         for(var waiting:store.cartonsForUpdate(kind,id).values())
             for(String address:waiting)sum.merge(address,Waits.needsUpdate(),Waits.Where::and);
-        // And a file shared on its own: owed to a device, or waiting for it to be updated to know files (decision 92).
-        if(kind==NoteStore.Branch.Kind.FILE) {
+        // And a file shared on its own: owed to a device, or waiting for it to be updated to know files (decision 92). In Temp,
+        // each file in it.
+        java.util.List<String> files=new java.util.ArrayList<>();
+        if(kind==NoteStore.Branch.Kind.FILE)files.add(id);
+        if(kind==NoteStore.Branch.Kind.TEMP)
+            for(var one:store.temporary(System.currentTimeMillis()))if(one.kind==NoteStore.Branch.Kind.FILE)files.add(one.id);
+        if(!files.isEmpty()) {
             java.util.Set<String> old=store.beforeLoose();
-            for(var wait:store.sleevesOwed(id,false))
+            for(String file:files)for(var wait:store.sleevesOwed(file,false))
                 sum.merge(wait.address,old.contains(wait.address)?Waits.needsUpdate():new Waits.Where(1,0,0,false,false),Waits.Where::and);
         }
         java.util.List<Waits.Device> devices=new java.util.ArrayList<>();
         for(var one:sum.entrySet())devices.add(new Waits.Device(store.nameFor(one.getKey()),one.getValue(),kept(one.getKey())));
         return Waits.said(devices,kind==NoteStore.Branch.Kind.PAGE?1:pages.size());
+    }
+
+    /**
+     * What waits to go, as the things themselves, each to be opened from the box a press on an amber mark opens (the owner,
+     * 2026-10-14: "clicking the yellow arrow showing that something is not fully synced should give us the list of what they
+     * are"): the notes under it owed to anybody, then the files shared on their own owed to anybody.
+     */
+    static java.util.List<NoteStore.Branch> waitingThings(NoteStore store,NoteStore.Branch.Kind kind,String id) {
+        java.util.Map<String,NoteStore.Branch> out=new java.util.LinkedHashMap<>();
+        for(var wait:store.owed(kind,id)) {
+            if(out.containsKey(wait.page))continue;
+            var note=store.get(wait.page);
+            if(note!=null)out.put(note.id,new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,note.id,note.book,note.heading(),"",0,0,false,note.colour));
+        }
+        // And each file of those notes still on its way to somebody, as the line "Waiting for … to confirm n files" counts them.
+        for(var held:store.filesLacking(store.pagesUnder(kind,id)))
+            if(!out.containsKey(held.id))out.put(held.id,new NoteStore.Branch(NoteStore.Branch.Kind.FILE,held.id,held.note,held.name,"",0,0,false));
+        java.util.List<String> files=new java.util.ArrayList<>();
+        if(kind==NoteStore.Branch.Kind.FILE)files.add(id);
+        else if(kind==NoteStore.Branch.Kind.TEMP){for(var one:store.temporary(System.currentTimeMillis()))if(one.kind==NoteStore.Branch.Kind.FILE)files.add(one.id);}
+        else if(kind==NoteStore.Branch.Kind.LIBRARY)files.add(null);
+        for(String file:files)for(var wait:store.sleevesOwed(file,false)) {
+            if(out.containsKey(wait.page))continue;
+            var held=store.file(wait.page);
+            if(held!=null)out.put(held.id,new NoteStore.Branch(NoteStore.Branch.Kind.FILE,held.id,held.note,held.name,"",0,0,false));
+        }
+        return new java.util.ArrayList<>(out.values());
     }
 
     /** The mark on the line under a note's title: the worst of where its people stand (see SyncMark.of). */
@@ -179,7 +266,10 @@ final class SyncStatus {
             if(!store.owed(NoteStore.Branch.Kind.PAGE,id).isEmpty())
                 return new State(note.updated,0,WAITING);
             long latest=0;
+            // Arrived somewhere and waiting there to be accepted: not synced with them yet, whatever they answered. See Asking.
+            java.util.Set<String> asking=store.askedWaiting();
             for(String address:audience.keySet()) {
+                if(asking.contains(Asking.key(address,id)))return new State(note.updated,0,MATCHING);
                 try(var row=db.query("sent",new String[]{"revision","agreed","at"},"address=? AND page=?",
                     new String[]{address,id},null,null,null,"1")) {
                     if(!row.moveToFirst()||row.getLong(0)!=note.revision||row.getLong(1)!=note.revision)

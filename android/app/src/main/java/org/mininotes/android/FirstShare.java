@@ -16,6 +16,12 @@ final class FirstShare {
     /** The part of Shared with me that holds what waits, first in it. */
     static final String WAITING="Waiting for you";
     static final String ACCEPT="Accept", REFUSE="Refuse", SEE_IT="See it", LATER="Later";
+    /** On the thing itself, once it is clicked: who sent it, and, where they are not a contact, stopping them. */
+    static final String SEE_SENDER="See sender", BLOCK="Block sender";
+    static final String BLOCKED_SAID="Blocked. They are listed in People and devices.";
+    /** The part of People and devices that lists them, and what an empty one says. */
+    static final String BLOCKED="Blocked", NOBODY_BLOCKED="Nobody blocked.";
+    static final String CAN_SHARE_AGAIN="They can share with you again.";
     static final String QUIETLY="Refuse quietly", TELL="Refuse and tell them", WORDS_HINT="Add a few words, if you like";
     static final String QUIETLY_DOES="They are not told.", TELL_DOES="They are told you refused it, with your words if you write any.";
     /** What a person's line in a Share box says once they refused the thing. */
@@ -55,6 +61,12 @@ final class FirstShare {
 
     /** The Refuse box's title. */
     static String refuseTitle(String name){return "Refuse “"+named(name)+"”?";}
+
+    /** The blocked-sender row's question, before the record is deleted. */
+    static String deleteBlocked(String name) {
+        String who=name==null||name.isBlank()?"this sender":name.trim();
+        return "Delete “"+who+"”?";
+    }
 
     /** Said once it is accepted, where it is now: Home for a note or a folder, where files shared with you go for a file. */
     static String accepted(String name,String where){return "“"+named(name)+"” is "+(where==null||where.isBlank()||"Home".equals(where)?"on Home":"in "+where)+" now";}

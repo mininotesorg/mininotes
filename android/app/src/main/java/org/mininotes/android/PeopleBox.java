@@ -52,8 +52,12 @@ final class PeopleBox {
         List<NoteStore.Contact> contacts=new ArrayList<>();Map<String,String> through=new HashMap<>(),sided=new HashMap<>(),checks=new HashMap<>();
         Map<String,String[]> roads=new HashMap<>();List<String> here=new ArrayList<>();
         List<Groups.Group> groups=new ArrayList<>();Map<String,List<NoteStore.Contact>> in=new HashMap<>();
+        /** Whose each contact's device is, by address, as its about-me card said (decision 183); absent where it never said. */
+        Map<String,String> persons=new HashMap<>();
         /** What a group or a person has, on their page. */
         List<NoteStore.Shared> shared=new ArrayList<>();
+        /** Senders blocked on this phone, each {address, name}. */
+        List<String[]> blocked=new ArrayList<>();
         /** Share with: what this phone may give, the groups the thing is given to, and where everybody stands on it. */
         List<Sharing.Level> give=new ArrayList<>();Map<String,Groups.Given> given=new HashMap<>();Map<String,NoteStore.Stands> stands=new HashMap<>();
         NoteStore.Contact contact(String address){for(NoteStore.Contact one:contacts)if(one.address.equals(address))return one;return null;}
@@ -85,6 +89,17 @@ final class PeopleBox {
         levels.clear();levels.add(new Level(LIST,"",TITLE));groupsView=false;box=null;scroll=null;laid=null;open=true;
         draw();
     }
+    /**
+     * Somebody's page, from wherever they are shown - their round over a shared note, their line in a list (the owner,
+     * 2026-10-11: "we should be able to go on its profile page where we can rename it and so on"): People and devices,
+     * opened on them, with ‹ back to its list.
+     */
+    void openPerson(String address,String name) {
+        if(showing()){go(new Level(PERSON,address,name));return;}
+        levels.clear();levels.add(new Level(LIST,"",TITLE));levels.add(new Level(PERSON,address,name));
+        groupsView=false;box=null;scroll=null;laid=null;open=true;
+        draw();
+    }
     boolean showing(){return box!=null&&box.isShowing();}
     /** Drawn again where it is, if it is open: something it shows changed somewhere else. */
     void again(){if(showing())draw();}
@@ -111,6 +126,8 @@ final class PeopleBox {
     private Read read(Level at) {
         Read r=new Read();NoteStore store=a.store;
         r.contacts=store.addresses();r.groups=store.groups();r.in=store.inGroups();r.through=store.linkedLines();
+        for(NoteStore.Contact each:r.contacts){String p=each.mine?"":store.personOf(each.address);if(!p.isEmpty())r.persons.put(each.address,p);}
+        if(at.kind==LIST)r.blocked=store.blockedSenders();
         // Whether each device is reached directly, and which road the last thing to it went by (decision 96).
         if(at.kind==LIST||at.kind==PERSON)
             for(NoteStore.Contact one:r.contacts)if(one.paired()&&(at.kind==LIST||one.address.equals(at.id)))r.roads.put(one.address,Node.seen(one,Post.heardLately(one)));
@@ -146,7 +163,9 @@ final class PeopleBox {
                 final NoteStore.Contact who=r.contact(at.id);
                 if(who==null){back();return;}
                 title=at.name=who.name;
-                body.addView(head(()->a.heldMenu(moreOf(body),null,"Writing colour",(Runnable)()->a.inkBox(who.name,null,who.address),null,"Forget",(Runnable)()->a.forgetAddress(who))));
+                // No ⋮ with two rows in it: their colour is on the page, under their name, and Forget or Remove at its foot
+                // (the owner, 2026-10-17: "not optimal to have a menu there with only these 2 elements").
+                body.addView(head(null));
                 person(body,r,who);
             }
         }
@@ -299,12 +318,34 @@ final class PeopleBox {
      * is in under their name, changed there.
      */
     private void peopleView(LinearLayout body,final Read r) {
-        final String here=a.thisDevice();
+        final String here=a.deviceShown();
         int mine=0,others=0;
-        body.addView(adds("People","Connect with someone",null));
-        for(final NoteStore.Contact one:r.contacts) {
+        body.addView(adds("People","Add someone",null));
+        // One person, their devices under them (decision 183): devices whose cards say they are one person's, together, under
+        // one line with the person's name and how many devices; anybody else a line of their own, as before.
+        Map<String,List<NoteStore.Contact>> byPerson=new java.util.LinkedHashMap<>();List<NoteStore.Contact> ordered=new ArrayList<>();
+        for(NoteStore.Contact one:r.contacts) {
             if(one.mine)continue;
-            others++;body.addView(device(one,r));
+            String person=r.persons.get(one.address);
+            if(person==null){ordered.add(one);continue;}
+            if(!byPerson.containsKey(person)){byPerson.put(person,new ArrayList<>());ordered.add(one);}
+            byPerson.get(person).add(one);
+        }
+        java.util.Set<String> headed=new java.util.HashSet<>();
+        for(final NoteStore.Contact first:ordered) {
+            String person=r.persons.get(first.address);
+            List<NoteStore.Contact> devices=person==null?java.util.Collections.singletonList(first):byPerson.get(person);
+            boolean several=devices.size()>1;
+            if(several&&headed.add(person)) {
+                TextView who=a.label(first.name,MainActivity.READING,a.INK);who.setTypeface(who.getTypeface(),android.graphics.Typeface.BOLD);
+                who.setPadding(a.dp(4),a.dp(10),a.dp(4),0);body.addView(who);
+                body.addView(a.under(Say.t("{0} devices",String.valueOf(devices.size()))));
+            }
+          for(final NoteStore.Contact one:devices) {
+            others++;
+            View line=device(one,r);
+            if(several)line.setPadding(line.getPaddingLeft()+a.dp(24),line.getPaddingTop(),line.getPaddingRight(),line.getPaddingBottom());
+            body.addView(line);
             // The groups they are in, right under the name: a chip each, changed at once (the owner: "people and their
             // assignation to a group"). None where there is no group yet, or nothing to put in one.
             if(!one.paired()||r.groups.isEmpty())continue;
@@ -314,11 +355,13 @@ final class PeopleBox {
                 final boolean in=theirs.contains(group.id);
                 chips.addView(chip(group.name,in,one.name+(in?" is in ":" is not in ")+group.name+". Tap to "+(in?"take them out.":"put them in."),()->put(one,group,!in)));
             }
+            if(several)chips.setPadding(a.dp(24),0,0,a.dp(8));
             body.addView(chips,new LinearLayout.LayoutParams(-1,-2));
+          }
         }
         // Each part says what to do when it is empty.
         if(others==0)body.addView(a.under("Nobody else yet. Tap + to connect with someone, or share a note or a folder with them."));
-        body.addView(adds(Groups.MY_DEVICES,"Add a device",()->a.shareSheet(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,"Everything")));
+        body.addView(adds(Groups.MY_DEVICES,"Add my device",()->a.shareSheet(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,"Everything")));
         for(NoteStore.Contact one:r.contacts)if(one.mine){mine++;body.addView(device(one,r));}
         if(mine==0)body.addView(a.under("No other device yet. Tap + to connect another device of yours and keep the same notes on both."));
         // This device is the one Profile is about: its line goes there, where its name, its code and how it connects are,
@@ -326,7 +369,26 @@ final class PeopleBox {
         // from the profile page, we should be able to go back to people and devices").
         body.addView(a.part("This device"));
         // With its round, as every line above has one: the same line, about this phone.
-        body.addView(a.person(entry(here,"Your name, your code and how this phone connects",a::profile,null),here,null));
+        // Held, as every line is (the owner, 2026-10-11: "make sure everything across the app has a contextual menu").
+        LinearLayout self=entry(here,"Your name, your code and how this phone connects",a::profile,null);
+        self.setOnLongClickListener(v->{a.heldMenu(v,null,"Profile",(Runnable)a::profile);return true;});
+        body.addView(a.person(self,here,null));
+        // Senders blocked from a share, and Delete, which removes that record so they can share again (decision 127).
+        body.addView(a.part(FirstShare.BLOCKED));
+        if(r.blocked.isEmpty())body.addView(a.under(FirstShare.NOBODY_BLOCKED));
+        for(String[] one:r.blocked) {
+            final String address=one[0],shown=one[1]==null||one[1].isEmpty()?"Somebody":one[1];
+            TextView delete=a.tap("Delete","Delete "+shown,MainActivity.READING,a.INK,v->{
+                AlertDialog box=a.new Box().setTitle(FirstShare.deleteBlocked(shown)).setMessage(FirstShare.CAN_SHARE_AGAIN)
+                    .setPositiveButton("Delete",(d,w)->a.background.submit(()->{a.store.forgetBlocked(address);return null;},
+                        done->draw(),e->a.alert("Could not delete that. Nothing was changed.")))
+                    .setNegativeButton("Cancel",null).create();
+                box.show();
+                android.widget.Button yes=box.getButton(AlertDialog.BUTTON_POSITIVE);if(yes!=null)yes.setTextColor(a.WARN);
+            });
+            LinearLayout held=line(shown,delete);held.setOnLongClickListener(v->{a.heldMenu(v,null,"Delete",(Runnable)delete::performClick);return true;});
+            body.addView(a.personLook(held,shown));
+        }
     }
 
     /**
@@ -351,7 +413,7 @@ final class PeopleBox {
         LinearLayout entry=entry(one.name,under,()->go(new Level(PERSON,one.address,one.name)),null);
         // Held, as a right-click on the PC: whether it is a device of mine, then Forget, last.
         entry.setOnLongClickListener(v->{a.heldMenu(v,one.mine?"My device":null,"My device",(Runnable)()->mine(one,!one.mine),
-            null,"Forget",(Runnable)()->a.forgetAddress(one));return true;});
+            null,one.mine?"Forget":"Remove this person…",(Runnable)()->a.forgetAddress(one));return true;});
         return a.person(entry,one.name,one.address);
     }
 
@@ -373,6 +435,7 @@ final class PeopleBox {
         LinearLayout entry=entry(Groups.counted(name,in.size(),group==null),who.isEmpty()?(group==null?"No other device yet":"Nobody in it yet"):String.join(", ",who),
             ()->go(new Level(GROUP,id,name)),more);
         if(more!=null)entry.setOnLongClickListener(v->{groupMenu(more,group,false);return true;});
+        else entry.setOnLongClickListener(v->{a.heldMenu(v,null,"Open",(Runnable)()->go(new Level(GROUP,id,name)));return true;});
         return entry;
     }
 
@@ -435,10 +498,13 @@ final class PeopleBox {
                     .setMessage((loses.isEmpty()?"Nothing is shared with "+name+" yet, so they lose nothing.":"They lose what is shared with "+name+": "+String.join(", ",loses)+".")
                         +" What was shared with them on their own stays.")
                     .setPositiveButton("Remove",(d,w)->put(one,group,false)).setNegativeButton("Cancel",null).show();});
-            body.addView(a.person(entry(one.name,"",()->go(new Level(PERSON,one.address,one.name)),remove),one.name,one.address));
+            LinearLayout member=entry(one.name,"",()->go(new Level(PERSON,one.address,one.name)),remove);
+            member.setOnLongClickListener(v->{if(remove!=null)a.heldMenu(v,null,"Their page",(Runnable)()->go(new Level(PERSON,one.address,one.name)),null,"Remove",(Runnable)remove::performClick);
+                else a.heldMenu(v,null,"Their page",(Runnable)()->go(new Level(PERSON,one.address,one.name)));return true;});
+            body.addView(a.person(member,one.name,one.address));
         }
-        if(in.isEmpty())body.addView(a.under(mine?"No other device yet. Connect my other device to keep the same notes on both.":"Nobody in this group yet. Add people to put somebody in it."));
-        if(mine)body.addView(a.tapRow("Connect my other device…",()->a.shareSheet(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,"Everything")));
+        if(in.isEmpty())body.addView(a.under(mine?"No other device yet. Add my device to keep the same notes on both.":"Nobody in this group yet. Add people to put somebody in it."));
+        if(mine)body.addView(a.tapRow("Add my device…",()->a.shareSheet(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,"Everything")));
         else {
             // Whoever is not in it yet, dropped down under the members: a tap adds, and the list stays for the next one.
             TextView turn=a.label(at.adding?"▴":"▾",MainActivity.QUIET,a.MUTED);turn.setPadding(a.dp(12),0,0,0);
@@ -452,6 +518,7 @@ final class PeopleBox {
                     if(one.mine||!one.paired()||r.groupsOf(one.address).contains(at.id))continue;
                     out++;
                     LinearLayout line=line(one.name,a.tap("Add","Add "+one.name+" to "+name,MainActivity.QUIET,a.INK,v->put(one,group,true)));
+                    line.setOnLongClickListener(v->{a.heldMenu(v,null,"Add to "+name,(Runnable)()->put(one,group,true),"Their page",(Runnable)()->go(new Level(PERSON,one.address,one.name)));return true;});
                     line.setPadding(a.dp(12),a.dp(4),0,a.dp(4));
                     body.addView(a.person(line,one.name,one.address));
                 }
@@ -476,6 +543,12 @@ final class PeopleBox {
      * A thing on a group's or a person's page: its name, which opens its Share box, what it came through quietly under it,
      * and the rights on it at the right, dropping down to the ones this phone may give and Remove where it may change them.
      */
+    /** What it came through, and why its role is not changed here where it is not (see Sharing#fixed). */
+    private static String why(NoteStore.Shared one,String through,String name) {
+        if(!one.owner&&one.mayChange)return through;
+        return (through==null?"":through+"  ·  ")+Sharing.fixed(one.owner,name);
+    }
+
     private View thing(final NoteStore.Shared one,String under,boolean may,final Sharing.Level now,
                        final java.util.function.Consumer<Sharing.Level> picked,final Runnable remove) {
         LinearLayout line=new LinearLayout(a);line.setGravity(Gravity.CENTER_VERTICAL);line.setMinimumHeight(a.dp(52));
@@ -485,6 +558,8 @@ final class PeopleBox {
         words.setBackgroundResource(a.touchFeedback());
         words.setContentDescription("Who has "+one.said());
         words.setOnClickListener(v->a.sharedWith(one.scope,one.target,one.name));
+        words.setOnLongClickListener(v->{if(may&&remove!=null&&!one.owner)a.heldMenu(v,null,"Who has it…",(Runnable)()->a.sharedWith(one.scope,one.target,one.name),null,"Remove",remove);
+            else a.heldMenu(v,null,"Who has it…",(Runnable)()->a.sharedWith(one.scope,one.target,one.name));return true;});
         line.addView(words,new LinearLayout.LayoutParams(0,-2,1));
         final String role=one.owner?Sharing.OWNER:now.words(),does=one.owner?Sharing.OWNER_DOES:now.does();
         final TextView set=a.label(may&&!one.owner?role+"  ▾":role,MainActivity.QUIET,a.MUTED);
@@ -518,17 +593,29 @@ final class PeopleBox {
         entry.addView(words,new LinearLayout.LayoutParams(0,-2,1));
         // Their round, in their colour, before the name: a tap gives them another here (decision 69).
         card.addView(a.person(entry,who.name,who.address));
+        // Their colour right under the name, chosen here; for one of your own devices, which writes as you, said (decision 185).
+        final LinearLayout colour=a.column();card.addView(colour);
+        a.inkRowFor(who.address,row->{colour.removeAllViews();colour.addView(row,new LinearLayout.LayoutParams(-1,-2));});
         // How it is reached, one line across the block (decision 97); why only one end counts it as the owner's; the six
         // digits to check with them.
         String[] road=r.roads.get(who.address);
         if(road!=null)card.addView(a.spaced(a.label(Routes.oneLine(road),MainActivity.QUIET,a.MUTED)));
         if(r.sided.containsKey(who.address))card.addView(a.spaced(a.label(r.sided.get(who.address),MainActivity.QUIET,a.MUTED)));
         if(r.checks.containsKey(who.address))card.addView(a.spaced(a.label("Check with them: "+r.checks.get(who.address),MainActivity.QUIET,a.MUTED)));
+        // The name they share, and the name we pick, and which one is shown (decision 124).
+        nameRows(body,who.shared(),who.picked,who.showPicked,who.pickedHere,null,
+            (picked,show,onlyHere)->a.saveCalled(who,picked,show,onlyHere,this::draw));
         // Their Parlons! address, shortened, or Not set; › opens the box that sets it, and with one set they are contacted from here (decision 101).
         if(!who.mine) {
             body.addView(a.row("Parlons!",Parlons.shortened(who.parlons),()->a.parlonsBox(who,this::draw,who.name)));
             if(!who.parlons.isEmpty())body.addView(a.tapRow(Parlons.CONTACT,()->a.openParlons(who.name,who.parlons)));
         }
+        // Their picture, picked here over the one they gave, or theirs (decision 158).
+        final View[] faceRow={null};
+        faceRow[0]=a.tapRow("Picture…",()->a.faceMenu(faceRow[0],who.address,who.name));
+        body.addView(faceRow[0]);
+        // Files straight to them, as from Send files, without choosing them again (decision 146).
+        if(who.paired())body.addView(a.tapRow("Send files…",()->a.sendFilesTo(who.address)));
         // The groups they are in, a switch each (decision 100): on puts them in, and whatever the group has is theirs.
         if(!who.mine&&who.paired()&&!r.groups.isEmpty()) {
             body.addView(a.part("Groups"));
@@ -539,13 +626,13 @@ final class PeopleBox {
         // which, and changed here it becomes their own.
         body.addView(a.part("Shared with "+who.name));
         for(final NoteStore.Shared one:r.shared)
-            body.addView(thing(one,one.group.isEmpty()?null:"through "+r.groupName(one.group),one.mayChange,one.level,
+            body.addView(thing(one,why(one,one.group.isEmpty()?null:"through "+r.groupName(one.group),who.name),one.mayChange,one.level,
                 to->rights(one.scope,one.target,who,one.rule,to,this::draw),()->rights(one.scope,one.target,who,one.rule,Sharing.Level.GONE,this::draw)));
         if(r.shared.isEmpty())body.addView(a.under("Nothing shared with "+who.name+" yet."));
         // What can be done to the device itself, last: whether it is mine (on or off, so a switch), and forgetting it.
         body.addView(a.part("Device"));
         body.addView(a.switchRow("My device",who.mine,on->mine(who,on)));
-        body.addView(a.row("Forget","",()->a.forgetAddress(who)));
+        body.addView(a.row(who.mine?"Forget":"Remove this person…","",()->a.forgetAddress(who)));
     }
 
     private void mine(final NoteStore.Contact who,final boolean yes) {
@@ -558,9 +645,50 @@ final class PeopleBox {
     /** This device: what it is called, its door, how notes travel. */
     private void self(LinearLayout body,Read r) {
         LinearLayout self=a.framed(body);
-        TextView name=a.line(a.thisDevice(),MainActivity.READING,a.INK);name.setTypeface(null,android.graphics.Typeface.BOLD);self.addView(name);
+        TextView name=a.line(a.deviceShown(),MainActivity.READING,a.INK);name.setTypeface(null,android.graphics.Typeface.BOLD);self.addView(name);
         for(String line:r.here)self.addView(a.spaced(a.label(line,MainActivity.QUIET,a.MUTED)));
+        Called.Choice called=a.deviceName();
+        nameRows(body,called.shared,called.picked,called.showOurs,called.onlyHere,
+            ()->editShared(called.shared),
+            (picked,show,onlyHere)->a.saveThisCalled(picked,show,onlyHere,this::draw));
     }
+
+    /** The name they share and the name we pick. {@code editShared} is set for this device, whose shared name is its own. */
+    private void nameRows(LinearLayout body,final String shared,final String picked,final boolean showOurs,final boolean onlyHere,
+            final Runnable editShared,final NameKept save) {
+        body.addView(a.part("Name"));
+        body.addView(a.row("They share",shared.isEmpty()?"Not set":shared,editShared));
+        body.addView(a.row("We call them",picked.isEmpty()?"Not set":picked,()->editPicked(picked,onlyHere,save)));
+        String showing=showOurs&&!picked.isEmpty()?Called.SHOW_OURS:Called.SHOW_THEIRS;
+        View show=a.row("Show",showing,()->{});
+        show.setOnClickListener(v->a.heldMenu(v,showing,
+            Called.SHOW_THEIRS,(Runnable)()->save.at(picked,false,onlyHere),
+            Called.SHOW_OURS,(Runnable)()->{if(picked.isEmpty())a.toast("Type the name we pick first.");else save.at(picked,true,onlyHere);}));
+        body.addView(show);
+        String where=onlyHere?Called.ONLY_HERE:Called.ALL_MINE;
+        View scope=a.row("On",where,()->{});
+        scope.setOnClickListener(v->a.heldMenu(v,where,
+            Called.ALL_MINE,(Runnable)()->save.at(picked,showOurs,false),
+            Called.ONLY_HERE,(Runnable)()->save.at(picked,showOurs,true)));
+        body.addView(scope);
+    }
+
+    private void editPicked(String picked,boolean onlyHere,NameKept save) {
+        final EditText input=a.field("Name",Persons.NAME_MOST);
+        input.setText(picked);if(!picked.isEmpty())input.setSelection(0,picked.length());
+        a.new Box().setTitle("The name we pick").setView(a.naming(input,"Shown where that name is chosen. Clear it to go back to the name they share."))
+            .setPositiveButton("Save",(d,w)->{String name=input.getText().toString().trim();save.at(name,!name.isEmpty(),onlyHere);}).show();
+    }
+
+    private void editShared(String shared) {
+        final EditText input=a.field("Name",Persons.NAME_MOST);
+        input.setText(shared);if(!shared.isEmpty())input.setSelection(0,shared.length());
+        a.new Box().setTitle("The name they share").setView(a.naming(input,"What your own devices call this phone. Other people still see your name."))
+            .setPositiveButton("Save",(d,w)->{String name=input.getText().toString().trim();if(!name.equals(shared))a.renameSharedDevice(name,this::draw);}).show();
+    }
+
+    /** A name kept from these rows: the words, whether they are the ones shown, and whether that stays on this phone. */
+    private interface NameKept { void at(String picked,boolean showOurs,boolean onlyHere); }
 
     /**
      * Rights of their own for one person on one thing, or taken off it (GONE): saved, what showed it drawn again, then sent,
@@ -640,22 +768,28 @@ final class PeopleBox {
         if(r.give.isEmpty()&&withBox==null){withOpen=false;a.alert("Only its owner or an admin can share this.");return;}
         LinearLayout body=a.inside();
         if(withBack)body.addView(backTo(name,()->{if(withBox!=null)withBox.dismiss();}));
-        body.addView(a.part("Groups"));
-        withGroup(body,r,Groups.MINE,Groups.MY_DEVICES,true);
-        for(Groups.Group group:r.groups)withGroup(body,r,group.id,group.name,false);
+        // People first, everybody, in a group or not, so any contact is one tap from being added; then the groups, open (the
+        // owner, 2026-10-15 and 2026-10-17: "contacts first", "adding someone from my contacts easily accessible", "groups and
+        // lists extended, not collapsed by default"; decision 189), as on the PC.
         body.addView(a.part("People"));
         int alone=0,others=0;
         for(NoteStore.Contact one:r.contacts) {
             if(one.mine)continue;
             others++;
-            // In a group: listed under it, where it folds open, and not again here.
-            if(!r.groupsOf(one.address).isEmpty())continue;
             alone++;body.addView(a.person(line(one.name,standing(r,one,null)),one.name,one.address));
         }
-        if(alone==0)body.addView(a.under(r.contacts.isEmpty()?"No devices paired yet. Scan another device's code, or show them yours."
-            :others>0?"Everybody else is in a group.":"Nobody else yet. Scan their code, or show them yours."));
-        body.addView(a.row("Show them my code","",()->{withLeft[0]=true;if(withBox!=null)withBox.dismiss();a.shareSheet(scope,target,name);}));
-        body.addView(a.row("Scan their code","",()->{withLeft[0]=true;if(withBox!=null)withBox.dismiss();a.typeAddress(scope,target,name);}));
+        // Nothing said where everybody is in a group: the groups above say it (the owner, 2026-10-13: "let's remove the sentence
+        // Everybody else is in a group").
+        if(alone==0&&others==0)body.addView(a.under(r.contacts.isEmpty()?"No devices paired yet. Scan another device's code, or show them yours."
+            :"Nobody else yet. Scan their code, or show them yours."));
+        body.addView(a.part("Groups"));
+        withGroup(body,r,Groups.MINE,Groups.MY_DEVICES,true);
+        for(Groups.Group group:r.groups)withGroup(body,r,group.id,group.name,false);
+        // Back from the code or the camera, by the back swipe or a tap beside it, comes back here (the owner, 2026-10-13: "if
+        // we click show them my code, we should be able to go back to the first window").
+        final boolean cameBack=withBack;final Runnable backHere=()->with(scope,target,name,cameBack);
+        body.addView(a.row("Show them my code…","",()->{withLeft[0]=true;if(withBox!=null)withBox.dismiss();a.shareSheet(scope,target,name,backHere);}));
+        body.addView(a.row("Scan their code…","",()->{withLeft[0]=true;if(withBox!=null)withBox.dismiss();a.typeAddress(scope,target,name,backHere);}));
         if(withBox==null) {
             withScroll=a.scrolling(body);
             final AlertDialog made=a.new Box().setTitle("Share “"+name+"” with").setView(withScroll).create();
@@ -673,7 +807,7 @@ final class PeopleBox {
 
     /** One group in Share with: its name, folding open to its people, and the group's rights on the thing, or Add. */
     private void withGroup(LinearLayout body,final Read r,final String id,final String name,boolean devices) {
-        List<NoteStore.Contact> in=r.in(id);final Groups.Given given=r.given.get(id);final boolean open=unfolded.contains(id);
+        List<NoteStore.Contact> in=r.in(id);final Groups.Given given=r.given.get(id);final boolean open=!unfolded.contains(id);
         final java.util.function.Consumer<Sharing.Level> share=to->{
             final boolean off=to==Sharing.Level.GONE;
             a.groupWork((off?"Removing ":"Sharing with ")+name+"…",()->a.store.shareWithGroup(withScope,withTarget,id,to),off?"Removed "+name:"Shared with "+name+" · "+to.words(),this::drawWith);};

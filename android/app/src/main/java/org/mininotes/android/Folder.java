@@ -37,12 +37,22 @@ final class Folder {
     LinearLayout head;
     ScrollView scroll;
     GridLayout grid;
+    /**
+     * A folder shown as an album (decision 217): its pictures as squares over its grid, which holds what else it has, under
+     * a heading, all in one scroll. Gone for every other folder.
+     */
+    GridLayout album;
+    private TextView others;
+    /** The pictures the album shows now, in its order: what a square tapped browses through. */
+    List<PhoneAlbum.Picture> pictures=java.util.Collections.emptyList();
     /** The card's grid as it was last drawn: each icon in its cell, and the empty cells between (decision 39). */
     HomeScreen.Laid laid;
     /** The card's own +, which the places do not have: nothing is made among the favourites, in the archive or in the bin. */
     private View plus;
     /** Which the card shows - a collection's id, or the favourites' - so a card that moves on starts at its top. */
     private String shown="";
+    private final Map<String,Integer> positions=new java.util.HashMap<>();
+    private void holdPosition(){if(isOpen()&&scroll!=null)positions.put(last().id,scroll.getScrollY());}
     /** The collection the card shows, as the thing its menu and its mark are about, as last read; null among the favourites. */
     private NoteStore.Branch thing;
     /** The collection it is in, as last read: what "up a level" means, and what ‹ says. */
@@ -59,6 +69,11 @@ final class Folder {
 
     /** Whether the card is one of Home's places - the favourites, the archive, the bin - where things are only listed. */
     boolean listing(){return a.trail.size()>1&&Grid.place(last().kind);}
+
+    /** A listing whose entries open elsewhere, while Back remembers this visit. */
+    /** Whether the card open is Recent's. */
+    boolean inRecent(){return a.trail.size()>1&&last().kind==NoteStore.Branch.Kind.RECENT;}
+    boolean lists(){return a.trail.size()>1&&(last().kind==NoteStore.Branch.Kind.TEMP||last().kind==NoteStore.Branch.Kind.RECENT||last().kind==NoteStore.Branch.Kind.SHARED);}
 
     /** Whether the card is the bin's, where things wait to be put back or deleted for good. */
     boolean inBin(){return a.trail.size()>1&&last().kind==NoteStore.Branch.Kind.BIN;}
@@ -85,6 +100,7 @@ final class Folder {
 
     /** A collection on Home's grid, tapped: its card. */
     void open(NoteStore.Branch collection) {
+        positions.clear();
         a.trail.clear();a.trail.add(new MainActivity.Step(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING,"Home"));
         a.trail.add(new MainActivity.Step(NoteStore.Branch.Kind.COLLECTION,collection.id,collection.name));
         show();
@@ -92,6 +108,7 @@ final class Folder {
 
     /** The Favourites collection, tapped: the favourites the dock has no room for. */
     void openFavourites() {
+        positions.clear();
         a.trail.clear();a.trail.add(new MainActivity.Step(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING,"Home"));
         a.trail.add(new MainActivity.Step(NoteStore.Branch.Kind.FAVOURITES,NoteStore.FAVOURITES,"Favourites"));
         show();
@@ -99,6 +116,7 @@ final class Folder {
 
     /** The archive or the bin, tapped on Home: what waits in it. */
     void openPlace(NoteStore.Branch place) {
+        positions.clear();
         a.trail.clear();a.trail.add(new MainActivity.Step(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING,"Home"));
         a.trail.add(new MainActivity.Step(place.kind,place.id,place.name));
         show();
@@ -106,21 +124,24 @@ final class Folder {
 
     /** A collection inside the card, tapped: the same card, one level in. */
     void into(NoteStore.Branch collection) {
+        holdPosition();
         a.trail.add(new MainActivity.Step(NoteStore.Branch.Kind.COLLECTION,collection.id,collection.name));
         show();
     }
 
     /** ‹, or back: one level up, in the same card, or the card closed where there is no level above it but Home. */
     void up() {
-        if(a.trail.size()>2){a.trail.remove(a.trail.size()-1);show();}
+        if(a.trail.size()>2){holdPosition();a.trail.remove(a.trail.size()-1);show();}
         else close();
     }
 
     /** Put away, and Home under it is what is on the screen again. */
     void close() {
+        positions.clear();
         if(scrim!=null&&scrim.getParent()!=null)((ViewGroup)scrim.getParent()).removeView(scrim);
         if(home.homePlus!=null)home.homePlus.setVisibility(View.VISIBLE);
-        scrim=null;card=null;head=null;scroll=null;grid=null;laid=null;plus=null;shown="";thing=null;aside=false;waits=null;
+        if(a.viewer!=null)a.viewer.close();
+        scrim=null;card=null;head=null;scroll=null;grid=null;album=null;others=null;pictures=java.util.Collections.emptyList();laid=null;plus=null;shown="";thing=null;aside=false;waits=null;
         while(a.trail.size()>1)a.trail.remove(a.trail.size()-1);
         home.refresh();
     }
@@ -181,7 +202,13 @@ final class Folder {
         scroll=new ScrollView(a);scroll.setClipToPadding(false);scroll.setVerticalScrollBarEnabled(false);
         grid=new GridLayout(a);grid.setColumnCount(home.columns(width()));
         grid.setPadding(0,a.dp(2),0,a.dp(88));
-        scroll.addView(grid,new FrameLayout.LayoutParams(-1,-2));
+        LinearLayout holds=a.column();
+        album=new GridLayout(a);album.setVisibility(View.GONE);
+        others=a.label("Notes and other files",MainActivity.QUIET,a.MUTED);others.setTypeface(others.getTypeface(),android.graphics.Typeface.BOLD);
+        others.setPadding(a.dp(6),a.dp(16),a.dp(6),a.dp(4));others.setVisibility(View.GONE);
+        holds.addView(album,new LinearLayout.LayoutParams(-1,-2));holds.addView(others,new LinearLayout.LayoutParams(-1,-2));
+        holds.addView(grid,new LinearLayout.LayoutParams(-1,-2));
+        scroll.addView(holds,new FrameLayout.LayoutParams(-1,-2));
         inside.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
         // Files dragged in from another app and let go on the card are kept with this collection (decision 23) - in the empty
         // cell they were let go in - or with the note or collection in it they were let go on, as on Home.
@@ -296,7 +323,10 @@ final class Folder {
             if(step.kind==NoteStore.Branch.Kind.COLLECTION&&!a.store.stillThere(step.kind,step.id)){got.put("keep",at);return;}
         }
         String in=a.store.collectionOfBook(end.id);
-        got.put("card",a.store.contents(end.id));
+        List<NoteStore.Branch> holds=a.store.contents(end.id);
+        got.put("card",holds);
+        // Shown as an album here: its pictures, newest first, of those it shows (decision 217).
+        if(a.store.album(end.id))got.put("album",Album.shown(Album.pictures(a.store.filesOf(NoteStore.Branch.Kind.COLLECTION,end.id)),holds));
         got.put("name",a.store.collectionName(end.id));
         got.put("tint",a.store.colourOf(NoteStore.Branch.Kind.COLLECTION,end.id));
         got.put("tone",a.store.toneOf(NoteStore.Branch.Kind.COLLECTION,end.id));
@@ -340,20 +370,38 @@ final class Folder {
             face.icon=got.get("icon")==null?"":(String)got.get("icon");face.image=(byte[])got.get("image");face.tone=tone;
         }
         bar(end,place,face);
-        @SuppressWarnings("unchecked") List<NoteStore.Branch> asking=end.kind==NoteStore.Branch.Kind.SHARED&&got.get("waitingFor")!=null
+        // What waits for an answer is an icon in the same grid, not a strip of buttons (decision 127).
+        @SuppressWarnings("unchecked") List<NoteStore.Branch> waitingFor=end.kind==NoteStore.Branch.Kind.SHARED&&got.get("waitingFor")!=null
             ?(List<NoteStore.Branch>)got.get("waitingFor"):java.util.Collections.<NoteStore.Branch>emptyList();
-        waiting(asking);
+        if(!waitingFor.isEmpty()){List<NoteStore.Branch> all=new java.util.ArrayList<>(waitingFor);all.addAll(lines);lines=all;}
+        waiting(java.util.Collections.emptyList());
         final int kept=scroll.getScrollY();
         final boolean same=end.id.equals(shown);
         shown=end.id;
         // Each icon in its cell, with the empty cells between (decision 39); in a place, one after the other.
-        // Temp and Recent list things as Favourites does: tapped, each opens where it really is.
+        // Temp, Recent and Shared with me list things as Favourites does: tapped, each opens where it really is.
+        // A waiting share's tap is Accept, Refuse and See sender.
         HomeScreen.Where where=end.kind==NoteStore.Branch.Kind.FAVOURITES||end.kind==NoteStore.Branch.Kind.TEMP||end.kind==NoteStore.Branch.Kind.RECENT
             ||end.kind==NoteStore.Branch.Kind.SHARED?HomeScreen.Where.FAVOURITES:place?HomeScreen.Where.AWAY:HomeScreen.Where.CARD;
-        // Nothing accepted yet, but something waiting above: nothing more to say under it.
-        laid=home.lay(grid,lines,java.util.Collections.emptyList(),width(),where,scroll.getHeight(),asking.isEmpty()?nothingYet(end.kind):null);
+        // An album: its pictures as squares, and under them what else it holds, as the folder draws it (decision 217).
+        @SuppressWarnings("unchecked") List<NoteStore.Held> shownPictures=place?null:(List<NoteStore.Held>)got.get("album");
+        List<PhoneAlbum.Picture> squares=new java.util.ArrayList<>();
+        if(shownPictures!=null) {
+            Map<String,NoteStore.Branch> byId=new java.util.HashMap<>();for(NoteStore.Branch one:lines)byId.put(one.id,one);
+            for(NoteStore.Held one:shownPictures){NoteStore.Branch line=byId.get(one.id);if(line!=null)squares.add(new PhoneAlbum.Picture(line,one));}
+            lines=Album.others(lines,shownPictures);
+            java.util.Set<String> still=new java.util.HashSet<>();for(PhoneAlbum.Picture one:squares)still.add(one.held.id);
+            if(a.viewer!=null)a.viewer.still(still);
+        }
+        pictures=squares;
+        album.setVisibility(shownPictures!=null?View.VISIBLE:View.GONE);
+        others.setVisibility(shownPictures!=null&&!lines.isEmpty()?View.VISIBLE:View.GONE);
+        grid.setVisibility(shownPictures==null||!lines.isEmpty()?View.VISIBLE:View.GONE);
+        if(shownPictures!=null)PhoneAlbum.fill(a,album,squares,width(),lines.isEmpty());else album.removeAllViews();
+        laid=home.lay(grid,lines,java.util.Collections.emptyList(),width(),where,scroll.getHeight(),lines.isEmpty()&&shownPictures==null?nothingYet(end.kind):null);
         // Drawn again because something changed: still where it was scrolled to. Opened on another collection: its top.
-        scroll.post(()->{if(scroll!=null)scroll.scrollTo(0,same?kept:0);});
+        int restored=same?kept:positions.getOrDefault(end.id,0);
+        scroll.post(()->{if(scroll!=null&&last().id.equals(end.id))scroll.scrollTo(0,restored);});
     }
 
     /** Shared with me's first part, under the bar: what waits for an answer, a line each (decision 109). Empty, not shown. */
@@ -498,7 +546,9 @@ final class Folder {
             named.addView(name,new LinearLayout.LayoutParams(-2,-2));
             head.addView(named,new LinearLayout.LayoutParams(0,-2,1));
         }
+        // Temp too: what is in it goes to other devices, so its card says whether something waits, and its mark sends it.
         if(!place)head.addView(a.syncMark(thing));
+        else if(end.kind==NoteStore.Branch.Kind.TEMP)head.addView(a.syncMark(new NoteStore.Branch(end.kind,end.id,Sharing.EVERYTHING,end.name,"",0,0,true)));
         final NoteStore.Branch about=place?new NoteStore.Branch(end.kind,end.id,Sharing.EVERYTHING,end.name,"",0,0,true):thing;
         head.addView(a.tap("⋮",about.name,22,a.INK,v->a.menuFor(v,about)));
     }

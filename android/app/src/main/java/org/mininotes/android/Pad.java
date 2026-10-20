@@ -12,7 +12,7 @@ import android.text.Editable;
 import android.text.Spanned;
 import android.text.TextWatcher;
 import android.text.style.ForegroundColorSpan;
-import android.text.style.RelativeSizeSpan;
+import android.text.style.ReplacementSpan;
 import android.text.style.StyleSpan;
 import android.text.style.UnderlineSpan;
 import android.view.ActionMode;
@@ -30,14 +30,145 @@ import android.widget.OverScroller;
 final class Pad extends EditText {
     private final Paint rule=new Paint();
     private final Rect line=new Rect();
+    private final Rect clip=new Rect();
     private final int drop;
     // A swipe keeps the page moving after the finger lifts, as every other list on the phone does. An editor
     // scrolls only while it is dragged, so a long note went by one push at a time.
     private final OverScroller coasting;
     private final GestureDetector swipes;
+    private android.os.Bundle resizing;
+    private android.os.Bundle pendingPosition;
+    private boolean writing;
+
+    void caretVisible(boolean visible){writing=visible;}
+
+    /** Store offsets, never the note's words. The top character survives a different line width. */
+    android.os.Bundle position() {
+        android.os.Bundle state=new android.os.Bundle();
+        state.putInt("start",Math.max(0,getSelectionStart()));state.putInt("end",Math.max(0,getSelectionEnd()));
+        android.text.Layout lines=getLayout();
+        if(lines!=null) {
+            int line=lines.getLineForVertical(getScrollY());
+            state.putInt("top",lines.getLineStart(line));
+            state.putFloat("within",(getScrollY()-lines.getLineTop(line))/(float)Math.max(1,lines.getLineBottom(line)-lines.getLineTop(line)));
+        }
+        return state;
+    }
+
+    void restorePosition(android.os.Bundle state) {
+        android.text.Layout lines=getLayout();if(lines==null)return;
+        int length=length();
+        setSelection(Math.min(length,state.getInt("start")),Math.min(length,state.getInt("end")));
+        int line=lines.getLineForOffset(Math.min(length,state.getInt("top")));
+        int top=lines.getLineTop(line)+Math.round(state.getFloat("within")*(lines.getLineBottom(line)-lines.getLineTop(line)));
+        scrollTo(0,Math.max(0,Math.min(top,furthest())));
+        if(writing)bringPointIntoView(Math.max(0,getSelectionEnd()));
+    }
+
+    void restoreAfterLayout(android.os.Bundle state) {
+        boolean waiting=pendingPosition!=null;
+        pendingPosition=state;
+        if(waiting)return;
+        getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+            @Override public boolean onPreDraw() {
+                getViewTreeObserver().removeOnPreDrawListener(this);
+                android.os.Bundle held=pendingPosition;pendingPosition=null;
+                restorePosition(held);return true;
+            }
+        });
+        invalidate();
+    }
+
+    @Override protected void onMeasure(int width,int height) {
+        if(getLayout()!=null&&getWidth()>0&&getHeight()>0
+            &&(MeasureSpec.getSize(width)!=getWidth()||MeasureSpec.getSize(height)!=getHeight())&&resizing==null)resizing=position();
+        super.onMeasure(width,height);
+        if(getMeasuredWidth()==getWidth()&&getMeasuredHeight()==getHeight())resizing=null;
+    }
+
+    @Override protected void onSizeChanged(int w,int h,int oldw,int oldh) {
+        super.onSizeChanged(w,h,oldw,oldh);
+        if(resizing!=null) {
+            final android.os.Bundle held=resizing;resizing=null;
+            coasting.forceFinished(true);
+            if(pendingPosition==null)restoreAfterLayout(held);
+        }
+    }
+
+    /**
+     * The page's words. A letter typed moves every style after it along by one, and Android tells the page's layout of
+     * each style moved as though it had changed, which lays its paragraph out again twice: in a long note with marks that
+     * was seconds a keystroke near the top (Graphene, 2026-10-10). A style moved with its words lays out the same, and the
+     * paragraph written in is laid out again for the letters anyway, so while styles are only being moved along after a
+     * change the layout alone is not told. Everybody else still is, and every other change reaches the layout as before.
+     */
+    static final class Words extends android.text.SpannableStringBuilder {
+        private static final String LAYOUT="android.text.DynamicLayout$ChangeWatcher";
+        /** Told last that the letters have changed: what follows is the styles being moved along. */
+        private final class Moving implements TextWatcher {
+            @Override public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+            @Override public void onTextChanged(CharSequence s,int start,int before,int count){}
+            @Override public void afterTextChanged(Editable e){moving=true;watchers=null;}
+        }
+        private boolean moving;
+        /**
+         * Who watches the styles, less the layout, found once while they are moved along: looking them up again for each
+         * style moved was most of a keystroke. Nothing is added or taken off meanwhile without it being looked up again.
+         */
+        private Object[] watchers;
+        Words(CharSequence text) {
+            super(text);
+            for(Moving copied:getSpans(0,length(),Moving.class))super.removeSpan(copied);
+            super.setSpan(new Moving(),0,length(),SPAN_INCLUSIVE_INCLUSIVE);
+        }
+        @Override public android.text.SpannableStringBuilder replace(int start,int end,CharSequence words,int from,int to) {
+            boolean was=moving;moving=false;
+            try{return super.replace(start,end,words,from,to);}finally{moving=was;}
+        }
+        @Override public void setSpan(Object what,int start,int end,int flags) {
+            boolean was=moving;moving=false;watchers=null;
+            try{super.setSpan(what,start,end,flags);}finally{moving=was;watchers=null;}
+        }
+        @Override public void removeSpan(Object what) {
+            boolean was=moving;moving=false;watchers=null;
+            try{super.removeSpan(what);}finally{moving=was;watchers=null;}
+        }
+        @SuppressWarnings("unchecked")
+        @Override public <T> T[] getSpans(int start,int end,Class<T> kind) {
+            if(!moving||kind!=android.text.SpanWatcher.class)return super.getSpans(start,end,kind);
+            if(watchers==null) {
+                java.util.List<Object> found=new java.util.ArrayList<>();
+                for(Object one:super.getSpans(0,length(),kind))if(!one.getClass().getName().equals(LAYOUT))found.add(one);
+                watchers=found.toArray();
+            }
+            // The ones the stretch would have found, as getSpans finds them: touching it, but not only at an edge.
+            java.util.List<T> some=new java.util.ArrayList<>(watchers.length);
+            for(Object one:watchers) {
+                int from=getSpanStart(one),to=getSpanEnd(one);
+                if(from<0||from>end||to<start)continue;
+                if(from!=to&&start!=end&&(from==end||to==start))continue;
+                some.add((T)one);
+            }
+            return some.toArray((T[])java.lang.reflect.Array.newInstance(kind,some.size()));
+        }
+    }
+
+    /** Whether the keyboard may learn from what is written in a note here, and so dictate (decision 222): yes unless switched off. */
+    static final String KEYBOARD_LEARNS="keyboardLearns";
+    static boolean learnsHere(Context c){return !"false".equals(c.getSharedPreferences("settings",Context.MODE_PRIVATE).getString(KEYBOARD_LEARNS,"true"));}
+    /** The keyboard told whether it may learn, at once if it is up. */
+    void learns(boolean on) {
+        int flag=android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING;
+        int was=getImeOptions(),now=on?was&~flag:was|flag;
+        if(now==was)return;
+        setImeOptions(now);
+        android.view.inputmethod.InputMethodManager keys=(android.view.inputmethod.InputMethodManager)getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        if(keys!=null&&hasFocus())keys.restartInput(this);
+    }
 
     Pad(Context c,int colour) {
         super(c);
+        setEditableFactory(new Editable.Factory(){@Override public Editable newEditable(CharSequence source){return new Words(source);}});
         rule.setColor(colour);rule.setStrokeWidth(1f);
         drop=(int)(getResources().getDisplayMetrics().density*4);
         setBackground(null);
@@ -46,8 +177,11 @@ final class Pad extends EditText {
         // Also: the keyboard never takes the note over. In landscape most keyboards go fullscreen, putting their own
         // one-field editor over the whole note (the owner, 2026-10-07: "the keyboard takes over the text"); NO_EXTRACT_UI
         // and NO_FULLSCREEN keep the note itself in view, the keyboard below it, and the line being written scrolled to.
-        setImeOptions(getImeOptions()|android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
-            |android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI|android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN);
+        // Not learning is the keyboard's incognito, and keyboards turn their voice typing off there (the owner, 2026-10-19:
+        // "the micro to dictate text in the keyboard now says it is unavailable in the note"; decision 222): so a switch in
+        // Settings, on by default, lets the keyboard learn, and dictate. A private space's page stays incognito whatever it says.
+        setImeOptions(getImeOptions()|android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI|android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN);
+        learns(learnsHere(c));
         coasting=new OverScroller(c);
         // Before anybody else's watcher: whoever reads the page after a keystroke reads runs that already fit it.
         addTextChangedListener(new TextWatcher() {
@@ -95,6 +229,8 @@ final class Pad extends EditText {
 
     /** A writer's colour on their letters. Its own kind, so it is never taken for any other span on the page. */
     private static final class Ink extends ForegroundColorSpan {Ink(int colour){super(colour);}}
+    /** Writers' colours are drawn before any other style, whichever was put on the words first. */
+    private static final int INK_FIRST=1<<Spanned.SPAN_PRIORITY_SHIFT;
 
     /** Who wrote each letter on the page: always as long as the page's text. */
     private Writers runs=Writers.none();
@@ -113,7 +249,7 @@ final class Pad extends EditText {
     /** A keystroke, a paste, a cut, anything typed: the new letters are yours, and the rest keep their writers. */
     private void typed(CharSequence now,int start,int before,int count) {
         if(putting)return;
-        restyleSoon();
+        restyleSoon(start,before,count);
         // A keyboard writes a word again whole as each letter of it is typed, and takes up a word already there when the
         // cursor lands in it: only what is really new in it is yours, and the letters it kept keep their writer.
         String was=replaced;replaced=null;
@@ -132,13 +268,19 @@ final class Pad extends EditText {
 
     /** Words put on the page as they are, with who wrote them - opening a note, or one that changed underneath it. */
     void put(CharSequence text,Writers who) {
+        // Styled before it goes on the page: a style added to words already laid out lays their paragraph out again, and
+        // one at a time that took seconds to open a long note with marks in it (Graphene, 2026-10-10). Laid out once here.
+        android.text.SpannableString styled=new android.text.SpannableString(text==null?"":text);
+        mark(styled,0,styled.length());
+        removeCallbacks(restyling);changedLines.clear();
         putting=true;
-        try{setText(text);}finally{putting=false;}
+        try{setText(styled);}finally{putting=false;}
         String on=getText().toString();
         String given=text==null?"":text.toString();
         runs=who!=null&&who.length()==on.length()&&given.equals(on)?who.copy():Writers.follow(on,Writers.UNKNOWN,given,who);
         ink();
-        restyle();
+        // Whatever a filter on the page cut away changed where the marks fall: those are drawn again from the page.
+        if(!given.equals(on))restyle();
     }
 
     // ---- bold, italic and underline, as marks in the words (see Marks; docs/HOME.md, decision 76) ----------------------
@@ -147,26 +289,56 @@ final class Pad extends EditText {
     private static final class Bold extends StyleSpan{Bold(){super(android.graphics.Typeface.BOLD);}}
     private static final class Italic extends StyleSpan{Italic(){super(android.graphics.Typeface.ITALIC);}}
     private static final class Under extends UnderlineSpan{}
-    private static final class Faint extends ForegroundColorSpan{Faint(int colour){super(colour);}}
-    private static final class Small extends RelativeSizeSpan{Small(){super(0.8f);}}
+    /**
+     * A style's marks, present in the words and taking no room (decisions 118 and 144). Drawn as nothing, measured as
+     * nothing, so the line under the word sits flush with the words around it.
+     */
+    private static final class Gone extends ReplacementSpan {
+        @Override public int getSize(Paint paint,CharSequence text,int start,int end,Paint.FontMetricsInt fm){return 0;}
+        @Override public void draw(Canvas canvas,CharSequence text,int start,int end,float x,int top,int y,int bottom,Paint paint){}
+    }
 
-    private final Runnable restyling=this::restyle;
+    private final Marks.ChangedLines changedLines=new Marks.ChangedLines();
+    private final Runnable restyling=()->{int[] changed=changedLines.take(getText());if(changed!=null)restyle(changed[0],changed[1]);};
     /** Drawn again a moment after the typing, not at every letter. */
-    private void restyleSoon(){removeCallbacks(restyling);postDelayed(restyling,120);}
+    private void restyleSoon(int start,int before,int count){changedLines.changed(start,before,count);removeCallbacks(restyling);postDelayed(restyling,120);}
 
-    /** Every styled stretch drawn: its words bold, italic or underlined, its marks small and faint. */
+    /** Every styled stretch drawn: its words bold, italic or underlined, its marks hidden. */
     void restyle() {
-        Editable text=getText();
-        for(Class<?> kind:new Class<?>[]{Bold.class,Italic.class,Under.class,Faint.class,Small.class})
-            for(Object was:text.getSpans(0,text.length(),kind))text.removeSpan(was);
-        int faint=(getCurrentTextColor()&0x00FFFFFF)|0x66000000;
-        for(Marks.Run run:Marks.of(text)) {
-            Object style=run.style()==Marks.Style.BOLD?new Bold():run.style()==Marks.Style.ITALIC?new Italic():new Under();
-            text.setSpan(style,run.start(),run.end(),Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        removeCallbacks(restyling);changedLines.clear();restyle(0,length());
+    }
+
+    private void restyle(int from,int to){mark(getText(),from,to);}
+
+    private void mark(android.text.Spannable text,int from,int to) {
+        // Only what differs is taken off and put on: each style put on or taken off is slow in a long note, and a letter
+        // typed mostly leaves the styles on its line as they were (Graphene, 2026-10-10).
+        java.util.List<Object> had=new java.util.ArrayList<>();
+        for(Class<?> kind:new Class<?>[]{Bold.class,Italic.class,Under.class,Gone.class})
+            had.addAll(java.util.Arrays.asList(text.getSpans(from,to,kind)));
+        java.util.List<Object[]> wanted=new java.util.ArrayList<>();
+        for(Marks.Run local:Marks.of(text.subSequence(from,to))) {
+            Marks.Run run=new Marks.Run(local.style(),local.open()+from,local.start()+from,local.end()+from,local.close()+from);
+            Class<?> style=run.style()==Marks.Style.BOLD?Bold.class:run.style()==Marks.Style.ITALIC?Italic.class:Under.class;
+            wanted.add(new Object[]{style,run.start(),run.end()});
             for(int[] mark:new int[][]{{run.open(),run.start()},{run.end(),run.close()}}) {
-                text.setSpan(new Faint(faint),mark[0],mark[1],Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                text.setSpan(new Small(),mark[0],mark[1],Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                // Every style's marks hidden, taking no room: the word is bold, slanted or underlined, and the stars and
+                // underscores that say so are not seen (the owner, 2026-10-10: bold showed ** before and after the word).
+                wanted.add(new Object[]{Gone.class,mark[0],mark[1]});
             }
+        }
+        for(java.util.Iterator<Object[]> want=wanted.iterator();want.hasNext();) {
+            Object[] one=want.next();
+            for(java.util.Iterator<Object> was=had.iterator();was.hasNext();) {
+                Object span=was.next();
+                if(span.getClass()==one[0]&&text.getSpanStart(span)==(int)one[1]&&text.getSpanEnd(span)==(int)one[2]){was.remove();want.remove();break;}
+            }
+        }
+        for(Object stale:had)text.removeSpan(stale);
+        for(Object[] one:wanted) {
+            Class<?> kind=(Class<?>)one[0];
+            Object span=kind==Bold.class?new Bold():kind==Italic.class?new Italic():kind==Under.class?new Under():new Gone();
+            text.setSpan(span,(int)one[1],(int)one[2],Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
     }
 
@@ -187,7 +359,8 @@ final class Pad extends EditText {
             text.insert(end,mark);text.insert(start,mark);
         }
         setSelection(Math.min(now.start(),text.length()),Math.min(now.end(),text.length()));
-        restyle();
+        // Only the lines the marks went into or came out of, which typing them noted: the whole page took seconds.
+        removeCallbacks(restyling);restyling.run();
     }
 
     /** Ctrl+B, Ctrl+I and Ctrl+U from a keyboard on the phone, as on the PC. */
@@ -312,7 +485,7 @@ final class Pad extends EditText {
             if(end>from) {
                 int colour=palette.colourOf(runs.writerOf(run));
                 if(Tint.known(colour))
-                    text.setSpan(new Ink(Writers.ink(colour,paper)),Math.max(at,from),Math.min(end,to),Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    text.setSpan(new Ink(Writers.ink(colour,paper)),Math.max(at,from),Math.min(end,to),Spanned.SPAN_EXCLUSIVE_EXCLUSIVE|INK_FIRST);
             }
             at=end;
         }
@@ -355,8 +528,12 @@ final class Pad extends EditText {
         int height=getLineHeight();
         if(height>0&&lined) {
             // Ruled to the bottom of the page like a paper pad, not only under the lines already written.
-            int bottom=getScrollY()+getHeight();
-            for(int y=getLineBounds(0,line)+drop;y<bottom;y+=height)canvas.drawLine(0,y,getWidth(),y,rule);
+            int baseline=getLineBounds(0,line)+drop;
+            canvas.getClipBounds(clip);
+            int top=Math.max(getScrollY(),clip.top),bottom=Math.min(getScrollY()+getHeight(),clip.bottom);
+            // Keep the original rule alignment, but draw only what this frame can show, even at the end of a long note.
+            int first=baseline+Math.max(0,(int)Math.ceil((top-baseline)/(double)height))*height;
+            for(int y=first;y<bottom;y+=height)canvas.drawLine(0,y,getWidth(),y,rule);
         }
         super.onDraw(canvas);
     }

@@ -60,13 +60,16 @@ public class DesktopPeopleBoxTest {
                     // view's own name too, so the part's is the last said.
                     int self=said.indexOf("This device"),mine=said.indexOf("My devices"),people=said.lastIndexOf("People");
                     assertTrue(said.toString(),people>=0&&mine>people&&self>mine);
+                    int blocked=said.indexOf(FirstShare.BLOCKED);
+                    assertTrue(said.toString(),blocked>self);
+                    assertTrue(said.contains(FirstShare.NOBODY_BLOCKED));
                     assertTrue("Ana under People",said.indexOf("Ana")>people&&said.indexOf("Ana")<mine);
                     assertTrue("the laptop under My devices",said.indexOf("Work laptop")>mine&&said.indexOf("Work laptop")<self);
                     // Each part's one thing to do is beside its name, the same place in both.
                     // A + for each, the same sign at the same place (decision 106), and nothing at the foot.
                     JButton person=named(in,"addPerson"),device=named(in,"addDevice");
                     assertNotNull(person);assertNotNull(device);assertEquals("+",person.getText());assertEquals("+",device.getText());
-                    assertEquals("Connect with someone",person.getAccessibleContext().getAccessibleName());assertEquals("Add a device",device.getAccessibleContext().getAccessibleName());
+                    assertEquals("Add someone",person.getAccessibleContext().getAccessibleName());assertEquals("Add my device",device.getAccessibleContext().getAccessibleName());
                     assertEquals("beside their headings, at the same edge",person.getLocationOnScreen().x+person.getWidth(),device.getLocationOnScreen().x+device.getWidth());
                     assertNull("no foot on the list",button(in,"Scan a code or paste a link…"));
                     // Under each person, a chip for each group: in is ticked, not in has a plus. None under a device of mine.
@@ -92,7 +95,7 @@ public class DesktopPeopleBoxTest {
                     assertTrue(said.toString(),mine>=0&&work>mine&&close>work);
                     assertTrue(said.toString(),said.contains("Ana, Ben")&&said.contains("Nobody in it yet")&&said.contains("Work laptop"));
                     assertNotNull(button(in,"New group…"));
-                    assertNotNull("a group of my own can be renamed and deleted",called(in,"More for Friends"));
+                    assertNull("everything about a group is on its page, through ›",called(in,"More for Friends"));
                     assertNull("My devices cannot",called(in,"More for My devices"));
                 });
                 shoot(box,"103b-groups-view");
@@ -100,12 +103,12 @@ public class DesktopPeopleBoxTest {
                 SwingUtilities.invokeAndWait(()->called(in,"Open Friends").doClick(0));
                 await(()->onEdt(()->"Friends".equals(box.getTitle())&&showing(in,"Shared with this group")!=null));
                 SwingUtilities.invokeAndWait(()->{
-                    assertEquals("‹  "+DesktopPeople.TITLE,named(in,"back").getText());
+                    assertEquals(DesktopPeople.TITLE,named(in,"back").getText());
                     List<String> said=new ArrayList<>();texts(in,said);
                     assertTrue(said.toString(),said.indexOf("Members")<said.indexOf("Ana")&&said.indexOf("Ben")<said.indexOf("Shared with this group"));
                     assertNotNull("what the group has, by name",called(in,"Open the Share box of Groceries"));
                     assertNotNull("with the group's rights beside it",button(in,"Can write  ▾"));
-                    assertNotNull(called(in,"Remove Ana from Friends"));assertNotNull(called(in,"More for Friends"));
+                    assertNotNull(called(in,"Remove Ana from Friends"));assertNotNull("a group of my own is renamed and deleted on its page",button(in,"Rename…"));assertNotNull(button(in,"Delete group…"));
                     // Add people drops down whoever is not in it yet: nobody is left.
                     button(in,"Add people  ▾").doClick(0);
                 });
@@ -114,7 +117,7 @@ public class DesktopPeopleBoxTest {
                 // A thing's name opens its Share box over the page, with ‹ naming the group; closed, the page is still there.
                 JDialog shared=open(pad,()->called(in,"Open the Share box of Groceries").doClick(0));
                 SwingUtilities.invokeAndWait(()->{
-                    assertEquals("Share “Groceries”",shared.getTitle());assertEquals("‹  Friends",named(shared.getContentPane(),"back").getText());
+                    assertEquals("Share “Groceries”",shared.getTitle());assertEquals("Friends",named(shared.getContentPane(),"back").getText());
                     assertTrue("the page stays under it",box.isShowing());
                 });
                 shoot(shared,"103h-share-box-from-a-group");
@@ -125,7 +128,7 @@ public class DesktopPeopleBoxTest {
                 SwingUtilities.invokeAndWait(()->called(in,"Open Ana").doClick(0));
                 await(()->onEdt(()->"Ana".equals(box.getTitle())&&showing(in,"Shared with Ana")!=null));
                 SwingUtilities.invokeAndWait(()->{
-                    assertEquals("‹  Friends",named(in,"back").getText());
+                    assertEquals("Friends",named(in,"back").getText());
                     List<String> said=new ArrayList<>();texts(in,said);
                     assertTrue(said.toString(),said.contains("Parlons!")&&said.contains("Address")&&said.contains("Groups")&&said.contains("My device"));
                     assertTrue("what came through a group says which",said.contains("through Friends"));
@@ -142,7 +145,7 @@ public class DesktopPeopleBoxTest {
                 // Her Parlons! box opens over her page and goes back to it.
                 JDialog parlons=open(pad,()->called(in,"Parlons! address of Ana: Not set").doClick(0));
                 SwingUtilities.invokeAndWait(()->{
-                    assertEquals("Ana on Parlons!",parlons.getTitle());assertEquals("‹  Ana",named(parlons.getContentPane(),"back").getText());
+                    assertEquals("Ana on Parlons!",parlons.getTitle());assertEquals("Ana",named(parlons.getContentPane(),"back").getText());
                     escape(parlons);
                 });
                 await(()->!parlons.isDisplayable());
@@ -160,7 +163,7 @@ public class DesktopPeopleBoxTest {
                     List<String> said=new ArrayList<>();texts(in,said);
                     assertTrue(said.toString(),said.contains("Devices")&&said.contains("Work laptop")&&said.contains("Nothing is shared with them as a group yet."));
                     assertNull(called(in,"More for My devices"));assertNull(called(in,"Remove Work laptop from My devices"));
-                    assertNotNull(button(in,"Connect my other device…"));
+                    assertNotNull(button(in,"Add my device…"));
                 });
                 shoot(box,"103e-my-devices-page");
                 // The window's ✕ goes back one level too, and from the first level it closes the box.
@@ -192,21 +195,26 @@ public class DesktopPeopleBoxTest {
                 SwingUtilities.invokeAndWait(()->{
                     assertFalse("in its place, not on top of it",share.isDisplayable());
                     assertEquals("Share “Groceries” with",box.getTitle());
-                    assertEquals("‹  Groceries",named(in,"back").getText());
-                    // Groups first, then people; the rights beside each name.
+                    assertEquals("Groceries",named(in,"back").getText());
+                    // People first, then groups (the owner, 2026-10-15: "we should have our contacts first"); the rights beside each name.
                     List<String> said=new ArrayList<>();texts(in,said);
-                    assertTrue(said.toString(),said.indexOf("Groups")>=0&&said.indexOf("People")>said.indexOf("Groups"));
-                    assertNotNull(button(in,"▸  My devices · 1 device"));assertNotNull(button(in,"▸  Colleagues · 0 people"));assertNotNull(button(in,"▸  Friends · 1 person"));
+                    assertTrue(said.toString(),said.indexOf("People")>=0&&said.indexOf("Groups")>said.indexOf("People"));
+                    // Open at first (the owner, 2026-10-17: "have the groups and lists extended there, not collapsed by default").
+                    assertNotNull(button(in,"▾  My devices · 1 device"));assertNotNull(button(in,"▾  Colleagues · 0 people"));assertNotNull(button(in,"▾  Friends · 1 person"));
                     assertNotNull("Friends has it: the group's rights",called(in,"What Friends may do: Can write. "+Sharing.Level.WRITE.does()));
                     assertNotNull("Colleagues has not: Add",called(in,"Share with Colleagues"));
                     assertNotNull("nor has Ben, under People",called(in,"Share with Ben"));
                     assertEquals("Add  ▾",called(in,"Share with Ben").getText());
-                    assertTrue("Ana is in a group: under it, not again under People",said.indexOf("Ben")>said.indexOf("People")&&!said.contains("Ana"));
+                    // Everybody under People, in a group or not (the owner, 2026-10-17: "adding someone from my contacts easily accessible").
+                    assertTrue("Ana and Ben under People: "+said,said.indexOf("Ben")>said.indexOf("People")&&said.indexOf("Ana")>said.indexOf("People")&&said.indexOf("Ana")<said.indexOf("Groups"));
                 });
                 shoot(box,"103f-share-with");
-                // The group's name folds open to its people: Ana has it as the group does.
-                SwingUtilities.invokeAndWait(()->button(in,"▸  Friends · 1 person").doClick(0));
+                // Open, the group shows its people: Ana has it as the group does; its name folds it, and opens it again.
                 await(()->onEdt(()->button(in,"▾  Friends · 1 person")!=null&&button(in,"As the group  ▾")!=null));
+                SwingUtilities.invokeAndWait(()->button(in,"▾  Friends · 1 person").doClick(0));
+                await(()->onEdt(()->button(in,"▸  Friends · 1 person")!=null));
+                SwingUtilities.invokeAndWait(()->button(in,"▸  Friends · 1 person").doClick(0));
+                await(()->onEdt(()->button(in,"▾  Friends · 1 person")!=null));
                 shoot(box,"103g-share-with-open");
                 // Add beside Ben drops to the rights this PC may give; picking one shares at once, and the box stays.
                 SwingUtilities.invokeAndWait(()->pick(pad,called(in,"Share with Ben"),Sharing.Level.READ.words()));
@@ -265,11 +273,13 @@ public class DesktopPeopleBoxTest {
                 // Nothing under it moved or changed size.
                 assertEquals(before[0],bounds(pad.home,pad.frame));
                 assertEquals(before[1],bounds(pad.frame.getContentPane(),pad.frame));
-                // It lies over the foot of the window, nearly as wide as it.
+                // It lies over the foot of the window, as wide as its words and in the middle (the owner, 2026-10-13: "the
+                // message should be smaller, not covering the whole footer").
                 Rectangle strip=bounds(pad.statusStrip,pad.frame),content=before[1];
                 assertTrue("over the content: "+strip+" in "+content,content.contains(strip));
                 assertTrue("near the foot",content.y+content.height-(strip.y+strip.height)<=24);
-                assertTrue("the window's width less a margin",strip.width>=content.width-40);
+                assertTrue("as wide as its words, not the window: "+strip.width+" of "+content.width,strip.width<content.width/2);
+                assertTrue("in the middle",Math.abs((strip.x+strip.width/2)-(content.x+content.width/2))<=2);
                 assertEquals(JLayeredPane.MODAL_LAYER.intValue(),JLayeredPane.getLayer(pad.statusStrip));
             });
             shoot(pad.frame,"97c-message-over-home");

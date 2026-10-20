@@ -8,7 +8,9 @@ import java.awt.Point;
 import java.awt.event.*;
 import java.nio.file.*;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import javax.swing.*;
@@ -49,6 +51,12 @@ public class DesktopAwayTest {
             });
 
             // Ideas carried onto the Bin: the Bin ringed, and said; let go, it is in the bin, said, and the Bin counts it.
+            // The others stay in the cells they were drawn in (decision 119).
+            Map<String,Rectangle> beforeBin=onEdt(()->{
+                Map<String,Rectangle> at=new LinkedHashMap<>();
+                for(DesktopHome.Tile one:home.tiles)at.put(one.thing.id,new Rectangle(one.getBounds()));
+                return at;
+            });
             SwingUtilities.invokeAndWait(()->{
                 DesktopHome.Tile bin=tile(home,"Bin");
                 carry(pad,tile(home,"Ideas"),bin,bin.getWidth()/2,bin.getHeight()/2);
@@ -62,8 +70,14 @@ public class DesktopAwayTest {
                 assertEquals("Moved to the bin",pad.status.getText());
                 assertEquals("1 thing",tile(home,"Bin").thing.detail);
                 for(DesktopHome.Tile one:home.tiles)assertNotEquals("Ideas",one.thing.name);
+                for(DesktopHome.Tile one:home.tiles)assertEquals(one.thing.name+" stays where it was",beforeBin.get(one.thing.id),one.getBounds());
             });
-            // Kitchen carried onto the Archive: archived.
+            // Kitchen carried onto the Archive: archived. The others, the gap included, stay put (decision 119).
+            Map<String,Rectangle> beforeArchive=onEdt(()->{
+                Map<String,Rectangle> at=new LinkedHashMap<>();
+                for(DesktopHome.Tile one:home.tiles)at.put(one.thing.id,new Rectangle(one.getBounds()));
+                return at;
+            });
             SwingUtilities.invokeAndWait(()->{
                 DesktopHome.Tile archive=tile(home,"Archive");
                 carry(pad,tile(home,"Kitchen"),archive,archive.getWidth()/2,archive.getHeight()/2);
@@ -72,7 +86,10 @@ public class DesktopAwayTest {
             });
             settle(pad);
             assertEquals(1,onEdt(()->store.awayCount(false)).intValue());
-            SwingUtilities.invokeAndWait(()->assertEquals("Archived",pad.status.getText()));
+            SwingUtilities.invokeAndWait(()->{
+                assertEquals("Archived",pad.status.getText());
+                for(DesktopHome.Tile one:home.tiles)assertEquals(one.thing.name+" stays where it was",beforeArchive.get(one.thing.id),one.getBounds());
+            });
             shoot(pad.frame,"96a-home-archive-and-bin");
             // One Undo: Kitchen back on Home.
             SwingUtilities.invokeAndWait(pad::undo);settle(pad);

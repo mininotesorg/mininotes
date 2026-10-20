@@ -110,6 +110,14 @@ final class DesktopPrivate {
     }
 
     boolean showing(){return screen!=null;}
+    /**
+     * Whether an id is a private note or folder in a space open now: never written out of the app as a file (decision 162).
+     * Asked from the notebook's worker; when it cannot be told, the answer is yes, and nothing is written.
+     */
+    boolean holds(String id) {
+        try{for(PrivateSpace space:new ArrayList<>(open.values()))if(space.things.containsKey(id))return true;return false;}
+        catch(RuntimeException moving){return true;}
+    }
     /** For the tests: the password field while it is up, what is on the screen, and the rhythm held so batches can be counted. */
     JPasswordField asking;
     PrivateSpace shown(){return shown;}
@@ -197,6 +205,7 @@ final class DesktopPrivate {
         JPasswordField field=new JPasswordField(already,22);asking=field;
         field.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,hint);
         field.putClientProperty(FlatClientProperties.STYLE,"margin:8,10,8,10");
+        oneEye(field);
         field.getAccessibleContext().setAccessibleName(hint);
         JPanel round=new JPanel(new BorderLayout());round.setBackground(DesktopUi.CARD);
         round.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(DesktopUi.LINE.darker()),BorderFactory.createEmptyBorder(6,6,6,6)));
@@ -296,7 +305,7 @@ final class DesktopPrivate {
         JPanel top=new JPanel(new BorderLayout(12,0));top.setOpaque(false);top.setBorder(BorderFactory.createEmptyBorder(14,20,10,16));
         // Always there: ‹ goes up a level, and at the top it closes, as Esc does. No Close (the owner, 2026-10-06: "we
         // don't need the close, the back button should be enough"; decision 114).
-        back=DesktopUi.quietButton("‹ Mininotes",this::escape);
+        back=DesktopUi.quietButton("‹ "+Say.t("Home"),this::escape);
         heading=DesktopUi.title("Private");heading.setOpaque(false);
         JLabel lock=new JLabel(new Lock(16,20));lock.setBorder(BorderFactory.createEmptyBorder(0,0,0,8));
         JPanel named=new JPanel(new BorderLayout());named.setOpaque(false);named.add(lock,BorderLayout.WEST);named.add(heading);
@@ -355,7 +364,16 @@ final class DesktopPrivate {
         notePage.registerKeyboardAction(e->{if(undo.canUndo())undo.undo();},KeyStroke.getKeyStroke("control Z"),JComponent.WHEN_FOCUSED);
         notePage.registerKeyboardAction(e->{if(undo.canRedo())undo.redo();},KeyStroke.getKeyStroke("control Y"),JComponent.WHEN_FOCUSED);
         javax.swing.event.DocumentListener typed=new javax.swing.event.DocumentListener(){
-            void changed(){if(loading||shown==null||note==null)return;shown.text(note,noteTitle.getText(),notePage.getText(),System.currentTimeMillis());keep.restart();}
+            void changed(){if(loading||shown==null||note==null)return;
+                // help//: typed here: taken out at once, nothing kept of it, and the box that sets this note's help request (decision 204).
+                int[] help=PrivateCode.help(notePage.getText());
+                if(help!=null){final String id=note;SwingUtilities.invokeLater(()->{try{int[] again=PrivateCode.help(notePage.getText());if(again!=null)notePage.getDocument().remove(again[0],again[1]-again[0]);}catch(Exception gone){}
+                    undo.discardAllEdits();if(shown!=null)privateHelp(shown.things.get(id));});return;}
+                // erase//: typed here: taken out at once, and every help request of this space with it (decision 201).
+                int[] erase=PrivateCode.erase(notePage.getText());
+                if(erase!=null){SwingUtilities.invokeLater(()->{try{int[] again=PrivateCode.erase(notePage.getText());if(again!=null)notePage.getDocument().remove(again[0],again[1]-again[0]);}catch(Exception gone){}
+                    undo.discardAllEdits();if(shown!=null&&shown.eraseHelp()>0)write();});return;}
+                shown.text(note,noteTitle.getText(),notePage.getText(),System.currentTimeMillis());keep.restart();}
             public void insertUpdate(javax.swing.event.DocumentEvent e){changed();}
             public void removeUpdate(javax.swing.event.DocumentEvent e){changed();}
             public void changedUpdate(javax.swing.event.DocumentEvent e){}
@@ -379,7 +397,7 @@ final class DesktopPrivate {
         boolean onNote=note!=null&&shown.thing(note)!=null;
         if(!onNote)note=null;
         // Where ‹ goes, named: up a level, and at the top out of here, back to Mininotes as it was.
-        back.setText("‹ "+(onNote?(in!=null?in.name():"Private"):inBin?"Private":in!=null?parentName(in):"Mininotes"));
+        back.setText("‹ "+(onNote?(in!=null?in.name():"Private"):inBin?"Private":in!=null?parentName(in):Say.t("Home")));
         heading.setText(inBin?"Bin":onNote?"Private note":in!=null?in.name():"Private");
         plus.setVisible(!inBin);
         if(inBin){drawBin();cards.show(middle,"bin");}
@@ -535,7 +553,6 @@ final class DesktopPrivate {
         item(menu,"Versions…",()->versions(t));
         item(menu,"Add a file…",this::addFiles);
         menu.add(moveTo(t));
-        item(menu,Help.SWITCH,()->privateHelp(t));
         menu.addSeparator();
         item(menu,"Delete",()->{leaveNote();shown.bin(t.id,System.currentTimeMillis());note=null;write();draw();});
         return menu;
@@ -546,7 +563,6 @@ final class DesktopPrivate {
         if(t.folder)item(menu,"Rename…",()->{String name=DesktopUi.ask(d.frame,"Rename folder","Name",t.title);if(name==null)return;shown.rename(t.id,name);write();draw();});
         menu.add(colours(t));
         menu.add(moveTo(t));
-        item(menu,Help.SWITCH,()->privateHelp(t));
         menu.addSeparator();
         item(menu,"Delete",()->{shown.bin(t.id,System.currentTimeMillis());write();draw();});
         return menu;
@@ -555,26 +571,26 @@ final class DesktopPrivate {
     /** The box that sets a private thing's help request on or off (decision 113): the Desktop's own, saving into the vault. */
     private void privateHelp(final PrivateSpace.Thing t) {
         if(t==null||shown==null)return;
-        d.helpSetup(d.frame,true,t.helpOnOpen,t.helpTo,t.helpMessage,
-            (to,words)->{shown.help(t.id,true,to,words);write();},
-            ()->{shown.help(t.id,false,null,null);write();});
+        // Always empty, never saying whether one is set (decision 201): what is set is never shown again.
+        d.helpSetup(d.frame,true,false,java.util.List.of(),"",
+            (to,words)->{shown.help(t.id,true,to,words);write();},null);
     }
 
     private JMenu colours(PrivateSpace.Thing t) {
-        JMenu colour=new JMenu("Colour");
+        JMenu colour=new JMenu(Say.t("Colour"));DesktopMenus.symbol(colour,"Colour");
         for(int c=0;c<Tint.count();c++) {
             int pick=c;
-            JMenuItem one=new JMenuItem(Tint.NAMES[c],DesktopLook.swatch(c,16,t.colour==c||!Tint.known(t.colour)&&c==Tint.NONE));
+            JMenuItem one=DesktopMenus.item(Tint.NAMES[c],DesktopLook.swatch(c,16,t.colour==c||!Tint.known(t.colour)&&c==Tint.NONE));
             one.addActionListener(e->{shown.colour(t.id,pick);write();draw();});
             colour.add(one);
         }
         return colour;
     }
     private JMenu moveTo(PrivateSpace.Thing t) {
-        JMenu move=new JMenu("Move to");
-        JMenuItem top=new JMenuItem("Private");top.setEnabled(!t.parent.isEmpty());top.addActionListener(e->{shown.move(t.id,"");write();draw();});move.add(top);
+        JMenu move=new JMenu(Say.t("Move to"));DesktopMenus.symbol(move,"Move to");
+        JMenuItem top=DesktopMenus.item("Private");top.setEnabled(!t.parent.isEmpty());top.addActionListener(e->{shown.move(t.id,"");write();draw();});move.add(top);
         for(PrivateSpace.Thing f:shown.placesFor(t.id)) {
-            JMenuItem one=new JMenuItem(f.name());one.setEnabled(!f.id.equals(t.parent));
+            JMenuItem one=DesktopMenus.plain(f.name());one.setEnabled(!f.id.equals(t.parent));
             one.addActionListener(e->{shown.move(t.id,f.id);write();draw();});move.add(one);
         }
         return move;
@@ -587,7 +603,7 @@ final class DesktopPrivate {
         item(menu,"Remove",()->{shown.removeFile(k.id);write();draw();});
         return menu;
     }
-    private static void item(JPopupMenu menu,String words,Runnable does){JMenuItem one=new JMenuItem(words);one.addActionListener(e->does.run());menu.add(one);}
+    private static void item(JPopupMenu menu,String words,Runnable does){JMenuItem one=DesktopMenus.item(words);one.addActionListener(e->does.run());menu.add(one);}
 
     private void versions(PrivateSpace.Thing t) {
         keep.stop();shown.keepVersion(t.id,System.currentTimeMillis());write();
@@ -629,9 +645,8 @@ final class DesktopPrivate {
 
     private void addFiles() {
         if(shown==null)return;
-        JFileChooser pick=new JFileChooser();pick.setMultiSelectionEnabled(true);
-        if(pick.showOpenDialog(d.frame)!=JFileChooser.APPROVE_OPTION)return;
-        File[] chosen=pick.getSelectedFiles();if(chosen.length==0&&pick.getSelectedFile()!=null)chosen=new File[]{pick.getSelectedFile()};
+        List<Path> picked=DesktopPick.open(d.frame,"From this device",true);if(picked.isEmpty())return;
+        File[] chosen=new File[picked.size()];for(int i=0;i<chosen.length;i++)chosen[i]=picked.get(i).toFile();
         final String into=note;final String parent=note==null?folder:null;final PrivateSpace now=shown;says.setText("Adding…");
         final List<File> files=Arrays.asList(chosen);
         worker.submit(()->{
@@ -728,10 +743,7 @@ final class DesktopPrivate {
 
     /** A copy saved where the user says: their own act, the one way anything private leaves Mininotes. */
     private void saveCopy(PrivateSpace.Kept k) {
-        JFileChooser pick=new JFileChooser();pick.setSelectedFile(new File(k.name));
-        if(pick.showSaveDialog(d.frame)!=JFileChooser.APPROVE_OPTION)return;
-        Path target=pick.getSelectedFile().toPath();
-        if(Files.exists(target)&&!DesktopUi.confirm(d.frame,"Replace it?","A file called "+target.getFileName()+" is already there. Replace it?","Replace",true))return;
+        Path target=DesktopPick.save(d.frame,"Save on my computer",k.name);if(target==null)return;
         try{Files.write(target,shown.bytesOf(k.id));says.setText("Saved a copy");}catch(Throwable failed){says.setText("Could not save a copy there");}
     }
 
@@ -843,9 +855,20 @@ final class DesktopPrivate {
     }
     /** A password field with an eye at its right that shows the characters while it is held, masking them when let go (decision 116). */
     private static JPanel withEye(JPasswordField field) {
+        oneEye(field);
         JPanel row=new JPanel(new BorderLayout());row.setOpaque(false);
         row.add(field);row.add(eye(field),BorderLayout.EAST);
         return row;
+    }
+    /**
+     * FlatLaf draws an eye of its own in every password field. These already have the one that shows the password while
+     * it is held, so that one is the only one (decision 121).
+     */
+    static void oneEye(JPasswordField field) {
+        Object had=field.getClientProperty(FlatClientProperties.STYLE);
+        String style=had instanceof String?(String)had:"";
+        if(!style.contains("showRevealButton"))
+            field.putClientProperty(FlatClientProperties.STYLE,style.isEmpty()?"showRevealButton: false":style+";showRevealButton: false");
     }
     /** The eye button: while pressed it shows the field's characters, and masks them again when let go. */
     private static JComponent eye(JPasswordField field) {

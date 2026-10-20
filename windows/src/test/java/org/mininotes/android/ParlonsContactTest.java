@@ -36,7 +36,7 @@ public class ParlonsContactTest {
         void pair(Device other,String name) throws Exception {
             store.pairedWith(other.at,name,false,other.keys.agreement().getPublic().getEncoded(),other.keys.signing().getPublic().getEncoded());
         }
-        /** Another device of the same owner, bonded as Connect my other device bonds them: My device, and everything shared. */
+        /** Another device of the same owner, bonded as Add my device bonds them: My device, and everything shared. */
         void bond(Device other,String name) throws Exception {
             store.pairedWith(other.at,name,true,other.keys.agreement().getPublic().getEncoded(),other.keys.signing().getPublic().getEncoded());
             store.addShare(new Sharing.Rule(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,other.at,true));

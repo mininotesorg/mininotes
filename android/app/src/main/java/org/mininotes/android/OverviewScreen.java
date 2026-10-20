@@ -210,6 +210,10 @@ final class OverviewScreen {
         card.setForeground(a.getDrawable(a.touchFeedback()));
         card.setContentDescription((one.kind==Overview.Kind.NOTE?"The note ":"The folder ")+name+". Tap to go to it.");
         card.setOnClickListener(v->{close();home.goTo(one);});
+        // Held, as everything is (the owner, 2026-10-11: "make sure everything across the app has a contextual menu"): go to it,
+        // or close its card, as throwing it up does.
+        card.setOnLongClickListener(v->{a.heldMenu(v,null,"Open",(Runnable)()->{close();home.goTo(one);},
+            "Close",(Runnable)()->{forget(one.id);cards.removeView(card);said();});return true;});
         LinearLayout.LayoutParams place=new LinearLayout.LayoutParams(wide,high);
         place.setMargins(a.dp(10),0,a.dp(10),0);
         card.setLayoutParams(place);

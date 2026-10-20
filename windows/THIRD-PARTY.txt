@@ -45,3 +45,17 @@ The bundled Java runtime is Eclipse Temurin OpenJDK 17, GPLv2 with the Classpath
 Exception. Its notices and licenses are in runtime/legal in the app directory.
 Dependency JARs retain their embedded license and notice files.
 JUnit and Hamcrest are test-only dependencies and are not distributed.
+
+Translation engine (translate/bergamot.exe), used by Translate… in a note's menu, built by
+tools/build-translation-engine.ps1 from these sources (docs/TRANSLATION.md):
+- bergamot-translator, commit 9271618ebbdc5d21ac4dc4df9e72beb7ce644774, Mozilla Public License 2.0.
+  Its source: https://github.com/browsermt/bergamot-translator . licenses/BERGAMOT-MPL-2.0.txt
+- Marian NMT (browsermt fork), MIT. licenses/MARIAN-MIT.txt
+- intgemm, MIT. licenses/INTGEMM-MIT.txt
+- ONNX.js sgemm, MIT. licenses/ONNXJS-MIT.txt
+- SentencePiece, Apache License 2.0. licenses/SENTENCEPIECE-APACHE-2.0.txt
+- ssplit-cpp, Apache License 2.0, with two build fixes for Windows in tools/translation-engine-windows.patch.
+  licenses/SSPLIT-APACHE-2.0.txt
+- PCRE2 10.39, BSD licence. licenses/PCRE2-BSD.txt
+The language packs it reads are Mozilla's Firefox Translations models, Mozilla Public License 2.0
+(https://github.com/mozilla/firefox-translations-models), downloaded only when Translate… needs them.

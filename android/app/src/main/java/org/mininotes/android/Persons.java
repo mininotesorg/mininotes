@@ -28,7 +28,7 @@ import java.util.Set;
  * of your devices; <b>this device</b> is what your own devices call this one, and nobody else ever sees it.
  *
  * <p>The id is sixteen random bytes made once per install, with when it was made. Two devices share one only
- * when both have said the other is theirs - the "Connect my other device" bond, or the switch in People - and
+ * when both have said the other is theirs - the "Add my device" bond, or the switch in People - and
  * when two such devices hold different ids, the one made earlier is kept (the lower id where both were made
  * at the same moment) and the other device keeps its old id as an alias. It is a rule both devices can apply
  * without asking each other, and apply again later, and come to the same answer.

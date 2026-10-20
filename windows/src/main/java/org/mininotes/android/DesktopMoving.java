@@ -264,7 +264,7 @@ final class DesktopMoving {
             :"Let go to put it here  ·  Esc cancels");
     }
     private void say(String words){if(!words.equals(said)){said=words;pad.status.setToolTipText(null);pad.status.setText(words);}}
-    private static String named(NoteStore.Branch b){return b.name==null||b.name.isBlank()?"Untitled":b.name;}
+    private static String named(NoteStore.Branch b){return DesktopHome.named(b);}
 
     private static boolean over(Component c,java.awt.Point screen) {
         java.awt.Point p=new java.awt.Point(screen);SwingUtilities.convertPointFromScreen(p,c);

@@ -22,6 +22,24 @@ final class Marks {
     /** One styled stretch: its opening mark at {@code open}, its words from {@code start} to {@code end}, its closing mark ending at {@code close}. */
     record Run(Style style,int open,int start,int end,int close) {}
 
+    /** Coalesced edits in current offsets. Formatting never crosses a newline, so only these lines need repainting. */
+    static final class ChangedLines {
+        private int from=Integer.MAX_VALUE,to;
+        void changed(int start,int before,int count) {
+            if(from!=Integer.MAX_VALUE){from=moved(from,start,before,count);to=moved(to,start,before,count);}
+            from=Math.min(from,start);to=Math.max(to,start+count);
+        }
+        private static int moved(int at,int start,int before,int count){return at<=start?at:at>=start+before?at+count-before:start+count;}
+        int[] take(CharSequence text) {
+            if(from==Integer.MAX_VALUE)return null;
+            int a=Math.min(from,text.length()),b=Math.min(to,text.length());clear();
+            while(a>0&&text.charAt(a-1)!='\n')a--;
+            while(b<text.length()&&text.charAt(b)!='\n')b++;
+            return new int[]{a,b};
+        }
+        void clear(){from=Integer.MAX_VALUE;to=0;}
+    }
+
     /** Every styled stretch in the words, in the order they begin. */
     static List<Run> of(CharSequence text) {
         List<Run> runs=new ArrayList<>();

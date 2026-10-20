@@ -215,10 +215,12 @@ final class Pairing {
      * clickable (some social networks), it is pasted in + by People, Paste their link.
      */
     static String invite(String name,String link,String download) {
-        String who=name==null||name.trim().isEmpty()?"me":name.trim();
-        return "Connect with "+who+" on Mininotes, the private notepad for the people close to you."+"\n\n"
-            +"Open this link on a device with Mininotes, or copy it and in Mininotes tap + by People, then Paste their link:"+"\n"
-            +link+(download==null||download.isEmpty()?"":"\n\nNo Mininotes yet? Get it here: "+download);
+        // In the language chosen (the owner, 2026-10-19: "Copy my link must be in my set language, not in English"; decision 210).
+        String who=name==null||name.trim().isEmpty()?null:name.trim();
+        return (who==null?Say.t("Connect with me on Mininotes, the private notepad for the people close to you.")
+                :Say.t("Connect with {0} on Mininotes, the private notepad for the people close to you.",who))+"\n\n"
+            +Say.t("Open this link on a device with Mininotes, or copy it and in Mininotes tap + by People, then Paste their link:")+"\n"
+            +link+(download==null||download.isEmpty()?"":"\n\n"+Say.t("No Mininotes yet? Get it here: {0}",download));
     }
 
     static String link(String line) {

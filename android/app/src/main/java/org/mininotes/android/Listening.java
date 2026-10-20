@@ -40,7 +40,9 @@ public final class Listening extends Service {
     static final String NOTE="note";
     /** Said on the way into the pad from the notification that files came: the list of them is opened. */
     static final String RECEIVED="received";
-    private static final int ONGOING=1, LANDED=2, ACCEPTED=3, FILES=4, WAITING=5;
+    private static final int ONGOING=1, LANDED=2, ACCEPTED=3, FILES=4, WAITING=5, SHARED=6;
+    /** Something shared with me, said so it is seen: louder than an arrival, which is every few seconds while somebody writes. */
+    private static final String SHARED_CHANNEL="shared";
     /** What a line was said for already, by the thing it waits under (decision 109): once a run, not once a revision. */
     private static final java.util.Set<String> SAID_WAITING=java.util.concurrent.ConcurrentHashMap.newKeySet();
 
@@ -63,8 +65,8 @@ public final class Listening extends Service {
      * Started where it should be running and stopped where it should not. Blocking: it asks the notebook
      * whether there is anybody to hear from.
      *
-     * <p>Called while the pad is on screen, because that is the one moment Android allows something like
-     * this to be started — which is also the honest moment, since it is when the person can see it begin.
+     * <p>Called while the pad is on screen, which is also the honest moment, since it is when the person can see it
+     * begin; and after the phone starts and after an update, two moments Android allows it too (see Starting).
      */
     static void settle(Context any) {
         Context app=any.getApplicationContext();
@@ -144,12 +146,19 @@ public final class Listening extends Service {
         // sent it, with the words, the place, the time and a map link, filled in as the updates come. In front it is the
         // in-app box instead (MainActivity.heard). Nothing is logged about it.
         if(landed.helpRequest!=null){sayHelp(app,landed);return;}
+        // A message from a 0.3.036 build (decision 145, withdrawn in 147): kept and answered, said nowhere.
+        if(landed.message)return;
         // Somebody saying they have something is for the marks, not for the person.
         if(landed.answered)return;
         // Something another person shared with me for the first time (the owner, 2026-10-06; decision 109): said in a line once
         // for each thing, never for each of its revisions, and the pad asks Accept or Refuse when it is next in front.
         if(landed.waiting) {
-            if(landed.said!=null&&SAID_WAITING.add(landed.waits))say(app,WAITING,landed.said,"Open the pad to accept or refuse it.","");
+            if(landed.said!=null&&SAID_WAITING.add(landed.waits))say(app,WAITING,landed.said,Say.t("Open the pad to accept or refuse it."),"",false,SHARED_CHANNEL);
+            return;
+        }
+        // Shared with me, and here without waiting for an answer (a file from another device of mine): said once, to decide.
+        if(landed.shared) {
+            if(landed.said!=null&&SAID_WAITING.add(landed.waits))say(app,SHARED,landed.said,Say.t("Open the pad to see what to do with it."),"",false,SHARED_CHANNEL);
             return;
         }
         // Files sent on their own: that they came, or that somebody wants to send some. Never what they are called.
@@ -159,8 +168,8 @@ public final class Listening extends Service {
         }
         if(landed.accepted!=null) {
             synchronized(unanswered){unanswered.add(landed.accepted);}
-            if(landed.accepted.target.isEmpty())say(app,ACCEPTED,landed.accepted.name+" paired with you",
-                "Open the pad to finish pairing.","");
+            if(landed.accepted.target.isEmpty())say(app,ACCEPTED,Say.t("{0} wants to add you",landed.accepted.name),
+                Say.t("Open the pad to accept or ignore."),"",false,SHARED_CHANNEL);
             else say(app,ACCEPTED,landed.accepted.name+" accepted what you offered",
                 "Open the pad to send it to them.","");
         } else if(landed.said!=null)say(app,LANDED,landed.said,"",landed.note);
@@ -227,9 +236,10 @@ public final class Listening extends Service {
     private static void say(Context app,int id,String title,String text,String note){say(app,id,title,text,note,false);}
 
     /** @param received whether tapping it opens Received files rather than a note */
-    private static void say(Context app,int id,String title,String text,String note,boolean received) {
+    private static void say(Context app,int id,String title,String text,String note,boolean received){say(app,id,title,text,note,received,ARRIVED);}
+    private static void say(Context app,int id,String title,String text,String note,boolean received,String channel) {
         channels(app);
-        Notification.Builder said=new Notification.Builder(app,ARRIVED)
+        Notification.Builder said=new Notification.Builder(app,channel)
             .setSmallIcon(R.drawable.ic_listening)
             .setContentTitle(title)
             .setContentIntent(received?openingReceived(app):opening(app,note))
@@ -298,6 +308,9 @@ public final class Listening extends Service {
         NotificationChannel alarm=new NotificationChannel(ALARM,"A help request",
             NotificationManager.IMPORTANCE_HIGH);
         alarm.setDescription("Somebody you share with sent a help request from Mininotes.");
+        NotificationChannel shared=new NotificationChannel(SHARED_CHANNEL,Say.t("Shared with you"),NotificationManager.IMPORTANCE_DEFAULT);
+        shared.setDescription(Say.t("Somebody, or another device of yours, shared something with you."));
+        all.createNotificationChannel(shared);
         all.createNotificationChannel(staying);
         all.createNotificationChannel(arrived);
         all.createNotificationChannel(alarm);

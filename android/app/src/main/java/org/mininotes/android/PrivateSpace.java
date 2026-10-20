@@ -252,6 +252,13 @@ final class PrivateSpace {
     void colour(String id,int colour){Thing t=things.get(id);if(t!=null){t.colour=colour;mark();}}
     void tone(String id,int tone){Thing t=things.get(id);if(t!=null){t.tone=tone;mark();}}
     /** Set, or clear, whether a private thing sends a help request when it opens, to whom, and with what words (decision 113). */
+    /** Every help request of this space taken away, erase//: typed in one of its notes (decision 201): how many were. */
+    int eraseHelp() {
+        int n=0;
+        for(Thing t:things.values())if(t.helpOnOpen){t.helpOnOpen=false;t.helpTo=new ArrayList<>();t.helpMessage="";n++;}
+        if(n>0)mark();
+        return n;
+    }
     void help(String id,boolean on,List<String> to,String message) {
         Thing t=things.get(id);if(t==null)return;
         t.helpOnOpen=on;t.helpTo=on&&to!=null?new ArrayList<>(to):new ArrayList<>();t.helpMessage=on&&message!=null?message:"";mark();

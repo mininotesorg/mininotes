@@ -284,6 +284,61 @@ final class Receipt {
      */
     static final int HELP=30;
 
+    /**
+     * "This build reads the name we pick for a person" (the owner, 2026-10-07: "we need to be able to rename a person or
+     * device"; decision 124). That name is never sealed for a device that has not said this: a build from before takes
+     * anything it does not know for a note written the oldest way. Said to the owner's own devices only, the only ones a
+     * card goes to, and heard as {@link #PARLONS} is. The envelope names nothing. The name itself rides as a card of its
+     * own ({@code MNN1}), read before a note is, as a Parlons! address is.
+     */
+    static final int CALLED=31;
+
+    /**
+     * "This build reads a message" (the owner, 2026-10-10: an Inbox of brief messages; decision 145). A message is never
+     * sealed for a device that has not said this: a build from before would write it over a note. Said and heard as
+     * {@link #HELP} is. The message itself rides as a card of its own ({@code MNM1}), read before a note is.
+     */
+    static final int MESSAGES=32;
+
+    /**
+     * "Your message is kept here": the answer to a message, sealed with the message's own id as its page, so the sender
+     * knows which one arrived and stops sending it again. Only an answer from the far end says it got there (HANDSHAKE).
+     */
+    static final int MESSAGE_KEPT=33;
+
+    /**
+     * "This build takes a person's own Parlons! address from them" (the owner, 2026-10-11: "work the Parlons! address setup
+     * so that it is easy and intuitive"; decision 147). Said to every paired device, as {@link #HELP} is; a person's own
+     * address is never sealed for a device that has not said it: a build from before could read the card as a note. The
+     * address rides as the {@link Parlons} card ({@code MNP1}) about the sender's own key.
+     */
+    static final int PARLONS_OWN=34;
+    /**
+     * "This build takes a person's own picture from them" (the owner, 2026-10-12; decision 158). Said as {@link #PARLONS_OWN}
+     * is, and never a picture sealed for a device that has not said it. The picture rides as the {@link Face} card ({@code MNF1}).
+     */
+    static final int FACE_OWN=35;
+
+    /**
+     * "It waits for me to accept it", said beside the answer to something somebody shared with me for the first time, which
+     * waits in Shared with me (decision 109). The answer says it arrived, and it did, but its sender's tick then said
+     * "everybody has it" while it was still hidden here, waiting (the connect review, 2026-10-14). With this the sender says
+     * "Waiting for Ben to accept" instead. Which note or file rides in the envelope, as for an answer. A build from before
+     * reads it as a later build's answer, which is to say not at all, and its tick stays as it was.
+     */
+    static final int WAITS=36;
+    /**
+     * "I accepted it": the same note or file, accepted here since, by Accept or by one of my own devices accepting it. Said to
+     * whoever {@link #WAITS} was said to, and again until it goes. Read by a build from before as nothing.
+     */
+    static final int ACCEPTED=37;
+
+    /**
+     * "This build reads who a device belongs to" (decision 163, one person on several devices; see {@link AboutMe}). Said to
+     * every paired device, as {@link #FACE_OWN} is; the card ({@code MNA1}) is never sealed for a device that has not said it.
+     */
+    static final int ABOUT_ME=38;
+
     private Receipt(){}
 
     /** The inside of an answer. */

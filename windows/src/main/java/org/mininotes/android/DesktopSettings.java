@@ -32,6 +32,48 @@ final class DesktopSettings {
         JDialog[] box={null};
         JPanel body=DesktopUi.column();
 
+        // The language first: everything under it is said in it (decision 160). Taken in when Mininotes opens again.
+        java.util.List<String> languageCodes=new java.util.ArrayList<>(),languageNames=new java.util.ArrayList<>();
+        languageCodes.add(Say.SYSTEM);languageNames.add(Say.t("This PC's language"));
+        for(java.util.Map.Entry<String,String> one:Say.LANGUAGES.entrySet()){languageCodes.add(one.getKey());languageNames.add(one.getValue());}
+        JComboBox<String> language=new JComboBox<>(languageNames.toArray(new String[0]));
+        language.setSelectedIndex(Math.max(0,languageCodes.indexOf(app.context.getSharedPreferences("settings",0).getString("language",Say.SYSTEM))));
+
+        language.addActionListener(e->{
+            String chosen=languageCodes.get(language.getSelectedIndex());
+            if(chosen.equals(app.context.getSharedPreferences("settings",0).getString("language",Say.SYSTEM)))return;
+            app.chooseLanguage(chosen);
+        });
+        // Each name in its own script, in a face that can draw it.
+        language.setRenderer(new javax.swing.DefaultListCellRenderer(){
+            @Override public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list,Object value,int index,boolean selected,boolean focused) {
+                java.awt.Component shown=super.getListCellRendererComponent(list,value,index,selected,focused);
+                shown.setFont(DesktopUi.fontFor(String.valueOf(value),list.getFont()));return shown;
+            }
+        });
+        DesktopUi.add(body,DesktopUi.heading("Language"));DesktopUi.gap(body,DesktopUi.S);
+        DesktopUi.add(body,DesktopUi.row(DesktopUi.body("Language"),language));
+        DesktopUi.gap(body,DesktopUi.L);
+        // The language packs Translate… downloaded, each taken off here (docs/TRANSLATION.md).
+        DesktopUi.add(body,DesktopUi.heading("Translation"));DesktopUi.gap(body,DesktopUi.S);
+        JPanel packs=DesktopUi.column();DesktopUi.add(body,packs);
+        Runnable[] listPacks={null};
+        listPacks[0]=()->{
+            packs.removeAll();
+            java.util.Map<String,Long> here=DesktopTranslate.installed(app);
+            if(here.isEmpty())DesktopUi.add(packs,DesktopUi.quiet("No language packs on this PC. Translate… in a note's menu downloads the ones it needs."));
+            for(java.util.Map.Entry<String,Long> one:here.entrySet()) {
+                String named=Translation.name(one.getKey());
+                JButton remove=DesktopUi.button("Remove",()->{
+                    try{DesktopTranslate.remove(app,one.getKey());}catch(java.io.IOException e){app.failed(e);}
+                    listPacks[0].run();
+                });
+                DesktopUi.add(packs,DesktopUi.row(DesktopUi.body(named+"  ·  "+DesktopTranslate.megabytes(one.getValue())),remove));
+            }
+            packs.revalidate();packs.repaint();
+        };
+        listPacks[0].run();
+        DesktopUi.gap(body,DesktopUi.L);
         // Security first: it is the one that protects everything else.
         DesktopUi.add(body,DesktopUi.heading("Security"));DesktopUi.gap(body,DesktopUi.S);
         DesktopUi.add(body,DesktopLock.panel(app,box));
@@ -42,7 +84,7 @@ final class DesktopSettings {
         int[] waits={NoteStore.RIGHT_AWAY,3,10,30,120};String[] names={"Right away","After 3 seconds","After 10 seconds","After 30 seconds","After 2 minutes"};
         int now=app.syncAfter();
         JCheckBox syncing=DesktopUi.toggle("Sync automatically",now>=0);
-        JComboBox<String> after=new JComboBox<>(names);int at=2;for(int i=0;i<waits.length;i++)if(waits[i]==now)at=i;after.setSelectedIndex(at);after.setEnabled(now>=0);
+        JComboBox<String> after=DesktopUi.combo(names);int at=2;for(int i=0;i<waits.length;i++)if(waits[i]==now)at=i;after.setSelectedIndex(at);after.setEnabled(now>=0);
         syncing.addActionListener(e->{after.setEnabled(syncing.isSelected());app.setSyncAfter(syncing.isSelected()?waits[after.getSelectedIndex()]:NoteStore.WHEN_ASKED);});
         after.addActionListener(e->{if(syncing.isSelected())app.setSyncAfter(waits[after.getSelectedIndex()]);});
         JPanel afterHolder=new JPanel(new GridBagLayout());afterHolder.setOpaque(false);afterHolder.add(after);
@@ -135,16 +177,17 @@ final class DesktopSettings {
         }
         DesktopUi.add(window,DesktopUi.note("Off, each is in ⋯.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         // How long what is carried onto Temp stays (decision 79).
-        JComboBox<String> stay=new JComboBox<>(Desktop.TEMP_SPANS);stay.setSelectedIndex(app.tempSpan());
+        JComboBox<String> stay=DesktopUi.combo(Desktop.TEMP_SPANS);stay.setSelectedIndex(app.tempSpan());
         stay.addActionListener(e->app.setTempSpan(stay.getSelectedIndex()));
         JPanel stayRow=new JPanel(new BorderLayout(12,0));stayRow.setOpaque(false);stayRow.add(DesktopUi.body("Temp: things stay"),BorderLayout.WEST);
         JPanel holdStay=new JPanel(new FlowLayout(FlowLayout.RIGHT,0,0));holdStay.setOpaque(false);holdStay.add(stay);stayRow.add(holdStay,BorderLayout.EAST);
         DesktopUi.gap(window,DesktopUi.S);DesktopUi.add(window,stayRow);
         // Temp as a note to self (decision 84).
-        JCheckBox toMine=DesktopUi.toggle("Temp: send to my devices",app.tempToMine());
+        JCheckBox toMine=DesktopUi.toggle("Temp: send what is in it",app.tempToMine());
         toMine.addActionListener(e->app.setTempToMine(toMine.isSelected()));
-        DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.switchRow("Temp: send to my devices",toMine));
-        DesktopUi.add(window,DesktopUi.note("What is let go on Temp goes to your other devices too, as a note to yourself.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
+        DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.switchRow("Temp: send what is in it",toMine));
+        DesktopUi.add(window,DesktopUi.note("What is let go on Temp goes to your other devices, and to the people you choose.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
+        DesktopUi.gap(window,4);DesktopUi.add(window,app.button("Who it goes to\u2026",app::chooseTempDevices));
         // Where what comes on Temp from my other devices shows: in Temp only, unless this is on (decision 98).
         JCheckBox tempHome=DesktopUi.toggle("Temp: also show on Home",app.store.tempOnHome());
         tempHome.addActionListener(e->app.setTempOnHome(tempHome.isSelected()));
@@ -152,7 +195,7 @@ final class DesktopSettings {
         DesktopUi.add(window,DesktopUi.note("What comes on Temp from your other devices is in Temp. On, it is on Home as well.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         // How long Recent keeps what was opened (the owner: "an option letting the user decide for how long").
         int[] keepDays={1,3,7,30};int kept=java.util.Arrays.binarySearch(keepDays,app.recentDays());
-        JComboBox<String> keeps=new JComboBox<>(new String[]{"A day","Three days","A week","A month"});keeps.setSelectedIndex(Math.max(0,kept));
+        JComboBox<String> keeps=DesktopUi.combo(new String[]{"A day","Three days","A week","A month"});keeps.setSelectedIndex(Math.max(0,kept));
         keeps.addActionListener(e->app.setRecentDays(keepDays[keeps.getSelectedIndex()]));
         JPanel keepRow=new JPanel(new BorderLayout(12,0));keepRow.setOpaque(false);keepRow.add(DesktopUi.body("Recent keeps"),BorderLayout.WEST);
         JPanel holdKeeps=new JPanel(new FlowLayout(FlowLayout.RIGHT,0,0));holdKeeps.setOpaque(false);holdKeeps.add(keeps);keepRow.add(holdKeeps,BorderLayout.EAST);
@@ -160,7 +203,7 @@ final class DesktopSettings {
         // Where a file somebody shares with this PC on its own is shown (the owner, 2026-10-04: "by default let's have a
         // folder, Shared with me, but this setting could be changed by the user"; decision 92): Home, the place Shared with
         // me (decision 94), or any folder on Home. Kept on Home all the same, so it never goes on with a folder.
-        JComboBox<String> sharedTo=new JComboBox<>(new String[]{"Home",NoteStore.SHARED_WITH_ME});sharedTo.setEnabled(false);
+        JComboBox<String> sharedTo=DesktopUi.combo(new String[]{"Home",NoteStore.SHARED_WITH_ME});sharedTo.setEnabled(false);
         java.util.List<String> sharedIds=new java.util.ArrayList<>(java.util.List.of(Things.HOME,""));
         app.disk.submit(()->app.store.collections(),shelves->{
             for(NoteStore.Shelf one:shelves){sharedTo.addItem(one.name);sharedIds.add(one.id);}

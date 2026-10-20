@@ -162,12 +162,13 @@ final class Drop {
      * device that said it while the other was still on a build from before was never heard - and, told back only when
      * it had not said it yet this run, never said it again: the other one updated, said it, and waited for ever. So
      * it is said back to whoever says it, unless it was said to them within the last minute, which is what stops two
-     * devices saying it to each other for ever.
+     * devices saying it to each other for ever. Ten minutes, not one (Graphene, 2026-10-17): a dozen of these to each device,
+     * said back again every minute, kept a phone busy talking about what its build can do while notes waited.
      *
      * @param said when it was last said to them this run, or 0 for never
      */
     static boolean sayBack(long said,long now){return said<=0||now<said||now-said>=SAY_BACK;}
-    static final long SAY_BACK=60_000L;
+    static final long SAY_BACK=10*60_000L;
 
     /** Whether a sending is tried again now: offered, or its files fetched. The same clock as a note's files. */
     static boolean due(long tried,int tries,long now){return Enclosure.due(tried,tries,now);}

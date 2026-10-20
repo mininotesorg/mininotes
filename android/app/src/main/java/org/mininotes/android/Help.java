@@ -40,9 +40,9 @@ final class Help {
     static final int INCIDENT=16;
 
     /** The switch's words, the same on both apps, and the button that turns it on after the box has said what it does. */
-    static final String SWITCH="Send a help request when opened", TURN_ON="Turn it on";
+    static final String SWITCH="Help request…", TURN_ON="Set it";
     /** The box that asks before it is turned on (the owner, 2026-10-06: "By default they are not, and request confirmation before being set."). */
-    static final String ASK_TITLE="Turn on the help request?";
+    static final String ASK_TITLE="A help request, in secret";
     /** What will happen, the same words on both apps: sent at once when it opens, with nothing on screen. */
     static final String WHAT="The moment this opens, a help request is sent to the people you choose, with your message. Nothing shows on screen.";
     /** What a phone sends: the place, then precise, then every five minutes for an hour while the app is open. */
@@ -53,6 +53,17 @@ final class Help {
     static final String ORDINARY_TRACE="This setting is kept in the notebook. Someone who examines this device's data could find it.";
     /** And for a private one: it is inside the private space, with no trace outside (decision 111). */
     static final String PRIVATE_TRACE="This setting is kept inside the private space. Nothing outside it shows that it is set.";
+    /**
+     * Said in the box, plainly, before it is set (the owner, 2026-10-18: "Help request must be secret ... we have to clearly
+     * explain what it does and that it will never show up again. A special code like erase//: should be typed to erase it,
+     * but it should never be displayed"; decision 201).
+     */
+    static final String NEVER_AGAIN="Once set, it is never shown again: this box always opens empty, and nothing in Mininotes says that this note sends it.";
+    /** What help//: sets: this note, opened, sends it (decision 204). */
+    static final String THIS_NOTE="This private note sends it, every time it is opened.";
+    static final String ERASE="To take away every help request of this private space, type erase//: in one of its notes. It is taken out the moment it is typed and is never shown.";
+    /** Said, once, when erase//: has taken them away: quietly, in the space only. */
+    static final String ERASED="Done.";
     /** Said when nobody was chosen, and the hint in the message field. */
     static final String NEED_SOMEONE="Choose at least one person to send it to.";
     static final String MESSAGE_HINT="A short message: where you are, or what is wrong";

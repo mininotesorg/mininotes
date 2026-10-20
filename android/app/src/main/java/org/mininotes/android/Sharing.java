@@ -88,6 +88,15 @@ final class Sharing {
     static final String OWNER_DOES="Made it. Can do everything, including changing anyone's role, admins included, and removing anyone.";
 
     /**
+     * Said under a thing on somebody's page whose role is not changed here, rather than only in a tip (the owner, 2026-10-18:
+     * "here we should be able to change the rights granted or state clearly if we are not admin").
+     */
+    static String fixed(boolean owner,String name) {
+        return owner?Say.t("{0} made it, so {0} is its owner. An owner's role does not change.",name)
+            :Say.t("Only its owner or an admin can change this, and you are neither.");
+    }
+
+    /**
      * What somebody may give others, most first: the owner Admin, Can write or Can read; an admin Can write or Can
      * read; anybody else nothing.
      *

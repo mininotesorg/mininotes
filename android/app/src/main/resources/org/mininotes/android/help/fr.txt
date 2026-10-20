@@ -1,0 +1,348 @@
+# Aide de Mininotes, lue par l'Agent sur l'appareil (décision 191). Même fichier que sur GitHub.
+# Les mêmes réponses que en.txt, dans le même ordre et avec les mêmes id. Pas de tirets longs.
+
+# ask
+= L'Agent
+? que peux-tu faire
+? que puis-je demander
+? aide
+? comment marche l'agent
+? qu'est-ce que l'agent
+! Posez une question sur Mininotes, ou demandez quelque chose à faire. Je peux vous dire ce qui est nouveau, lire votre liste de tâches, y ajouter une ligne ou à n'importe quelle note (« ajoute du lait à Courses »), partager une note ou un dossier avec quelqu'un (« partage Courses avec Carole »), ajouter quelqu'un, ouvrir ou trouver une note, créer une note, et mettre des éléments dans le dock ou dans vos favoris.
+! Tout se passe sur cet appareil : rien de ce que vous tapez ici n'est envoyé. Avant de changer quoi que ce soit qui touche d'autres personnes, je vous montre ce que je vais faire et j'attends votre confirmation.
+
+# dock
+= Le dock
+? qu'est-ce que le dock
+? comment utiliser le dock
+? ajouter au dock
+? retirer du dock
+? la rangee d'icones en bas
+! Le dock est la rangée d'icônes en bas de l'Accueil, pour atteindre notes et dossiers d'un geste. Ajoutez-en un depuis son menu avec Ajouter au dock, ou glissez-le sur le dock. Retirer du dock l'enlève seulement du dock : rien n'est supprimé, et un favori reste un favori.
+! Ce que vous mettez en favori va aussi dans le dock. Ensuite les deux sont indépendants. Le dock en contient autant que vous voulez : quand ils ne tiennent pas, faites-le défiler sur le côté (glisser sur le téléphone, la molette ou la fine barre sur le PC). Chaque appareil a son propre dock.
+
+# favourites
+= Favoris
+? que sont les favoris
+? ajouter aux favoris
+? retirer des favoris
+? ou sont mes favoris
+! Les favoris sont les notes et dossiers que vous voulez garder sous la main. Ajouter aux favoris est dans le menu de chacun. Ils sont tous dans l'icône Favoris de l'Accueil, dans l'ordre où vous les glissez. Un nouveau favori va aussi dans le dock ; retirer un favori ne le retire pas du dock.
+
+# share
+= Partager une note ou un dossier
+? comment partager une note
+? partager un dossier
+? partager avec quelqu'un
+? envoyer une note a quelqu'un
+! Ouvrez le menu de la note ou du dossier, section Synchronisation et partage, puis Partager. Choisissez des personnes parmi vos contacts, ou tout un groupe, et ce que chacun peut faire : Peut lire, Peut écrire ou Administrateur. On leur demande s'ils acceptent. Ensuite tout reste à jour dans les deux sens : ce que chacun écrit est fusionné.
+! Vous pouvez aussi me le demander : « partage Courses avec Carole », ou « partage Courses avec Carole en lecture seule ».
+> SHARE
+
+# roles
+= Qui peut faire quoi
+? qu'est-ce qu'un proprietaire
+? qu'est-ce qu'un administrateur
+? lecture ecriture
+? pourquoi je ne peux pas changer le role
+? changer les droits
+? roles
+! Propriétaire : celui qui l'a créé. Peut tout faire, y compris changer le rôle de chacun et retirer n'importe qui. Le rôle d'un propriétaire ne change jamais.
+! Administrateur : peut le partager à son tour et changer le rôle de ceux qui lisent ou écrivent. Peut écrire : lit et écrit dedans. Peut lire : le lit, et ce qu'il tape n'est pas envoyé.
+! Les rôles se changent dans la fenêtre Partager (Qui a accès) ou sur la page d'une personne, avec le menu déroulant à côté de chaque élément. Sans menu déroulant, la ligne en dessous dit pourquoi : seul le propriétaire ou un administrateur peut le changer.
+
+# addsomeone
+= Ajouter quelqu'un
+? comment ajouter quelqu'un
+? ajouter un contact
+? ajouter une personne
+? me connecter a un ami
+? associer quelqu'un
+! Ouvrez Personnes et appareils et appuyez sur + à côté de Personnes, ou demandez-moi « ajoute un contact ». Ensuite, scannez son code (ou collez son lien), ou montrez-lui votre code (ou envoyez-lui votre lien) pour qu'il le scanne. Une fois que vous avez tous les deux accepté, la personne est dans vos contacts et vous pouvez partager avec elle.
+> ADD_CONTACT
+@ PEOPLE
+
+# mydevices
+= Mes autres appareils
+? ajouter mon telephone
+? ajouter mon pc
+? ajouter un autre appareil
+? mes appareils
+? synchroniser mes appareils
+! Vos propres appareils, votre téléphone et votre PC par exemple, se relient comme une personne : dans Personnes et appareils, Ajouter mon appareil, puis scannez le code de l'un sur l'autre. Une fois reliés, tout ce que vous partagez avec vos appareils reste à jour sur chacun. Un de vos appareils peut être mis en Peut lire s'il doit seulement consulter.
+@ PEOPLE
+
+# whatsnew
+= Nouveau
+? quoi de neuf
+? qu'est-ce qui a change
+? nouveautes
+? la fenetre nouveau
+! Nouveau liste ce qui a changé depuis votre dernier passage : notes où d'autres ont écrit, éléments partagés avec vous, fichiers arrivés. Chacun s'ouvre d'un clic, et l'ouvrir le fait sortir de Nouveau. Sur le PC c'est le bouton nouveau en haut ; sur le téléphone, il est dans le menu. Demandez-moi « quoi de neuf ? » pour une liste rapide.
+> WHAT_NEW
+
+# todo
+= Votre liste de tâches
+? qu'y a-t-il sur ma liste de taches
+? ajouter a ma liste
+? a faire
+? taches
+! Créez une note appelée À faire (ou Tâches, Todo) et je peux vous la lire et y ajouter des lignes : « qu'y a-t-il sur ma liste ? », « ajoute acheter du pain à ma liste », ou simplement « à faire : acheter du pain ». Pour une autre note, nommez-la : « ajoute du lait à Courses ».
+> TODO_SHOW
+
+# marks
+= Les marques de synchronisation
+? que veut dire la marque
+? que veut dire la coche
+? coche verte
+? fleche orange
+? point d'exclamation rouge
+? rond gris
+? ma note est-elle synchronisee
+! La marque sur une note, un dossier ou une tuile dit où il en est avec les appareils qu'il atteint. Un rond gris vide : seulement sur cet appareil, pas partagé. Une flèche orange : des changements attendent de partir ; appuyez dessus pour envoyer tout de suite. Trois points orange : envoyé, en attente de la confirmation des autres. Une coche verte : tout le monde a cette version, fichiers compris. Deux barres grises : en pause, cet appareil ne reçoit pas leurs changements. Un point d'exclamation rouge : un appareil n'a pas donné signe de vie depuis plus de trois jours alors que quelque chose l'attend.
+
+# notsyncing
+= Une note ne se synchronise pas
+? ma note ne se synchronise pas
+? pas synchronise
+? pourquoi ca ne synchronise pas
+? l'autre appareil ne recoit pas mes changements
+! Regardez d'abord la marque : orange veut dire en route, rouge veut dire qu'un appareil n'a pas été joint depuis des jours. Mininotes réessaie tout seul. Ouvrez Mininotes sur l'autre appareil, connecté à internet, et laissez-le un moment : ce qui attend est envoyé et confirmé.
+! Si une bande en haut de l'app nomme un contact en difficulté, appuyez sur Que faire : elle dit ce qui ne va pas, ce que fait Mininotes, et ce que vous pouvez faire. Synchroniser maintenant, dans Synchronisation et partage, envoie tout de suite.
+
+# trouble
+= La bande en haut
+? bande rouge en haut
+? contact en difficulte
+? que faire
+! Quand quelque chose ne va pas avec un contact, par exemple un appareil non joint depuis des jours, verrouillé, ou dont Mininotes est trop ancien, une bande le dit en haut de l'app. Mininotes réessaie tout seul ; Que faire explique ce qui ne va pas et ce que vous pouvez faire.
+
+# connected
+= Connecté, hors ligne, chiffré
+? que veut dire connecte
+? hors ligne
+? que veut dire chiffre
+? chiffre
+? connexion
+! Connecté veut dire que cet appareil a trouvé un moyen de joindre vos contacts : par les relais, ou directement sur le même réseau. Hors ligne veut dire pas encore ; il réessaie. Chiffré veut dire que votre carnet est verrouillé par votre mot de passe sur cet appareil. Chaque note est de toute façon scellée de bout en bout en allant vers un autre appareil. Cliquez sur l'un ou l'autre mot pour le détail.
+
+# lock
+= Verrouillage et chiffrement
+? comment verrouiller mininotes
+? mot de passe
+? chiffrer mes notes
+? mots de recuperation
+! Dans Réglages, Sécurité, Verrouiller Mininotes chiffre le carnet, ses fichiers et vos sauvegardes sur cet appareil. Il s'ouvre alors avec votre mot de passe (ou votre empreinte ou le verrouillage d'écran sur le téléphone), et 12 mots de récupération servent de clé de secours. Gardez ces mots en lieu sûr : sans le mot de passe ni les mots, personne ne peut ouvrir le carnet, pas même nous.
+@ SECURITY
+
+# relays
+= Relais et liaison directe
+? que sont les relais
+? faut-il internet
+? meme wifi
+? comment ca voyage
+! Les notes voyagent entre appareils scellées de bout en bout, par les relais Maxima, ou directement de porte à porte quand les deux appareils sont sur le même réseau. Les relais ne font que passer des messages scellés qu'ils ne peuvent pas lire. Le détail de la connexion est dans votre Profil.
+
+# filelink
+= Partager un fichier via Mininotes
+? partager un fichier via mininotes
+? fichier lie
+? synchroniser un tableur
+? garder un fichier synchronise
+? ods docx synchro
+! Sur le PC, Partager un fichier via Mininotes (dans Synchronisation et partage) relie un fichier qui reste où il est sur votre PC et s'ouvre dans son propre programme, par exemple un tableur dans LibreOffice. À chaque enregistrement, cette version part vers vos autres appareils, et une version enregistrée ailleurs est réécrite dedans.
+! Ce qui voyage est le fichier entier, la dernière version : les changements à l'intérieur d'un tableur ou d'un document ne sont pas fusionnés. S'il a changé ici et ailleurs avant de se rejoindre, Mininotes demande quelle version garder et ne remplace rien avant votre réponse. Retirer de Mininotes met le lien à la corbeille sur ce PC seulement ; le fichier lui-même n'est jamais supprimé.
+
+# openwith
+= Ouvrir des fichiers
+? ouvrir un fichier
+? ouvrir avec
+? quel programme l'ouvre
+? changer le programme
+! Un fichier s'ouvre dans le programme que Windows utilise pour ce type ; le menu le dit, par exemple Ouvrir dans LibreOffice. Ouvrir avec… permet de choisir un autre programme pour ce type, pour Mininotes seulement, sans changer le choix de Windows.
+
+# temp
+= Temp
+? qu'est-ce que temp
+? temporaire
+? note a soi-meme
+? envoyer a mes autres appareils
+! Temp est pour ce dont vous n'avez besoin qu'un moment, et pour passer des choses entre vos propres appareils, comme des notes à soi-même. Ce que vous mettez dans Temp va sur vos autres appareils et disparaît partout quand son temps est écoulé. Temporaire… dans le menu d'un élément règle la durée.
+@ TEMP
+
+# archive
+= Archives et Corbeille
+? archiver
+? corbeille
+? supprimer une note
+? restaurer une note
+? ou est passee ma note
+! Archiver range une note ou un dossier, hors de vue mais gardé. Mettre à la corbeille le met à la corbeille. Les deux sont sur l'Accueil, avec un chemin de retour : ouvrez les archives ou la corbeille et remettez-le. Rien dans la corbeille n'est perdu tant que vous ne la videz pas.
+@ ARCHIVE
+@ BIN
+
+# versions
+= Versions
+? versions
+? revenir a une ancienne version
+? annuler des changements
+? historique d'une note
+! Chaque version d'une note est gardée. Versions, dans le menu de la note, les liste de la plus récente à la plus ancienne et remet celle que vous voulez. Ce qui arrive de quelqu'un d'autre est aussi gardé comme version : l'écriture de personne n'est jamais perdue.
+
+# backup
+= Sauvegardes
+? sauvegarde
+? exporter une sauvegarde
+? ecriture de recuperation
+? sauvegarder mes notes
+? restaurer une sauvegarde
+! Exporter une sauvegarde, dans le menu sous Sauvegarde, écrit un fichier avec tous les dossiers, notes et fichiers. Ajouter depuis une sauvegarde en ramène une, et demande s'il faut ajouter à ce qui est ici ou le remplacer. Sur le PC, Écriture de récupération… montre l'écriture qui n'a pas pu être enregistrée dans sa note et a été mise de côté, pour la remettre.
+@ BACKUP
+
+# colour
+= Couleurs et icônes
+? changer la couleur
+? couleur d'une note
+? changer l'icone
+? image sur un dossier
+! Couleur, en haut du menu d'un élément, colore une note ou un dossier, avec une intensité réglable. Icône… lui donne une icône ou une image à vous. La couleur de l'Accueil colore toute l'app.
+
+# writingcolours
+= Couleurs d'écriture
+? qui a ecrit quoi
+? couleur d'ecriture
+? couleur du texte des autres
+! Dans une note partagée, ce que chacun a écrit peut s'afficher dans sa couleur, pour voir qui a écrit quoi. Appuyez sur le rond d'une personne sur la note pour changer la couleur de son écriture. La couleur que vous choisissez pour vous voyage avec votre écriture.
+
+# tabs
+= Onglets dans une note
+? ajouter un onglet
+? onglets
+? pages dans une note
+! Une note peut avoir des onglets, comme des fiches : Ajouter un onglet, dans le menu de la note ou avec + à côté des onglets. Chaque onglet est une page de la même note.
+
+# translate
+= Traduire
+? traduire une note
+? traduction
+? autre langue
+! Traduire…, dans le menu d'une note, met l'onglet affiché dans une autre langue, sur cet appareil. Rien n'est envoyé à un service de traduction.
+
+# language
+= La langue de l'app
+? changer la langue
+? langue
+? francais
+? anglais
+! Langue, dans le menu sous Mininotes, règle la langue de l'app. Mininotes parle onze langues.
+@ LANGUAGE
+
+# textsize
+= Taille du texte
+? texte plus grand
+? taille du texte
+? taille de police
+! A− et A+ en haut du menu rendent le texte plus petit ou plus grand. Sur le PC, Taille du texte dans Mon profil règle la taille de toute l'app.
+@ TEXT_SIZE
+
+# search
+= Trouver
+? recherche
+? trouver une note
+? ou est ma note
+? arborescence
+! Le champ de recherche en bas de l'Accueil trouve notes, dossiers et fichiers par leurs mots. Arborescence montre tous les dossiers et notes à la fois. Vous pouvez aussi me demander : « cherche soupe ».
+> FIND
+
+# invitations
+= Partagé avec moi
+? partage avec moi
+? accepter une note partagee
+? refuser
+? invitation
+! Ce qu'une autre personne partage avec vous attend dans Partagé avec moi jusqu'à ce que vous l'acceptiez. Avant d'accepter, vous voyez ce que c'est et qui l'envoie, et vous choisissez où le mettre. Refuser le lui dit, discrètement.
+@ SHARED_WITH_ME
+
+# groups
+= Groupes
+? groupes
+? partager avec un groupe
+? creer un groupe
+! Dans Personnes et appareils, les Groupes rassemblent des personnes. Partagez avec un groupe et chacun y reçoit le même rôle ; quelqu'un ajouté plus tard au groupe le reçoit aussi. Mes appareils est le groupe de vos propres appareils.
+@ PEOPLE
+
+# update
+= Mises à jour
+? mettre a jour mininotes
+? nouvelle version
+? quelle version
+! Quand un Mininotes plus récent est prêt, un bouton Mettre à jour apparaît en haut. Votre version est dans le menu, sous Mininotes.
+
+# profile
+= Votre profil
+? profil
+? mon nom
+? mon code
+? mon lien
+? reglages
+! Votre Profil, dans Synchronisation et partage, contient votre nom, votre image, votre couleur, votre code et votre lien pour que d'autres vous ajoutent, et la façon dont cet appareil se connecte. Réglages, sous Mininotes dans le menu, contient le reste.
+@ PROFILE
+@ SETTINGS
+
+# private
+= Confidentialité
+? est-ce prive
+? qui peut lire mes notes
+? ou sont gardees mes notes
+? mininotes envoie-t-il mes donnees
+! Vos notes sont gardées sur vos appareils. Elles vont seulement aux personnes et appareils avec qui vous les partagez, scellées de bout en bout en chemin. Il n'y a ni compte ni serveur qui les garde. L'Agent lui-même fonctionne sur cet appareil et n'envoie rien.
+
+# stamp
+= Horodater sur Minima
+? horodater un fichier
+? prouver qu'un fichier existait
+? integritas
+? horodatage sur la blockchain
+? verifier un horodatage
+? ou mettre ma cle api integritas
+? ce que j'ai horodate
+! Horodater sur Minima, dans le menu d'un fichier ou d'une note, enregistre l'empreinte du fichier (jamais le fichier) sur la blockchain Minima avec la date, par votre propre compte Integritas. Plus tard, Vérifier sur Minima retrouve cet enregistrement et donne un rapport PDF, qui prouve que le fichier existait alors, sans changement : une seule lettre changée donne une autre empreinte.
+! Reliez votre compte une fois dans Mon profil, sous Integritas : collez la clé API de votre profil sur integritas.technology. Elle est gardée dans votre carnet sur l'appareil, verrouillée avec lui, et envoyée seulement à Integritas. Dans le menu des pièces jointes, vous pouvez horodater plusieurs fichiers à la fois.
+@ INTEGRITAS
+@ STAMPED
+
+# parlons
+= Votre adresse Parlons!
+? parlons
+? adresse parlons
+? discuter avec mes contacts
+? ou mettre mon adresse parlons
+! Votre adresse Parlons!, dans Mon profil, se règle une fois et part toute seule vers tous ceux avec qui vous êtes relié, pour qu'ils discutent avec vous d'un geste.
+@ PARLONS
+
+# describe
+= Décrire ce que fait chaque chose
+? decrire ce que fait chaque chose
+? infobulles
+? enlever les descriptions
+? a quoi sert ce bouton
+! Sur le PC, une ligne peut dire ce que fait une entrée de menu ou un bouton quand le pointeur s'y pose. Décrire ce que fait chaque chose, dans Mon profil sous Taille du texte, l'allume ou l'éteint.
+@ DESCRIBE
+
+# showonhome
+= Afficher sur l'accueil
+? afficher sur l'accueil
+? enlever la corbeille de l'accueil
+? ce que montre l'accueil
+? enlever recent de l'accueil
+! Afficher sur l'accueil, dans Réglages, choisit les endroits que montre l'Accueil : Récent, Temp, Partagé avec moi, les archives et la corbeille. Un endroit éteint reste dans le menu.
+@ SHOW_ON_HOME
+
+# sentfiles
+= Fichiers envoyés
+? fichiers envoyes
+? les fichiers que j'ai envoyes
+? mon fichier est-il arrive
+? transferts de fichiers
+! Fichiers envoyés…, dans le menu, liste les fichiers que vous avez envoyés et ceux en route vers vous, avec où en est chacun.
+@ SENT_FILES

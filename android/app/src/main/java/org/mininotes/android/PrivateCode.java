@@ -42,12 +42,36 @@ final class PrivateCode {
 
     private PrivateCode(){}
 
+    /**
+     * Typed in a private note: the help request set on that note, in a box that shows nothing of one set before (the owner,
+     * 2026-10-18: "nothing should be displayed, only the secret key like erase//: should be typed directly in a note there,
+     * this needs to leave 0 trace behind"; decision 204). Taken out of the text the moment it is typed.
+     */
+    static final String HELP="help//:";
+    /** Where help//: is in a private note's text, {start,end}, or null. Any case. */
+    static int[] help(CharSequence text) {
+        if(text==null)return null;
+        int at=text.toString().toLowerCase(Locale.ROOT).indexOf(HELP);
+        return at<0?null:new int[]{at,at+HELP.length()};
+    }
+
+    /** Typed in a private note: every help request of the space open taken away (decision 201). */
+    static final String ERASE="erase//:";
+    /** Where erase//: is in a private note's text, {start,end}, or null. Any case. */
+    static int[] erase(CharSequence text) {
+        if(text==null)return null;
+        int at=text.toString().toLowerCase(Locale.ROOT).indexOf(ERASE);
+        return at<0?null:new int[]{at,at+ERASE.length()};
+    }
+
     /** A code the text before the caret ends with, just completed by its colon: its kind and where it starts, or null. */
     static Object[] ending(CharSequence text,int caret) {
         if(text==null||caret<=0||caret>text.length()||text.charAt(caret-1)!=':')return null;
         String tail=text.subSequence(Math.max(0,caret-LONGEST),caret).toString().toLowerCase(Locale.ROOT);
         for(String code:CODES)if(tail.endsWith(code))
-            return new Object[]{code.contains("space")?Kind.SPACE:Kind.OPEN,caret-code.length()};
+            // private//: and privatespace//: do the same (the owner, 2026-10-12: "make sure private// works just as well as
+            // privatespace// for accessing and creating a private space"): the space that answers, or a new one.
+            return new Object[]{Kind.SPACE,caret-code.length()};
         return null;
     }
 
