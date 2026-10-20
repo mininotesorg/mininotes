@@ -38,7 +38,8 @@ public class DesktopFileDialogTest {
                 User32.INSTANCE.PostMessage(box,0x0111,new WinDef.WPARAM(1),new WinDef.LPARAM(0));
                 for(int i=0;i<40&&got.get()==null;i++)Thread.sleep(50);
             }
-            assertEquals(folder.resolve("Shopping list.md").toAbsolutePath(),got.get());
+            // The same folder, however Windows spells it: a short name (RUNNER~1, on the release machine) or the long one.
+            assertEquals(folder.toRealPath().resolve("Shopping list.md"),((Path)got.get()).getParent().toRealPath().resolve(((Path)got.get()).getFileName()));
         } finally {
             // Never left open, whatever happened: Cancel, so the window behind is let go.
             WinDef.HWND left=User32.INSTANCE.FindWindow("#32770",title);
