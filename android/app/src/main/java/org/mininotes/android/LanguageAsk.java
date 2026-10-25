@@ -25,12 +25,26 @@ final class LanguageAsk {
         return inUse?When.ONCE_OPEN:When.BEFORE_NOTEBOOK;
     }
 
-    /** The languages as the box lists them: the one in use first (and chosen), then the others in their usual order. */
+    /**
+     * The languages as the box lists them: in the alphabetical order of their own names, as they are shown (the owner,
+     * 2026-10-25: "when we display the languages window first, put the message in english and order the language
+     * alphabetically"; decision 254), the one in use ticked where it falls, not moved first.
+     */
     static List<String> order(String inUse,Collection<String> codes) {
-        List<String> listed=new ArrayList<>();
-        if(codes.contains(inUse))listed.add(inUse);
-        for(String code:codes)if(!code.equals(inUse))listed.add(code);
+        List<String> listed=new ArrayList<>(codes);
+        java.text.Collator alphabet=java.text.Collator.getInstance(java.util.Locale.ROOT);
+        listed.sort((a,b)->alphabet.compare(Say.LANGUAGES.getOrDefault(a,a),Say.LANGUAGES.getOrDefault(b,b)));
         return listed;
+    }
+
+    /**
+     * The box made with the app's words in English (decision 254): whoever opens it first reads English, the language most
+     * people read, whatever the device is set to; each language keeps its own name. The language in use comes back after.
+     */
+    static <T> T inEnglish(java.util.function.Supplier<T> making) {
+        String was=Say.language();
+        Say.use("en");
+        try{return making.get();}finally{Say.use(was);}
     }
 
     /**

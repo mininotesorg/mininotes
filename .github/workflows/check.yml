@@ -14,16 +14,16 @@ jobs:
     name: Tests, lint and a release build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: Test, lint, build
         working-directory: android
@@ -32,7 +32,7 @@ jobs:
       # A failed run should say which test, not just that something failed.
       - name: Reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: reports
           path: |
@@ -40,7 +40,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Unsigned APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mininotes-unsigned-apk
           path: android/app/build/outputs/apk/release/*.apk

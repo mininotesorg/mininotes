@@ -2669,5 +2669,8 @@
  "The report is kept beside the file": "报告已保存在文件旁边",
  "The report could not be fetched. Try again in a moment.": "无法获取报告。请稍后再试。",
  "The file is not here any more.": "文件已不在这里。",
- "On Minima": "在 Minima 上"
+ "On Minima": "在 Minima 上",
+ "Send its Integritas report too": "同时发送 Integritas 报告",
+ "Its Integritas report goes with it": "Integritas 报告随之发送",
+ "Its Integritas report no longer goes with it": "Integritas 报告不再随之发送"
 }

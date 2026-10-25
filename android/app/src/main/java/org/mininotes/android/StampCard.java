@@ -86,9 +86,12 @@ final class StampCard {
      * not fit with its note's text goes without it, and the first that does not fit even so ends the card. A row this format
      * cannot say (a field longer than its bound, or no id, kind or fingerprint) is left off.
      */
-    static byte[] wrap(List<Row> rows) {
+    static byte[] wrap(List<Row> rows){return wrap(rows,CARD_MOST);}
+
+    /** The same, in at most {@code most} bytes. */
+    static byte[] wrap(List<Row> rows,int most) {
         ByteArrayOutputStream body=new ByteArrayOutputStream();
-        int count=0,room=CARD_MOST-MAGIC.length-1-4;
+        int count=0,room=most-MAGIC.length-1-4;
         for(Row one:rows) {
             if(count>=ROWS_MOST)break;
             byte[] row=row(one);
@@ -102,6 +105,58 @@ final class StampCard {
             out.write(MAGIC);out.writeByte(FORMAT);out.writeInt(count);body.writeTo(out);
         } catch(IOException e){throw new IllegalArgumentException(e.getMessage(),e);}
         return bytes.toByteArray();
+    }
+
+    // ---- the stamps of a thing shared with somebody else, travelling with it (decision 251) ----------------------------
+
+    /**
+     * What says a thing's own stamps follow, in a {@link Sleeve} after its last field and in a {@link Parcel} after its path,
+     * then how many bytes they take, then a card of them: "MNW1", which no magic or mark of this app's says. A build from
+     * before stops reading before it.
+     */
+    static final int WITH_MARK=0x4d4e5731;      // "MNW1"
+    /** The most stamps that go with one thing: its newest. */
+    static final int WITH_MOST=32;
+
+    /**
+     * The stamps of a thing as they go with it, the newest first: the mark, the length and a card, in at most {@code room}
+     * bytes; nothing where there are none or not one fits. Each with its note's words where they fit, without them where they
+     * do not; where not every stamp fits so, every one goes without its words; and where not all fit even so, the oldest are
+     * left off.
+     */
+    static byte[] with(List<Row> rows,int room) {
+        if(rows==null||rows.isEmpty()||room<8+MAGIC.length+5)return new byte[0];
+        List<Row> newest=rows.size()>WITH_MOST?rows.subList(0,WITH_MOST):rows;
+        byte[] card=wrap(newest,room-8);
+        if(count(card)<newest.size()) {
+            List<Row> bare=new ArrayList<>(newest.size());
+            for(Row one:newest)bare.add(one.bare());
+            card=wrap(bare,room-8);
+        }
+        if(count(card)==0)return new byte[0];
+        ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+        try(DataOutputStream out=new DataOutputStream(bytes)) {
+            out.writeInt(WITH_MARK);out.writeInt(card.length);out.write(card);
+        } catch(IOException e){throw new IllegalArgumentException(e.getMessage(),e);}
+        return bytes.toByteArray();
+    }
+
+    /**
+     * The stamps that came with a thing, read after their mark: the length and the card. Null where they do not read whole,
+     * or are more than go with one thing; the bytes they said they take are read all the same where they are there.
+     */
+    static List<Row> with(DataInputStream in) throws IOException {
+        int length=in.readInt();
+        if(length<0||length>CARD_MOST||length>in.available())return null;
+        byte[] card=new byte[length];in.readFully(card);
+        List<Row> rows=open(card);
+        return rows==null||rows.size()>WITH_MOST?null:rows;
+    }
+
+    /** What the stamps of a thing say, as a hash: what went to somebody is sent again only when it changes. */
+    static String said(List<Row> rows) {
+        try{return Courier.hex(java.security.MessageDigest.getInstance("SHA-256").digest(wrap(rows==null?new ArrayList<Row>():rows)));}
+        catch(java.security.NoSuchAlgorithmException none){throw new IllegalStateException("SHA-256 is missing",none);}
     }
 
     /** How many stamps a card holds, without reading them; 0 where these bytes are not one. */

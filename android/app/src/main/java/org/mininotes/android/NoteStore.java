@@ -3801,6 +3801,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             throw new IllegalStateException(ownerOf(rule)?"Nobody can change the owner's role."
                 :"Only its owner can make somebody an admin or change an admin's role.");
         setLevel(rule.scope,rule.target,rule.address,to,null,when);
+        if(rule.scope==Sharing.Scope.FILE)reportFollows(rule.target,rule.address,to,null);
     }
 
     /** Somebody not on a thing yet given a role in it, refused where this device may not give that. */
@@ -3809,6 +3810,40 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             throw new IllegalStateException(level==Sharing.Level.ADMIN?"Only its owner can make somebody an admin."
                 :"Only its owner or an admin can share this.");
         setLevel(scope,target,address,level,name);
+        if(scope==Sharing.Scope.FILE)reportFollows(target,address,level,name);
+    }
+
+    /**
+     * A stamped file's Integritas report, kept beside it (decision 253), going with it to whoever it is shared with, where
+     * the person chose so in its share (the owner, 2026-10-25: "PDF report go as an option"; decision 251): the report found
+     * by its name in the file's folder, given the same role; nothing where there is none, or where this device may not give it.
+     */
+    private void reportFollows(String file,String address,Sharing.Level level,String name) {
+        if(!reportGoesWith(file))return;
+        String report=reportBeside(file);
+        if(report==null||!mayGive(Sharing.Scope.FILE,report).contains(level))return;
+        setLevel(Sharing.Scope.FILE,report,address,level,name);
+    }
+    /** The report kept beside a file shared on its own: its id, or null. A file attached to a note has its report on the note. */
+    String reportBeside(String file) {
+        Held f=file(file);
+        if(f==null||f.held==Branch.Kind.PAGE)return null;
+        String named=Integritas.reportName(f.name);
+        for(Held one:filesOf(Branch.Kind.COLLECTION,f.note))if(!one.id.equals(file)&&named.equals(one.name))return one.id;
+        return null;
+    }
+    /** Whether a file's report goes with it when it is shared: chosen in its share, on this device, off until chosen. */
+    boolean reportGoesWith(String file) {
+        return "true".equals(where.getSharedPreferences("settings",Context.MODE_PRIVATE).getString("reportWith."+file,"false"));
+    }
+    /** Chosen: from now its report goes with it, and at once to everybody who has the file already. How many were given it. */
+    int reportGoesWith(String file,boolean on) {
+        where.getSharedPreferences("settings",Context.MODE_PRIVATE).edit().putString("reportWith."+file,String.valueOf(on)).apply();
+        if(!on)return 0;
+        int given=0;
+        for(Sharing.Rule rule:shares())
+            if(rule.scope==Sharing.Scope.FILE&&rule.target.equals(file)&&rule.level!=Sharing.Level.GONE){reportFollows(file,rule.address,rule.level,null);given++;}
+        return given;
     }
 
     /**
@@ -5511,13 +5546,90 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * row needs to be listed and verified again there, a note's stamped title and text with it; how often and when it was
      * looked for stay here.
      */
-    List<StampCard.Row> stampsCard() {
+    List<StampCard.Row> stampsCard(){return cardRows(null,null,null);}
+
+    private List<StampCard.Row> cardRows(String where,String[] args,String most) {
         List<StampCard.Row> out=new ArrayList<>();
         try(Cursor c=getReadableDatabase().query("stamped",new String[]{"id","kind","name","hash","at","request","said","address","state","block",
-                "txpow","tx","recorded","title","words","nft","nfttx"},null,null,null,null,"at DESC, n DESC")) {
+                "txpow","tx","recorded","title","words","nft","nfttx"},where,args,null,null,"at DESC, n DESC",most)) {
             while(c.moveToNext())out.add(new StampCard.Row(c.getString(0),c.getString(1),c.getString(2),c.getString(3),c.getLong(4),c.getString(5),
                 c.getString(6),c.getString(7),c.getString(8),c.getLong(9),c.getString(10),c.getString(11),c.getString(12),
                 c.isNull(13)?"":c.getString(13),c.isNull(14)?null:c.getString(14),c.getString(15),c.getString(16)));
+        }
+        return out;
+    }
+
+    // ---- stamps travelling with what is shared with somebody else (decision 251) -----------------------------------------
+
+    /** The kinds of stamp that are of a thing and travel with it: a note's, either way it was fingerprinted, and a file's. */
+    private static boolean travels(String kind){return Integritas.NOTE.equals(kind)||Integritas.TITLED.equals(kind)||Integritas.FILE.equals(kind);}
+
+    /**
+     * The stamps of these things, as they go with them to whoever they are shared with (the owner, 2026-10-25: "yes carry
+     * its stamp automatically when shared"; decision 251): the newest {@link StampCard#WITH_MOST}, in the rows a stamps card
+     * carries, a note's stamped words with it.
+     */
+    List<StampCard.Row> stampsTravelling(java.util.Collection<String> ids) {
+        List<String> them=new ArrayList<>();
+        for(String id:ids)if(id!=null&&!id.isEmpty()&&!them.contains(id))them.add(id);
+        if(them.isEmpty())return new ArrayList<>();
+        StringBuilder where=new StringBuilder("kind IN (?,?,?) AND id IN (");
+        List<String> args=new ArrayList<>(List.of(Integritas.NOTE,Integritas.TITLED,Integritas.FILE));
+        for(int at=0;at<them.size();at++){where.append(at==0?"?":",?");args.add(them.get(at));}
+        return cardRows(where.append(')').toString(),args.toArray(new String[0]),String.valueOf(StampCard.WITH_MOST));
+    }
+
+    /**
+     * The stamps that came with a note shared with this device (decision 251), taken in as a stamps card's are: only those
+     * of the note itself and of the files its list names that are this note's here or not here yet, a file's as a file's
+     * and the note's as a note's. A stamp of anything else, which no sender of this note has any say about, is left.
+     */
+    StampsTaken stampsCameWith(String note,List<Enclosure.Listed> files,List<StampCard.Row> rows) {
+        if(note==null||note.isEmpty()||rows==null)return new StampsTaken(0,0,new java.util.LinkedHashSet<>());
+        Set<String> theirs=new HashSet<>();
+        if(files!=null)for(Enclosure.Listed one:files) {
+            if(one.id==null||one.id.isEmpty()||one.id.equals(note))continue;
+            Held here=file(one.id);
+            if(here==null||here.held==Branch.Kind.PAGE&&note.equals(here.note))theirs.add(one.id);
+        }
+        List<StampCard.Row> taken=new ArrayList<>();
+        for(StampCard.Row one:rows) {
+            boolean ofNote=one.id.equals(note)&&(Integritas.NOTE.equals(one.kind)||Integritas.TITLED.equals(one.kind));
+            if(ofNote||theirs.contains(one.id)&&Integritas.FILE.equals(one.kind))taken.add(one);
+        }
+        return stampsArrived(taken);
+    }
+
+    /**
+     * The stamps that came with a file on its own (decision 251): only that file's, and, for a file of this device's own, only
+     * from one of the owner's devices or somebody who may write in it, as its sleeve is; nobody takes a reader's word.
+     */
+    StampsTaken stampsCameWithFile(String from,String file,List<StampCard.Row> rows) {
+        List<StampCard.Row> taken=new ArrayList<>();
+        String whose=file==null?null:whoseHere(Branch.Kind.FILE,file);
+        boolean says=whose==null||!whose.isEmpty()||mineDevice(from,"")||writesIn(from,file);
+        if(says&&rows!=null)for(StampCard.Row one:rows)if(one.id.equals(file)&&Integritas.FILE.equals(one.kind))taken.add(one);
+        return stampsArrived(taken);
+    }
+
+    /**
+     * What carries the stamps of each thing stamped here that is shared with anybody (decision 251): a note itself, a note's
+     * file its note, and a file shared on its own its sleeve; true in the first place for a sleeve. A file kept in a
+     * collection travels in the collection's carton, which says no stamps. Each carrier once.
+     */
+    Map<String,Boolean> stampCarriers() {
+        Map<String,Boolean> out=new java.util.LinkedHashMap<>();
+        List<String> ids=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT DISTINCT id FROM stamped WHERE kind IN (?,?,?) AND id<>''",
+                new String[]{Integritas.NOTE,Integritas.TITLED,Integritas.FILE})) {
+            while(c.moveToNext())ids.add(c.getString(0));
+        }
+        for(String id:ids) {
+            if(get(id)!=null){out.putIfAbsent(id,false);continue;}
+            Held file=file(id);
+            if(file==null)continue;
+            if(file.held==Branch.Kind.PAGE&&file.note!=null&&!home(file.note)&&get(file.note)!=null)out.putIfAbsent(file.note,false);
+            else if(!sharesOn(Sharing.Scope.FILE,id).isEmpty())out.putIfAbsent(id,true);
         }
         return out;
     }
@@ -6540,8 +6652,11 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         long until=mine&&!gone?untilOf(Branch.Kind.FILE,file):0;
         // Linked to a file on this device's disk, to this owner's other devices only: said there (see linkedOn).
         String linked=mine&&!gone?clipped(linkedHere.apply(file)):"";
-        return new Sleeve.Sent(file,clipped(name),clipped(kind),bytes,manifest,writes,Sharing.Scope.FILE.name(),file,
+        Sleeve.Sent going=new Sleeve.Sent(file,clipped(name),clipped(kind),bytes,manifest,writes,Sharing.Scope.FILE.name(),file,
             travelling(Sharing.Scope.FILE,file),true,gone,owner,ownerKey,named,manifest.isEmpty()?0:replaced,until,linked);
+        // And its stamps on Minima, which travel with it (decision 251); none for one gone.
+        if(!gone)going.stamps=stampsTravelling(List.of(file));
+        return going;
     }
 
     /**

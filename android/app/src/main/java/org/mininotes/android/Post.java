@@ -412,6 +412,8 @@ final class Post {
                     // Handed over, and no more than that. The mark means somebody has it, and the only one
                     // who can say so is them: it stays until their answer comes back.
                     store.handedOver(them.address,wait.page,note.revision);
+                    // Its stamps with it, so they go again only when they change (decision 251).
+                    stampsWent(where,them.address,wait.page,going.stamps);
                     // Told where its files are, for the files that said so: whether they then say they have
                     // them decides whether the list goes to them again.
                     Parcel.Sent went=Parcel.open(text);
@@ -485,7 +487,17 @@ final class Post {
         // last thing after the path, so a build from before reads all it ever read and stops there.
         long[] look=store.lookOf(NoteStore.Branch.Kind.PAGE,note.id);
         going.colour=(int)look[0];going.tone=(int)look[1];going.colourDecided=look[2];going.toneDecided=look[3];
+        // And the stamps on Minima of the note and of the files it keeps, which travel with it (decision 251): after the look,
+        // in the room the rest leaves.
+        going.stamps=store.stampsTravelling(stampedWith(note.id,going.files));
         return going;
+    }
+
+    /** A note's id and those of the files its list names: what its stamps are the stamps of (decision 251). */
+    static List<String> stampedWith(String note,List<Enclosure.Listed> files) {
+        List<String> ids=new ArrayList<>();ids.add(note);
+        if(files!=null)for(Enclosure.Listed one:files)ids.add(one.id);
+        return ids;
     }
 
     /**
@@ -703,14 +715,15 @@ final class Post {
             NoteStore.Contact them=known.get(wait.address);
             String thing=store.fileName(wait.page);
             try {
-                byte[] text=Sleeve.wrap(store.sleeve(wait.page,them.address),Envelope.MAX_TEXT);
+                Sleeve.Sent sleeve=store.sleeve(wait.page,them.address);
+                byte[] text=Sleeve.wrap(sleeve,Envelope.MAX_TEXT);
                 byte[] sealed=Envelope.seal(sixteen(wait.page),wait.revision,System.currentTimeMillis(),text,
                     keys.signing(),Keys.publicKey(them.agreement));
                 MaximaSender.Result said=handTo(where,store,keys,node,them,sealed);
                 // What it was and how it went, and nothing else: no name, no address.
                 android.util.Log.i("Mininotes/Post","sent a file on its own, revision "+wait.revision+": "
                     +(said==null?"no answer":said.statusName));
-                if(said!=null&&said.isOk()){store.handedOver(them.address,wait.page,wait.revision);sent++;}
+                if(said!=null&&said.isOk()){store.handedOver(them.address,wait.page,wait.revision);stampsWent(where,them.address,wait.page,sleeve.stamps);sent++;}
                 else {
                     failed++;
                     Unsent.Problem p=new Unsent.Problem(Unsent.Why.NOT_REACHED,them.name,thing,"","");
@@ -1401,6 +1414,8 @@ final class Post {
             // StampCard.
             tellStamps(where,store,keys);
             sendStamps(where,store,keys);
+            // And the stamps of what is shared with somebody else, with it, where they changed since it last went (decision 251).
+            sendStampsShared(where,store,keys);
             // That it reads Parlons! addresses, to the owner's own devices, which are sent one only when the owner says so.
             // See Parlons.
             tellParlons(where,store,keys);
@@ -2374,6 +2389,9 @@ final class Post {
         }
         int did=store.sleeveArrived(from.address,opened.revision,sleeve);
         if(did!=NoteStore.SLEEVE_NOT)store.answered(from.address);
+        // Its stamps on Minima, where it was taken in: only the file's own (decision 251).
+        NoteStore.StampsTaken stamped=(did==NoteStore.SLEEVE_FETCH||did==NoteStore.SLEEVE_TOOK)&&sleeve.stamps!=null
+            ?stampsWith(where,store,keys,store.stampsCameWithFile(from.address,sleeve.id,sleeve.stamps)):null;
         android.util.Log.i("Mininotes/Post","a file arrived on its own: "+(did==NoteStore.SLEEVE_FETCH?"waited for"
             :did==NoteStore.SLEEVE_GONE?"gone for everybody, so let go here":did==NoteStore.SLEEVE_TOOK?"here already, its list taken":"not taken in"));
         // A file to fetch, or a new version of one here from somebody who may write in it (decision 93).
@@ -2386,10 +2404,10 @@ final class Post {
         if(did==NoteStore.SLEEVE_GONE)return Landed.left(from.name+" deleted a file they shared with you.","").by(from.name,0);
         // A file somebody else shared with me on its own, for the first time: it waits, coming and once here (decision 109).
         if(did==NoteStore.SLEEVE_FETCH&&store.waits(NoteStore.Branch.Kind.FILE,sleeve.id))
-            return Landed.waiting(FirstShare.title(List.of(from.name),1,sleeve.name),sleeve.id).by(from.name,0);
+            return stamped(Landed.waiting(FirstShare.title(List.of(from.name),1,sleeve.name),sleeve.id).by(from.name,0),stamped);
         // New here and not waiting, from another device of mine: said all the same, once.
-        if(did==NoteStore.SLEEVE_FETCH)return Landed.shared(Say.t("{0} shared “{1}” with you",from.name,sleeve.name),sleeve.id).by(from.name,0);
-        return Landed.people("");
+        if(did==NoteStore.SLEEVE_FETCH)return stamped(Landed.shared(Say.t("{0} shared “{1}” with you",from.name,sleeve.name),sleeve.id).by(from.name,0),stamped);
+        return stamped(Landed.people(""),stamped);
     }
 
     // ---- heard from: what a device is owed goes when it is plainly there ----------------------------------------
@@ -3053,7 +3071,7 @@ final class Post {
      */
     static void stampsChanged(Context where,NoteStore store,Keys keys) {
         if(where==null||store==null||keys==null)return;
-        ANSWERS.execute(()->{if(Node.running())sendStamps(where,store,keys);});
+        ANSWERS.execute(()->{if(Node.running()){sendStamps(where,store,keys);sendStampsShared(where,store,keys);}});
     }
 
     /**
@@ -3074,8 +3092,87 @@ final class Post {
         return Landed.stamps(took.hashes());
     }
 
+    /**
+     * Stamps that came with something shared with this device (decision 251), taken in: where anything changed, said to the
+     * log, and the owner's other devices sent the card, as for a stamp made here. What was taken, or null.
+     */
+    private static NoteStore.StampsTaken stampsWith(Context where,NoteStore store,Keys keys,NoteStore.StampsTaken took) {
+        stamps("stamps with what was shared: "+took.added()+" new, "+took.updated()+" updated");
+        if(took.changed())stampsChanged(where,store,keys);
+        return took;
+    }
+
+    /** What landed, saying where stamps came with it so every line, box and icon showing them is drawn again. */
+    private static Landed stamped(Landed landed,NoteStore.StampsTaken took) {
+        if(took==null||!took.changed())return landed;
+        landed.stamps=true;
+        java.util.Set<String> all=new java.util.LinkedHashSet<>(landed.stamped);all.addAll(took.hashes());
+        landed.stamped=java.util.Collections.unmodifiableSet(all);
+        return landed;
+    }
+
     /** One line for the log about stamps: counts, never a name, a fingerprint or a key. */
     private static void stamps(String said){android.util.Log.i("Mininotes/Post",said);}
+
+    // ---- stamps on Minima travelling with what is shared with somebody else (decision 251) --------------------------------
+
+    /**
+     * What the stamps of a thing said when it last went to a device, by address and thing: see {@link StampCard#said}. Kept
+     * across restarts, so a thing goes again for its stamps only when they changed since.
+     */
+    static void stampsWent(Context where,String address,String thing,List<StampCard.Row> stamps) {
+        if(where==null||address==null||thing==null)return;
+        where.getSharedPreferences("stampsshared",Context.MODE_PRIVATE).edit().putString(address+"\n"+thing,StampCard.said(stamps)).apply();
+    }
+
+    /** One thing owed to one device again for its stamps: a note, or a file on its own in its sleeve. */
+    record StampsOwed(String thing,boolean sleeve,String address) {}
+
+    /**
+     * Each thing stamped here that is shared with somebody else, to each device it goes to whose last copy said other stamps
+     * than it has now (decision 251): a stamp made, found on Minima or given its NFT after it was shared went nowhere until
+     * the thing was next changed, since what is sent again is decided by its revision. It goes again whole at the same
+     * revision, as Sync sends it, which the far end takes as what it has and answers. Not to the owner's own devices, which
+     * have every stamp in their stamps card; not from a device that only reads a note, whose copy nobody takes.
+     */
+    static List<StampsOwed> stampsOwed(Context where,NoteStore store) {
+        List<StampsOwed> owed=new ArrayList<>();
+        if(where==null)return owed;
+        android.content.SharedPreferences went=where.getSharedPreferences("stampsshared",Context.MODE_PRIVATE);
+        // Only to a device paired here and not one of the owner's: one only named in a list is never reached by this.
+        java.util.Set<String> reach=new java.util.HashSet<>();
+        for(NoteStore.Contact one:store.addresses())if(!one.mine&&one.agreement.length>0)reach.add(one.address);
+        for(java.util.Map.Entry<String,Boolean> one:store.stampCarriers().entrySet()) {
+            String thing=one.getKey();boolean sleeve=one.getValue();
+            java.util.Set<String> to=new java.util.LinkedHashSet<>();
+            if(sleeve){for(Outbox.Wait wait:store.sleevesOwed(thing,true))if(!wait.mine)to.add(wait.address);}
+            else if(!store.onlyReads(thing))to.addAll(store.everybodyIn(NoteStore.Branch.Kind.PAGE,thing));
+            to.retainAll(reach);
+            if(to.isEmpty())continue;
+            String said=StampCard.said(sleeve?store.sleeve(thing,"").stamps
+                :store.stampsTravelling(stampedWith(thing,store.enclosed(thing))));
+            for(String address:to)if(!said.equals(went.getString(address+"\n"+thing,"")))owed.add(new StampsOwed(thing,sleeve,address));
+        }
+        return owed;
+    }
+
+    /**
+     * The things owed again for their stamps, sent: each to the one device it is owed to, whole, at its revision. Blocking;
+     * never the reason a node is started. What went is written down as it goes (see {@link #stampsWent}); what did not goes
+     * at the next round.
+     */
+    static void sendStampsShared(Context where,NoteStore store,Keys keys) {
+        if(!Node.running())return;
+        int went=0,missed=0;
+        for(StampsOwed one:stampsOwed(where,store)) {
+            try {
+                Done done=one.sleeve()?sleeves(where,store,keys,one.thing(),one.address(),true)
+                    :send(where,store,keys,NoteStore.Branch.Kind.PAGE,one.thing(),one.address(),true);
+                went+=done.sent;missed+=done.failed;
+            } catch(Exception notNow){missed++;}
+        }
+        if(went+missed>0)stamps("stamps of what is shared: "+went+" sent again, "+missed+" not");
+    }
 
     // ---- a person's Parlons! address, to the devices of the owner's they choose: see Parlons (decision 101) -----------
 
@@ -4712,6 +4809,8 @@ final class Post {
                 // And what of theirs is here already, said to them - see NoteStore.haveHere.
                 sayWeHave(where,store,keys,from,store.haveHere(id,parcel.files));
             }
+            // The stamps on Minima of the note and of the files it keeps, that came with it (decision 251): only theirs.
+            NoteStore.StampsTaken stamped=parcel.stamps==null?null:stampsWith(where,store,keys,store.stampsCameWith(id,parcel.files,parcel.stamps));
             // Written down, so now it can be said. Whatever was decided about it - taken, put together,
             // or set aside as older than what is here - they are told that what they sent has arrived:
             // that is the question they asked. Only a phone that asked is answered; see Parcel.answer.
@@ -4735,17 +4834,17 @@ final class Post {
             Object[] waits=store.waitsUnder(NoteStore.Branch.Kind.PAGE,id);
             // And that it waits here to be accepted, so their tick does not say "everybody has it" yet (see Asking).
             if(waits!=null&&parcel.answer)sayWaits(where,store,keys,from,opened.page,opened.revision,NoteStore.Branch.Kind.PAGE,id);
-            if(waits!=null)return Landed.waiting(said.what==Arriving.What.NEW?waitingSaid(store,from,waits):null,(String)waits[1]).by(from.name,0);
+            if(waits!=null)return stamped(Landed.waiting(said.what==Arriving.What.NEW?waitingSaid(store,from,waits):null,(String)waits[1]).by(from.name,0),stamped);
             // Nothing in it changed. The marks and the box are asked again, because who may do what can have.
-            if(same&&said.what!=Arriving.What.MERGED)return Landed.people(id);
+            if(same&&said.what!=Arriving.What.MERGED)return stamped(Landed.people(id),stamped);
             switch(said.what) {
                 // In the person's language (decision 236): the line is said on the phone as it is.
-                case NEW: return new Landed(Say.t("{0} shared a note with you.",from.name),null,id).by(from.name,0).newly();
-                case NEWER: return new Landed(Say.t("{0} updated a note.",from.name),null,id).by(from.name,0);
-                case MERGED: return new Landed(said.keepTheirs
+                case NEW: return stamped(new Landed(Say.t("{0} shared a note with you.",from.name),null,id).by(from.name,0).newly(),stamped);
+                case NEWER: return stamped(new Landed(Say.t("{0} updated a note.",from.name),null,id).by(from.name,0),stamped);
+                case MERGED: return stamped(new Landed(said.keepTheirs
                     ? Say.t("{0} wrote in the same place you did. Both are in the note.",from.name)
-                    : Say.t("{0} wrote in a note you had also written in. Both are in it.",from.name),null,id).by(from.name,0);
-                default: return new Landed(null,null);
+                    : Say.t("{0} wrote in a note you had also written in. Both are in it.",from.name),null,id).by(from.name,0),stamped);
+                default: return stamped(new Landed(null,null),stamped);
             }
         } catch(Exception e) {
             // A message that cannot be opened is not ours, or has been tampered with. Either way it is

@@ -2669,5 +2669,8 @@
  "The report is kept beside the file": "Il rapporto è tenuto accanto al file",
  "The report could not be fetched. Try again in a moment.": "Non è stato possibile scaricare il rapporto. Riprova tra poco.",
  "The file is not here any more.": "Il file non c'è più.",
- "On Minima": "Su Minima"
+ "On Minima": "Su Minima",
+ "Send its Integritas report too": "Invia anche il suo rapporto Integritas",
+ "Its Integritas report goes with it": "Il suo rapporto Integritas va con lui",
+ "Its Integritas report no longer goes with it": "Il suo rapporto Integritas non va più con lui"
 }

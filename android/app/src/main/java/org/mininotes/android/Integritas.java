@@ -302,8 +302,13 @@ final class Integritas {
         NoteStore store(){return store;}
         void listen(Listener l){listeners.add(l);}
         void unlisten(Listener l){listeners.remove(l);}
-        /** Those still waiting, looked for again from where they were. */
-        void resume(){if(!timer.isShutdown())timer.execute(()->{try{for(NoteStore.StampRow one:store.stampsWaiting())if(!due.containsKey(one.n()))watch(one.n(),one.tries());}catch(RuntimeException closed){/* the notebook is gone */}});}
+        /**
+         * Those still waiting, looked for again from where they were. Only where this device has an Integritas key: without
+         * one every look fails, and a stamp that came from another device or with something shared (decisions 252 and 251)
+         * would be looked for thirty times and then said not found; it waits instead, and learns where it landed from the
+         * device that made it.
+         */
+        void resume(){if(!timer.isShutdown())timer.execute(()->{try{if(store.secret(KEY).isEmpty())return;for(NoteStore.StampRow one:store.stampsWaiting())if(!due.containsKey(one.n()))watch(one.n(),one.tries());}catch(RuntimeException closed){/* the notebook is gone */}});}
         /** One stamp looked for after the wait its looks so far call for. */
         void watch(long n,int tries) {
             if(timer.isShutdown())return;

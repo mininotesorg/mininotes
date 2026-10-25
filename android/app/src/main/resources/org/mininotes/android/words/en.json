@@ -2669,5 +2669,8 @@
  "The report is kept beside the file": "The report is kept beside the file",
  "The report could not be fetched. Try again in a moment.": "The report could not be fetched. Try again in a moment.",
  "The file is not here any more.": "The file is not here any more.",
- "On Minima": "On Minima"
+ "On Minima": "On Minima",
+ "Send its Integritas report too": "Send its Integritas report too",
+ "Its Integritas report goes with it": "Its Integritas report goes with it",
+ "Its Integritas report no longer goes with it": "Its Integritas report no longer goes with it"
 }

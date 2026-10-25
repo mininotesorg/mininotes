@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 3aac5412de459a31bef1e0a93eccaf1c557c9be61015e858fa8724583e1f5000 -->
+<!-- Translated from README.md, SHA-256 afc0641c40eed2999c2ac47e7f27c64cd554ed024330bd7b8c9cbe20b18a265d -->
 
 # Mininotes
 
@@ -44,6 +44,15 @@ sellado de extremo a extremo por la red Minima, o directamente de dispositivo a 
 ## 1. Novedades
 
 Lo más reciente primero. Cada versión es igual en el teléfono y en el PC salvo que se indique otra cosa.
+
+### 0.4.028
+
+- Una nota o un archivo sellado que compartes se lleva su sello: la persona con quien lo compartes lo ve en *Sellar en
+  Minima…*, como el sello de lo que recibió solo si es exactamente lo mismo, con los enlaces para comprobarlo en el
+  Minima Explorer. Un sello hecho después de compartir también le llega.
+- Cuando compartes un archivo cuyo informe de Integritas se guarda al lado, *Enviar también su informe de Integritas*
+  envía también el informe.
+- La ventana de idiomas del primer inicio está en inglés, con los idiomas en orden alfabético.
 
 ### 0.4.024 a 0.4.027
 

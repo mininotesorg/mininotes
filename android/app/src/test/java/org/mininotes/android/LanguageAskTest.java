@@ -16,14 +16,24 @@ public class LanguageAskTest {
         assertEquals(LanguageAsk.When.NEVER,LanguageAsk.when(false,false,true));
     }
 
-    @Test public void theLanguageInUseIsListedFirst() {
-        assertEquals(List.of("fr","en","de","ja"),LanguageAsk.order("fr",List.of("en","de","fr","ja")));
-        assertEquals(List.of("en","de"),LanguageAsk.order("en",List.of("en","de")));
+    @Test public void theLanguagesAreInTheAlphabeticalOrderOfTheirOwnNames() {
+        // Decision 254: Deutsch, English, Français, then 日本語, whichever is in use.
+        assertEquals(List.of("de","en","fr","ja"),LanguageAsk.order("fr",List.of("en","de","fr","ja")));
+        assertEquals(List.of("de","en","fr","ja"),LanguageAsk.order("ja",List.of("ja","fr","en","de")));
         // One there is no list for is not invented.
-        assertEquals(List.of("en","de"),LanguageAsk.order("xx",List.of("en","de")));
-        // Every language there is a list for, each once.
-        assertEquals(Say.LANGUAGES.size(),LanguageAsk.order("fr",Say.LANGUAGES.keySet()).size());
-        assertEquals("fr",LanguageAsk.order("fr",Say.LANGUAGES.keySet()).get(0));
+        assertEquals(List.of("de","en"),LanguageAsk.order("xx",List.of("en","de")));
+        // Every language there is a list for, each once, English before Français.
+        List<String> all=LanguageAsk.order("fr",Say.LANGUAGES.keySet());
+        assertEquals(Say.LANGUAGES.size(),all.size());
+        assertTrue(all.indexOf("en")<all.indexOf("fr"));assertEquals("de",all.get(0));
+    }
+
+    @Test public void theBoxIsMadeInEnglishAndTheLanguageComesBack() {
+        Say.use("fr");
+        try {
+            assertEquals("Language",LanguageAsk.inEnglish(()->Say.t("Language")));
+            assertEquals("fr",Say.language());
+        } finally{Say.use("en");}
     }
 
     @Test public void theOneInUseKeepsItsSettingAnotherIsItself() {

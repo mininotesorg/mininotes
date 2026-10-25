@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 3aac5412de459a31bef1e0a93eccaf1c557c9be61015e858fa8724583e1f5000 -->
+<!-- Translated from README.md, SHA-256 afc0641c40eed2999c2ac47e7f27c64cd554ed024330bd7b8c9cbe20b18a265d -->
 
 # Mininotes
 
@@ -44,6 +44,15 @@ Alles reist Ende zu Ende versiegelt über das Minima-Netzwerk oder direkt von Ge
 ## 1. Neuigkeiten
 
 Das Neueste zuerst. Jede Version ist auf Telefon und PC gleich, sofern nichts anderes dasteht.
+
+### 0.4.028
+
+- Eine gestempelte Notiz oder Datei, die du teilst, nimmt ihren Stempel mit: Die Person, mit der du sie teilst, sieht
+  ihn in *Auf Minima stempeln…*, als Stempel dessen, was sie bekommen hat, nur wenn es genau dasselbe ist, mit den
+  Links, um ihn im Minima Explorer zu prüfen. Ein Stempel, der nach dem Teilen gemacht wird, erreicht sie auch.
+- Wenn du eine Datei teilst, deren Integritas-Bericht neben ihr behalten wird, sendet *Auch den Integritas-Bericht
+  senden* den Bericht mit.
+- Das Sprachfenster beim ersten Start ist auf Englisch, mit den Sprachen in alphabetischer Reihenfolge.
 
 ### 0.4.024 bis 0.4.027
 

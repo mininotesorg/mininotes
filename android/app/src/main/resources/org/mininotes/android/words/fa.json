@@ -2669,5 +2669,8 @@
  "The report is kept beside the file": "گزارش کنار فایل نگه داشته شد",
  "The report could not be fetched. Try again in a moment.": "گزارش دریافت نشد. کمی بعد دوباره امتحان کنید.",
  "The file is not here any more.": "فایل دیگر اینجا نیست.",
- "On Minima": "روی Minima"
+ "On Minima": "روی Minima",
+ "Send its Integritas report too": "گزارش Integritas آن را هم بفرست",
+ "Its Integritas report goes with it": "گزارش Integritas همراه آن می‌رود",
+ "Its Integritas report no longer goes with it": "گزارش Integritas دیگر همراه آن نمی‌رود"
 }

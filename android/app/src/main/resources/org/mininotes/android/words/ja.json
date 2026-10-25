@@ -2669,5 +2669,8 @@
  "The report is kept beside the file": "レポートをファイルの隣に保存しました",
  "The report could not be fetched. Try again in a moment.": "レポートを取得できませんでした。少し待ってから、もう一度お試しください。",
  "The file is not here any more.": "ファイルはもうここにありません。",
- "On Minima": "Minima 上"
+ "On Minima": "Minima 上",
+ "Send its Integritas report too": "Integritas レポートも送る",
+ "Its Integritas report goes with it": "Integritas レポートも一緒に送ります",
+ "Its Integritas report no longer goes with it": "Integritas レポートはもう一緒に送りません"
 }

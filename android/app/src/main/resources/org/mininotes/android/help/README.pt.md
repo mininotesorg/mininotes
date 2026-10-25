@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 3aac5412de459a31bef1e0a93eccaf1c557c9be61015e858fa8724583e1f5000 -->
+<!-- Translated from README.md, SHA-256 afc0641c40eed2999c2ac47e7f27c64cd554ed024330bd7b8c9cbe20b18a265d -->
 
 # Mininotes
 
@@ -44,6 +44,15 @@ viaja lacrado de ponta a ponta pela rede Minima, ou direto de dispositivo para d
 ## 1. Novidades
 
 Mais recentes primeiro. Cada versão é igual no celular e no PC, a não ser que se diga o contrário.
+
+### 0.4.028
+
+- Uma nota ou um arquivo carimbado que você compartilha leva o carimbo junto: a pessoa com quem você compartilha o vê em
+  *Carimbar no Minima…*, como o carimbo do que recebeu somente se for exatamente o mesmo, com os links para conferi-lo
+  no Minima Explorer. Um carimbo feito depois de compartilhar também chega a ela.
+- Quando você compartilha um arquivo cujo relatório do Integritas está guardado ao lado, *Enviar também o relatório
+  Integritas* envia o relatório também.
+- A janela de idiomas no primeiro início está em inglês, com os idiomas em ordem alfabética.
 
 ### 0.4.024 a 0.4.027
 

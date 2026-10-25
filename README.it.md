@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 3aac5412de459a31bef1e0a93eccaf1c557c9be61015e858fa8724583e1f5000 -->
+<!-- Translated from README.md, SHA-256 afc0641c40eed2999c2ac47e7f27c64cd554ed024330bd7b8c9cbe20b18a265d -->
 
 # Mininotes
 
@@ -45,6 +45,15 @@ Wi-Fi.
 ## 1. Novità
 
 Le più recenti per prime. Ogni versione è uguale sul telefono e sul PC, salvo dove è indicato diversamente.
+
+### 0.4.028
+
+- Una nota o un file marcato che condividi porta con sé la sua marcatura: la persona con cui lo condividi la vede in
+  *Marca su Minima…*, come marcatura di ciò che ha ricevuto solo se è esattamente lo stesso, con i link per verificarla
+  sul Minima Explorer. Anche una marcatura fatta dopo la condivisione le arriva.
+- Quando condividi un file il cui rapporto Integritas è tenuto accanto, *Invia anche il suo rapporto Integritas* invia
+  anche il rapporto.
+- La finestra delle lingue al primo avvio è in inglese, con le lingue in ordine alfabetico.
 
 ### Dalla 0.4.024 alla 0.4.027
 

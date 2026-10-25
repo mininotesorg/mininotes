@@ -2669,5 +2669,8 @@
  "The report is kept beside the file": "Отчёт сохранён рядом с файлом",
  "The report could not be fetched. Try again in a moment.": "Не удалось получить отчёт. Попробуй ещё раз чуть позже.",
  "The file is not here any more.": "Файла здесь больше нет.",
- "On Minima": "На Minima"
+ "On Minima": "На Minima",
+ "Send its Integritas report too": "Отправлять и отчёт Integritas",
+ "Its Integritas report goes with it": "Отчёт Integritas идёт вместе с ним",
+ "Its Integritas report no longer goes with it": "Отчёт Integritas больше не идёт вместе с ним"
 }

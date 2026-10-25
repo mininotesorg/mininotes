@@ -18,7 +18,7 @@ jobs:
     env:
       SIGNING_KEY: ${{ secrets.KEYSTORE_BASE64 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Three places name the version and they have to agree before anything is built: the tag, the
       # build's own versionName, and dist/latest.txt, which is the one line every installed pad reads
@@ -35,12 +35,12 @@ jobs:
           [ "$TAG" = "$BUILD" ] || { echo "::error::tag v$TAG but versionName is $BUILD"; exit 1; }
           [ "$TAG" = "$SAID" ] || { echo "::error::tag v$TAG but dist/latest.txt says $SAID"; exit 1; }
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
 
       - name: Test, lint, build
         working-directory: android
@@ -97,7 +97,7 @@ jobs:
           ls -l out
 
       - name: Publish
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: out/*
           generate_release_notes: true
@@ -126,7 +126,7 @@ jobs:
     needs: release
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: The Windows build and latest-windows.txt agree
         id: name
@@ -138,12 +138,12 @@ jobs:
           if ($build -ne $said) { Write-Error "windows/build.gradle says $build but dist/latest-windows.txt says $said"; exit 1 }
           "version=$build" >> $env:GITHUB_OUTPUT
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
 
       # WiX 3.14, which jpackage makes the MSI with (decision 235), from its own release and kept only if it is the file
       # whose checksum is written here: a build tool that changed under the same name is not used.
@@ -184,6 +184,6 @@ jobs:
           Get-ChildItem out
 
       - name: Publish
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: out/*

@@ -43,6 +43,15 @@ travels sealed end to end over the Minima network, or straight from device to de
 
 Newest first. Each version is the same on the phone and the PC unless it says otherwise.
 
+### 0.4.028
+
+- A stamped note or file you share takes its stamp with it: the person you share it with sees it in *Stamp on
+  Minima…*, as the stamp of what they received only if it is exactly the same, with the links to check it on the
+  Minima Explorer. A stamp made after sharing reaches them too.
+- When you share a file whose Integritas report is kept beside it, *Send its Integritas report too* sends the
+  report as well.
+- The language window at the first start is in English, with the languages in alphabetical order.
+
 ### 0.4.024 to 0.4.027
 
 - **Stamp on Minima…** is one line in a note's or a file's menu, saying how far its stamp is, and opens one window

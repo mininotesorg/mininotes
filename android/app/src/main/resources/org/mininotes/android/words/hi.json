@@ -2669,5 +2669,8 @@
  "The report is kept beside the file": "रिपोर्ट फ़ाइल के साथ रखी गई",
  "The report could not be fetched. Try again in a moment.": "रिपोर्ट नहीं मिल सकी। थोड़ी देर में फिर कोशिश करें।",
  "The file is not here any more.": "फ़ाइल अब यहाँ नहीं है।",
- "On Minima": "Minima पर"
+ "On Minima": "Minima पर",
+ "Send its Integritas report too": "इसकी Integritas रिपोर्ट भी भेजें",
+ "Its Integritas report goes with it": "इसकी Integritas रिपोर्ट साथ जाती है",
+ "Its Integritas report no longer goes with it": "इसकी Integritas रिपोर्ट अब साथ नहीं जाती"
 }

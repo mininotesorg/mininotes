@@ -32,7 +32,7 @@ public final class Desktop {
     /** Whether this PC's notebook is encrypted, always in sight; a click opens Security. */
     final JLabel security=new JLabel();
     /** This build, beside the name in the bar - and, when a newer one is out, the way to it. */
-    static final String VERSION="0.4.027";
+    static final String VERSION="0.4.028";
     final JLabel version=new JLabel();
     /** Beside the version, only while a newer one is out: an outlined button, so it reads as one to press. */
     final JButton updateButton=new JButton();
@@ -3590,7 +3590,8 @@ public final class Desktop {
         String setting=languageChosen(folder),now=Say.resolve(setting,java.util.Locale.getDefault());
         java.util.List<String> codes=LanguageAsk.order(now,Say.LANGUAGES.keySet());
         String[] chosen={now};boolean[] confirmed={false};
-        try{SwingUtilities.invokeAndWait(()->{
+        // In English, whatever the PC is set to, while it is open (decision 254).
+        try{SwingUtilities.invokeAndWait(()->LanguageAsk.inEnglish(()->{
             JPanel body=DesktopUi.column();
             DesktopUi.add(body,DesktopUi.body(Say.t("Choose the language Mininotes speaks. It can be changed later in Settings.")));DesktopUi.gap(body,DesktopUi.S);
             ButtonGroup group=new ButtonGroup();
@@ -3599,7 +3600,8 @@ public final class Desktop {
             JDialog[] box={null};
             box[0]=DesktopUi.sheet(null,Say.t("Language"),DesktopUi.scrolling(body),DesktopUi.footer(DesktopUi.primary("Continue",()->{confirmed[0]=true;box[0].dispose();})),true);
             box[0].setName("firstLanguage");DesktopUi.show(box[0],440,620);
-        });}catch(Exception noScreen){return false;}
+            return null;
+        }));}catch(Exception noScreen){return false;}
         // Closed without Continue: a folder in use stays as it was, and is asked again at the next start.
         if(!confirmed[0]&&inUse)return false;
         // The language in use, picked again, keeps its setting ("this PC's language" goes on following Windows); another, as itself.
@@ -4944,6 +4946,15 @@ public final class Desktop {
             syncing.add(DesktopUi.row(DesktopUi.body("Send my changes"),wait));
             DesktopUi.add(syncing,DesktopUi.note(NoteStore.RIGHT_AWAY_COSTS,380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
             syncing.add(DesktopUi.switchRow("Receive their changes",receiving));
+            // A stamped file with its Integritas report kept beside it: the report goes with it, where chosen (decision 251).
+            if(scope==Sharing.Scope.FILE) {
+                JCheckBox report=DesktopUi.toggle("Send its Integritas report too",false);report.setName("reportWith");report.setEnabled(admin);
+                JPanel reportRow=DesktopUi.switchRow("Send its Integritas report too",report);reportRow.setVisible(false);syncing.add(reportRow);
+                disk.submit(()->new Object[]{store.reportBeside(target.id),store.reportGoesWith(target.id)},got->{
+                    if(got[0]==null)return;report.setSelected((Boolean)got[1]);reportRow.setVisible(true);reportRow.revalidate();},this::failed);
+                report.addActionListener(e->{boolean on=report.isSelected();disk.submit(()->store.reportGoesWith(target.id,on),given->{
+                    status.setText(on?Say.t("Its Integritas report goes with it"):Say.t("Its Integritas report no longer goes with it"));refresh();},this::failed);});
+            }
 
             JPanel body=DesktopUi.column();
             // Where it is, first, and the way there: Home or its folder opened on it, or the note a file is kept in.

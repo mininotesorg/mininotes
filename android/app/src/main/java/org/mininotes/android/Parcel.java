@@ -145,6 +145,13 @@ final class Parcel {
         int colour=Tint.NONE,tone=Tint.USUAL;long colourDecided=0L,toneDecided=0L;
         /** Whether the look above was said at all. */
         boolean looks(){return colourDecided>0||toneDecided>0;}
+        /**
+         * The stamps on Minima of the note and of the files it keeps, the newest first, or null where none are said (decision
+         * 251): a stamp travels with what is shared. The last thing after the path, behind {@link StampCard#WITH_MARK}, so a
+         * build from before reads all it ever read and stops there; only with a path. Set after the parcel is made, as the
+         * ink is, and said in the room the rest leaves.
+         */
+        java.util.List<StampCard.Row> stamps;
         Sent(String collection,String collectionName,String book,String bookName,
              String title,String body,boolean writes,java.util.List<Member> members,
              String scope,String target,boolean answer,long basedOn) {
@@ -244,7 +251,11 @@ final class Parcel {
 
     private Parcel(){}
 
-    static byte[] wrap(Sent sent) throws IOException {
+    /** The parcel, with as many of its stamps as an envelope takes after it. */
+    static byte[] wrap(Sent sent) throws IOException {return stamped(sent,bare(sent),Envelope.MAX_TEXT);}
+
+    /** What a parcel says without its stamps. */
+    private static byte[] bare(Sent sent) throws IOException {
         ByteArrayOutputStream bytes=new ByteArrayOutputStream();
         DataOutputStream out=new DataOutputStream(bytes);
         out.write(MAGIC);
@@ -335,8 +346,26 @@ final class Parcel {
      * which takes nothing out at the far end.
      */
     static byte[] wrap(Sent sent,int most) throws IOException {
-        byte[] whole=wrap(sent);
-        if(whole.length<=most||sent.files==null)return whole;
+        Sent fitted=fitted(sent,most);
+        return stamped(fitted,bare(fitted),most);
+    }
+
+    /**
+     * A parcel's bytes and then its stamps (decision 251), as many as fit in {@code most}, the oldest left off first: only
+     * after a path, where a build from before has stopped reading.
+     */
+    private static byte[] stamped(Sent sent,byte[] parcel,int most) {
+        if(sent.files==null||sent.path==null)return parcel;
+        byte[] with=StampCard.with(sent.stamps,most-parcel.length);
+        if(with.length==0)return parcel;
+        byte[] all=java.util.Arrays.copyOf(parcel,parcel.length+with.length);
+        System.arraycopy(with,0,all,parcel.length,with.length);
+        return all;
+    }
+
+    /** The parcel as it goes in {@code most} bytes without its stamps: see {@link #wrap(Sent,int)}. */
+    private static Sent fitted(Sent sent,int most) throws IOException {
+        if(bare(sent).length<=most||sent.files==null)return sent;
         java.util.List<Enclosure.Listed> lighter=new java.util.ArrayList<>(sent.files);
         while(true) {
             int biggest=-1;
@@ -344,10 +373,10 @@ final class Parcel {
                 if(!lighter.get(at).manifest.isEmpty()&&(biggest<0||lighter.get(at).manifest.length()>lighter.get(biggest).manifest.length()))biggest=at;
             if(biggest<0)break;
             lighter.set(biggest,lighter.get(biggest).unsaid());
-            byte[] tried=wrap(with(sent,lighter));
-            if(tried.length<=most)return tried;
+            Sent tried=with(sent,lighter);
+            if(bare(tried).length<=most)return tried;
         }
-        return wrap(with(sent,null));
+        return with(sent,null);
     }
 
     private static Sent with(Sent sent,java.util.List<Enclosure.Listed> files) {
@@ -356,6 +385,7 @@ final class Parcel {
             files==null?null:sent.history,files==null?null:sent.path,sent.icon,sent.image);
         lighter.ink=sent.ink;lighter.inkAt=sent.inkAt;lighter.until=sent.until;
         lighter.colour=sent.colour;lighter.tone=sent.tone;lighter.colourDecided=sent.colourDecided;lighter.toneDecided=sent.toneDecided;
+        lighter.stamps=sent.stamps;
         return lighter;
     }
 
@@ -505,8 +535,8 @@ final class Parcel {
     }
 
     /**
-     * What follows the path, each behind its mark, in any order: the sender's colour, when the note is to be gone, and the
-     * note's own colour and strength. A
+     * What follows the path, each behind its mark, in any order: the sender's colour, when the note is to be gone, the
+     * note's own colour and strength, and the stamps of the note and its files (decision 251). A
      * mark not known here ends the reading, and what was read stands; what does not read whole is left unsaid.
      */
     private static void tail(DataInputStream in,Sent into) {
@@ -528,9 +558,13 @@ final class Parcel {
                     // and a strength that is no tone is the usual.
                     if(colourAt>0&&(colour==Tint.NONE||Tint.known(colour))){into.colour=colour;into.colourDecided=colourAt;}
                     if(toneAt>0){into.tone=Tint.toned(tone)?tone:Tint.USUAL;into.toneDecided=toneAt;}
+                } else if(mark==StampCard.WITH_MARK) {
+                    java.util.List<StampCard.Row> rows=StampCard.with(in);
+                    if(rows==null)return;
+                    into.stamps=rows;
                 } else return;
             }
-        } catch(IOException damaged){/* unsaid */}
+        } catch(IOException | IllegalArgumentException damaged){/* unsaid */}
     }
 
     /** A trace as the bytes it is written in: anything that is not one is written as nothing that matches. */

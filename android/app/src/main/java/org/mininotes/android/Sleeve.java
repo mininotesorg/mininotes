@@ -61,6 +61,12 @@ final class Sleeve {
          * empty (the owner, 2026-10-16: a linked file says so on the phone). Since 0.3.066, where an older build stops reading.
          */
         final String linked;
+        /**
+         * The file's own stamps on Minima, the newest first, or null where none are said (decision 251): its stamp travels
+         * with it, to whoever it is shared with. After {@link #linked}, behind {@link StampCard#WITH_MARK}, where every build
+         * from before stops reading. Set after the sleeve is made, as a parcel's colour is.
+         */
+        java.util.List<StampCard.Row> stamps;
         Sent(String id,String name,String kind,long bytes,String manifest,boolean writes,String scope,String target,
              java.util.List<Parcel.Member> members,boolean answer,boolean gone) {
             this(id,name,kind,bytes,manifest,writes,scope,target,members,answer,gone,"","",0,0);
@@ -85,14 +91,19 @@ final class Sleeve {
             this.named=Math.max(0,named);this.replaced=Math.max(0,replaced);this.until=Math.max(0,until);
         }
         /** The same file, named but not yet said where to find, as a list that does not fit says it. */
-        Sent unsaid(){return new Sent(id,name,kind,bytes,"",writes,scope,target,members,answer,gone,owner,ownerKey,named,replaced,until,linked);}
+        Sent unsaid(){return stamped(new Sent(id,name,kind,bytes,"",writes,scope,target,members,answer,gone,owner,ownerKey,named,replaced,until,linked));}
         /** The same, not asking to be answered. */
-        Sent quiet(){return new Sent(id,name,kind,bytes,manifest,writes,scope,target,members,false,gone,owner,ownerKey,named,replaced,until,linked);}
+        Sent quiet(){return stamped(new Sent(id,name,kind,bytes,manifest,writes,scope,target,members,false,gone,owner,ownerKey,named,replaced,until,linked));}
+        private Sent stamped(Sent copy){copy.stamps=stamps;return copy;}
     }
 
     private Sleeve(){}
 
-    static byte[] wrap(Sent sent) throws IOException {
+    /** The sleeve, with as many of its stamps as an envelope takes after it. */
+    static byte[] wrap(Sent sent) throws IOException {return stamped(bare(sent),sent.stamps,Envelope.MAX_TEXT);}
+
+    /** What a sleeve says without its stamps. */
+    private static byte[] bare(Sent sent) throws IOException {
         ByteArrayOutputStream bytes=new ByteArrayOutputStream();
         DataOutputStream out=new DataOutputStream(bytes);
         out.write(MAGIC);
@@ -129,15 +140,28 @@ final class Sleeve {
         out.writeLong(sent.until);
         // Since 0.3.066, where an older build stops reading: the device it is linked to a file on, or empty.
         Parcel.put(out,sent.linked,Parcel.NAME_MOST);
-        // Anything a later build adds goes after this, where this one stops reading.
+        // Anything a later build adds goes after this, where this one stops reading: its stamps (decision 251; see stamped),
+        // each later thing behind a mark of its own and its length.
         out.flush();
         return bytes.toByteArray();
     }
 
-    /** The same, made to fit in {@code most} bytes: where it will not, it stops saying where the pieces are. */
+    /**
+     * The same, made to fit in {@code most} bytes: where it will not, it stops saying where the pieces are. Its stamps go in
+     * the room it leaves, the oldest left off first (see {@link StampCard#with(java.util.List,int)}).
+     */
     static byte[] wrap(Sent sent,int most) throws IOException {
-        byte[] whole=wrap(sent);
-        return whole.length<=most||sent.manifest.isEmpty()?whole:wrap(sent.unsaid());
+        byte[] whole=bare(sent);
+        return stamped(whole.length<=most||sent.manifest.isEmpty()?whole:bare(sent.unsaid()),sent.stamps,most);
+    }
+
+    /** A sleeve's bytes and then its stamps (decision 251), as many as fit in {@code most}; the sleeve alone where none do. */
+    private static byte[] stamped(byte[] sleeve,java.util.List<StampCard.Row> stamps,int most) {
+        byte[] with=StampCard.with(stamps,most-sleeve.length);
+        if(with.length==0)return sleeve;
+        byte[] all=java.util.Arrays.copyOf(sleeve,sleeve.length+with.length);
+        System.arraycopy(with,0,all,sleeve.length,with.length);
+        return all;
     }
 
     /** What arrived, or null when this is not one, or is not one whole: half a file's word is not a word. */
@@ -174,7 +198,24 @@ final class Sleeve {
             long until=in.available()>0?in.readLong():0;
             if(until<0)return null;
             String linked=in.available()>0?Parcel.get(in,Parcel.NAME_MOST):"";
-            return new Sent(id,name,kind,size,manifest,writes,scope,target,members,answer,gone,owner,ownerKey,named,replaced,until,linked);
+            Sent read=new Sent(id,name,kind,size,manifest,writes,scope,target,members,answer,gone,owner,ownerKey,named,replaced,until,linked);
+            tail(in,read);
+            return read;
         } catch(IOException | IllegalArgumentException broken){return null;}
+    }
+
+    /**
+     * What follows the last field, each behind its mark (decision 251): the file's stamps. A mark not known here ends the
+     * reading, and what does not read whole is left unsaid: the sleeve stands without it, as a build from before reads it.
+     */
+    private static void tail(DataInputStream in,Sent into) {
+        try {
+            while(in.available()>=8) {
+                if(in.readInt()!=StampCard.WITH_MARK)return;
+                java.util.List<StampCard.Row> rows=StampCard.with(in);
+                if(rows==null)return;
+                into.stamps=rows;
+            }
+        } catch(IOException | IllegalArgumentException damaged){/* unsaid */}
     }
 }

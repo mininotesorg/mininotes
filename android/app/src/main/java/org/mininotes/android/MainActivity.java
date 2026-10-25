@@ -4578,6 +4578,8 @@ public final class MainActivity extends Activity {
         final String setting=kept.getString("language",Say.SYSTEM),inUse=Say.resolve(setting,java.util.Locale.getDefault());
         final List<String> codes=LanguageAsk.order(inUse,Say.LANGUAGES.keySet());
         final LinearLayout body=inside();final AlertDialog[] box={null};
+        // In English, whatever the phone is set to, while it is made (decision 254); each language in its own words.
+        LanguageAsk.inEnglish(()->{
         body.addView(under(Say.t("Choose the language Mininotes speaks. It can be changed later in Settings.")));
         // A tap on a language takes it, as Settings' list does. Ticking one and keeping it with a Continue under the list was
         // missed on a phone, where the list is taller than the screen: the tick moved, nothing was kept, and the box came
@@ -4590,6 +4592,7 @@ public final class MainActivity extends Activity {
             else kept.edit().putString(LanguageAsk.CONFIRMED,"true").apply();}));
         box[0]=new Box().setTitle("Language").setView(scrolling(body)).setCancelable(false).create();
         box[0].show();
+        return null;});
     }
 
     /** The languages there is a list for, each in its own words, and the phone's own first; picked, the app says it at once. */
@@ -9119,6 +9122,15 @@ public final class MainActivity extends Activity {
                 syncNow(kind,target,name);
             }));
 
+        // A stamped file with its Integritas report kept beside it: the report goes with it, where chosen (decision 251).
+        if(scope==Sharing.Scope.FILE) {
+            final LinearLayout reportPlace=column();body.addView(reportPlace);
+            background.submit(()->new Object[]{store.reportBeside(target),store.reportGoesWith(target)},got->{
+                if(got[0]==null)return;
+                reportPlace.addView(switchRow("Send its Integritas report too",(Boolean)got[1],on->background.submit(()->store.reportGoesWith(target,on),
+                    reached->toast(on?"Its Integritas report goes with it":"Its Integritas report no longer goes with it"),e->alert(READ_FAILED))));
+            },e->{});
+        }
         // A file: who sent it, and where every device that is to have it stands, each in a word or three (the owner, 2026-10-05).
         if(standing!=null) {
             if(!standing.from.isEmpty())body.addView(row("From",standing.fromName+" · "+shortWhen(standing.at),null));
@@ -12227,6 +12239,10 @@ public final class MainActivity extends Activity {
         if(landed.accepted!=null){somebodyAccepted(landed.accepted);return;}
         // Somebody said they have something. Nothing to say about it: the marks say it, once they are
         // asked again what is still waiting.
+        // Stamps from another device of yours (decision 252), or come with a note or a file shared with this phone (decision
+        // 251): every line and box showing them told, and those still waiting for Minima looked for where there is a key.
+        if(landed.stamps){Integritas.Watch w=PhoneStamp.watch(this);
+            background.submit(()->{if(!store.secret(Integritas.KEY).isEmpty())w.resume();for(String h:landed.stamped)w.told(h);return null;},v->{},e->{});}
         if(landed.answered) {
             redrawSoon();
             // Somebody changed what this phone may do while the box saying so was open - or the page.
@@ -12235,10 +12251,6 @@ public final class MainActivity extends Activity {
             if(landed.people){askWritable();people().withAgain();}
             // Your groups changed on another device of yours while People and devices was open: drawn again where it is.
             if(landed.groups){people().again();people().withAgain();}
-            // Stamps from another device of yours (decision 252): every line and box showing them told, and those still
-            // waiting for Minima looked for here too where this phone has an Integritas key.
-            if(landed.stamps){Integritas.Watch w=PhoneStamp.watch(this);
-                background.submit(()->{if(!store.secret(Integritas.KEY).isEmpty())w.resume();for(String h:landed.stamped)w.told(h);return null;},v->{},e->{});}
             // Somebody's Parlons! address came from another device of yours: known to the menus, and drawn where it shows.
             if(landed.contacts){background.submit(()->{parlonsBook=store.parlonsBook();return null;},v->{if(active!=null&&!shelves)askWhatIsOwed();},e->{});
                 people().again();}

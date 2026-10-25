@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 3aac5412de459a31bef1e0a93eccaf1c557c9be61015e858fa8724583e1f5000 -->
+<!-- Translated from README.md, SHA-256 afc0641c40eed2999c2ac47e7f27c64cd554ed024330bd7b8c9cbe20b18a265d -->
 
 # Mininotes
 
@@ -44,6 +44,15 @@ voyage scellé de bout en bout sur le réseau Minima, ou directement d'un appare
 ## 1. Nouveautés
 
 Les plus récentes d'abord. Chaque version est la même sur le téléphone et sur le PC, sauf mention contraire.
+
+### 0.4.028
+
+- Une note ou un fichier horodaté que vous partagez emporte son horodatage : la personne avec qui vous le partagez le
+  voit dans *Horodater sur Minima…*, comme l'horodatage de ce qu'elle a reçu seulement si c'est exactement la même
+  chose, avec les liens pour le vérifier sur le Minima Explorer. Un horodatage fait après le partage lui parvient aussi.
+- Quand vous partagez un fichier dont le rapport Integritas est gardé à côté, *Envoyer aussi son rapport Integritas*
+  envoie aussi le rapport.
+- La fenêtre des langues au premier démarrage est en anglais, avec les langues dans l'ordre alphabétique.
 
 ### 0.4.024 à 0.4.027
 
