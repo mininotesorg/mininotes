@@ -28,7 +28,7 @@ final class Sections {
         final String name; final int line,start,end;
         Section(String name,int line,int start,int end){this.name=name;this.line=line;this.start=start;this.end=end;}
         /** What the strip calls it. */
-        String called(int index){return name!=null?name:index==0?FIRST:"Page "+(index+1);}
+        String called(int index){return name!=null?name:index==0?FIRST:Say.t("Page {0}",index+1);}
     }
 
     /** Whether a line, without its line end, is a tab line. */

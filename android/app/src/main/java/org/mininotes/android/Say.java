@@ -68,6 +68,14 @@ final class Say {
      * Each phrase with {0}, {1}… in it, as a pattern its English is matched against: what stands where a {n} is - a name, a
      * number, a place - is kept as it is and put where the translation has the same {n}. Longest first, so the most said wins.
      */
+    /**
+     * What follows a {n} that stands for a count ("{0} notes", "{0} new", "Gone in {0} days"): there it is a number and only
+     * a number, so a note called "Meeting notes" or a folder called "Old files" is never read as a count and said half in
+     * another language (decision 256).
+     */
+    private static final java.util.regex.Pattern COUNTED=java.util.regex.Pattern.compile(
+        " (?:notes?|files?|folders?|pictures?|videos?|PDFs|devices?|people|person|new|added|messages?|answers?|reasons?|things|days?|hours?|minutes?|min|h)(?![\\p{L}])");
+
     static java.util.List<Object[]> templatesOf(Map<String,String> list) {
         java.util.List<Object[]> out=new java.util.ArrayList<>();
         for(Map.Entry<String,String> one:list.entrySet()) {
@@ -75,7 +83,7 @@ final class Say {
             if(!english.contains("{0}")||one.getValue()==null||one.getValue().isEmpty())continue;
             StringBuilder regex=new StringBuilder("^");java.util.List<Integer> order=new java.util.ArrayList<>();
             java.util.regex.Matcher slot=java.util.regex.Pattern.compile("\\{(\\d)\\}").matcher(english);int at=0;
-            while(slot.find()){regex.append(java.util.regex.Pattern.quote(english.substring(at,slot.start())));regex.append("(.+?)");order.add(Integer.parseInt(slot.group(1)));at=slot.end();}
+            while(slot.find()){regex.append(java.util.regex.Pattern.quote(english.substring(at,slot.start())));regex.append(COUNTED.matcher(english.substring(slot.end())).lookingAt()?"([0-9][0-9.,]*)":"(.+?)");order.add(Integer.parseInt(slot.group(1)));at=slot.end();}
             regex.append(java.util.regex.Pattern.quote(english.substring(at))).append("$");
             out.add(new Object[]{java.util.regex.Pattern.compile(regex.toString(),java.util.regex.Pattern.DOTALL),order,one.getValue(),english.length()});
         }
@@ -110,7 +118,23 @@ final class Say {
         return english;
     }
 
-    /** A template's words with what goes in them: {0}, {1}… in the order given. */
+    /**
+     * Whether words on a screen are this template filled in, said in English or in the language in use: for the few
+     * checks that read back what a line says ("Sending to {0}…" still up), now that the shared sentences come out in the
+     * language chosen (decision 256).
+     */
+    static boolean fits(String english,String said) {
+        if(said==null||english==null)return false;
+        for(String one:new String[]{english,t(english)}) {
+            StringBuilder regex=new StringBuilder();
+            java.util.regex.Matcher slot=java.util.regex.Pattern.compile("\\{\\d\\}").matcher(one);int at=0;
+            while(slot.find()){regex.append(java.util.regex.Pattern.quote(one.substring(at,slot.start()))).append(".+?");at=slot.end();}
+            regex.append(java.util.regex.Pattern.quote(one.substring(at)));
+            if(java.util.regex.Pattern.compile(regex.toString(),java.util.regex.Pattern.DOTALL).matcher(said).matches())return true;
+        }
+        return false;
+    }
+
     /**
      * A word worn on a note's icon, where a language has a shorter way of saying it than the same word elsewhere (the
      * owner, 2026-10-25: "since nouveau could we write nouv. at the note level"): its own line, "<word> (on a note)",
@@ -121,6 +145,7 @@ final class Say {
         return said!=null&&!said.isEmpty()?said:t(english);
     }
 
+    /** A template's words with what goes in them: {0}, {1}… in the order given. */
     static String t(String english,Object... fill) {
         String said=t(english);
         for(int at=0;at<fill.length;at++)said=said.replace("{"+at+"}",String.valueOf(fill[at]));

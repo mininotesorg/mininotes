@@ -88,13 +88,10 @@ final class Called {
 
     /** What the owner is told when a name is saved: here, and where else it went. */
     static String said(String here,List<String> sent,List<String> notReached,List<String> older) {
-        StringBuilder words=new StringBuilder("Saved");
-        if(sent.isEmpty()&&notReached.isEmpty()&&older.isEmpty())return words.append(" on ").append(here).toString();
-        if(!sent.isEmpty())words.append(", and sent to ").append(Parlons.names(sent));
-        else words.append(" on ").append(here);
-        if(!notReached.isEmpty())words.append(". ").append(Parlons.names(notReached)).append(" could not be reached now: save again later");
-        if(!older.isEmpty())words.append(". ").append(Parlons.names(older)).append(older.size()==1?" needs":" need").append(" an update of Mininotes first");
-        return words.toString();
+        // Said as Parlons says its own, in the language in use (decision 256).
+        boolean pc="this PC".equals(here);
+        String first=!sent.isEmpty()?Say.t("Saved, and sent to {0}",Parlons.names(sent)):Say.t(pc?"Saved on this PC":"Saved on this phone");
+        return first+Parlons.notReached(notReached)+Parlons.older(older);
     }
 
     /** The inside of a card. The key is said in the thirty-three bytes a pairing code carries. */

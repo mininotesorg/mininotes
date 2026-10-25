@@ -16,7 +16,7 @@ Windows x64, JDK 17, and internet access for the first dependency download:
 ```
 
 The script runs the shared and Windows tests and makes
-`dist/latest/Mininotes-Windows-0.4.028.zip` plus its SHA-256 checksum. Extract the whole
+`dist/latest/Mininotes-Windows-0.4.030.zip` plus its SHA-256 checksum. Extract the whole
 ZIP and run `Mininotes/Mininotes.exe`. Keep the runtime and app folders beside
 the executable. No Java installation is required to run this bundle.
 
@@ -28,7 +28,7 @@ Its pages come from `windows/installer` (decision 237): the logo in place of WiX
 (`make-images.ps1` makes the two BMPs), no licence page, and Launch Mininotes, ticked, on the last
 page. `main.wxs` there is jpackage's own with those pages in it; its comments say what changed.
 
-Android and Windows use the same version number, currently 0.4.028. Installation
+Android and Windows use the same version number, currently 0.4.030. Installation
 and verification are recorded separately for each platform.
 
 This is an unsigned preview, not a published release.
@@ -108,7 +108,7 @@ switch a currently blocked older session safely:
 3. Exit the old app normally through **⋯ → Exit Mininotes** (or the tray's Exit).
    Closing its window may keep it running. Do not kill it or launch the new build
    to force a handover while writing is unpreserved.
-4. Open `dist/latest/Mininotes-Windows-0.4.028/Mininotes.exe` or the local
+4. Open `dist/latest/Mininotes-Windows-0.4.030/Mininotes.exe` or the local
    `dist/latest/Mininotes.lnk`. Paste a preserved oversized edit back into its
    intended note if needed. Wait for **Writing kept on this PC**, then use Recovery
    writing to reopen, export or shorten it. Retain the verified external copy.

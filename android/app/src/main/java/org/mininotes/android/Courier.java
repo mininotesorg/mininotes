@@ -51,6 +51,16 @@ final class Courier {
     static final int CARRIERS=3;
     /** A device heard from this recently is taken to be there: nothing sent to it is left with anybody. */
     static final long THERE=2L*60*1000;
+    /**
+     * How long the same revision of a thing is not left again for the same device: a carrier keeps it and brings it till it
+     * is collected, so each try at sending it again need not leave another copy (decision 257).
+     */
+    static final long LEAVE_AGAIN=60L*60*1000;
+    /** How long a carrier is not told again that the same revision of a thing was collected: see {@link Lately}. */
+    static final long COLLECTED_AGAIN=10L*60*1000;
+
+    /** What {@link NoteStore#carry} did with what was left: kept now, already held at that revision or newer, or no room. */
+    static final int CARRYING=1, ALREADY=0, NO_ROOM=-1;
 
     /** Room left inside an envelope once this format's own few bytes are counted. */
     static final int INNER_MOST=Envelope.MAX_TEXT-64;
@@ -120,6 +130,56 @@ final class Courier {
         if(now<tried)return true;   // a clock put back: better once too often than never again
         long wait=tries>=5?10L*60*1000:(1L<<(tries-1))*60*1000;
         return now-tried>=wait;
+    }
+
+    /**
+     * What was said lately, by a key, with the revision and when, so the same is not said again within a while (decision
+     * 257): a copy left with the carriers for one device, or a carrier told it can let go. Taken as it is queued and given
+     * back where it did not go, so ten copies arriving together are answered once. Holds no Android types: unit tested.
+     */
+    static final class Lately {
+        private final long within;
+        private final java.util.Map<String,long[]> said=new java.util.HashMap<>();
+        Lately(long within){this.within=within;}
+
+        /** Whether this revision is to be said now; where it is, it counts as said from now on. */
+        synchronized boolean take(String key,long revision,long now) {
+            long[] was=said.get(key);
+            if(was!=null&&was[0]>=revision&&now>=was[1]&&now-was[1]<within)return false;
+            said.put(key,new long[]{revision,now});
+            return true;
+        }
+
+        /** It did not go after all: the next one says it. */
+        synchronized void giveBack(String key,long revision) {
+            long[] was=said.get(key);
+            if(was!=null&&was[0]==revision)said.remove(key);
+        }
+    }
+
+    /**
+     * Work queued, one at a time for each key, the newest revision kept: a receipt for a carrier waits once however many
+     * copies come before it goes, and goes for the newest revision brought meanwhile. Each copy used to queue its own,
+     * holding a thread's queue that grew until the heap was full, each a proof of work (Graphene, 2026-10-25, decision 257).
+     * Holds no Android types: unit tested.
+     */
+    static final class Queued {
+        private final java.util.Map<String,Long> waiting=new java.util.HashMap<>();
+
+        /** Whether work is to be queued for this key now: false where one waits already, which then goes for this revision if newer. */
+        synchronized boolean queue(String key,long revision) {
+            Long was=waiting.get(key);
+            waiting.put(key,was==null?revision:Math.max(was,revision));
+            return was==null;
+        }
+
+        /** The revision the queued work is for, now that it runs: the newest queued, or {@code otherwise} where none is. */
+        synchronized long run(String key,long otherwise) {
+            Long was=waiting.remove(key);
+            return was==null?otherwise:was;
+        }
+
+        synchronized int size(){return waiting.size();}
     }
 
     /** Whether something kept since {@code kept} has been kept long enough. */

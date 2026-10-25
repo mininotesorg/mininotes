@@ -143,7 +143,7 @@ final class Help {
     private static String num(double d){return new java.math.BigDecimal(d).setScale(6,java.math.RoundingMode.HALF_UP).toPlainString();}
 
     /** The heading of the alert: loud, and whose it is. */
-    static String title(String name){return "HELP from "+(name==null||name.trim().isEmpty()?"a contact":name.trim());}
+    static String title(String name){return name==null||name.trim().isEmpty()?Say.t("HELP from a contact"):Say.t("HELP from {0}",name.trim());}
 
     /**
      * The body of the alert, the same words on both apps: the message, then the place and when it was fixed, or that there
@@ -155,12 +155,14 @@ final class Help {
         String said=message==null?"":message.trim();
         if(!said.isEmpty())b.append(said).append("\n\n");
         if(located) {
-            b.append("Near ").append(num(lat)).append(", ").append(num(lon));
-            if(metres>0)b.append(" (about ").append(Math.round(metres)).append(" m)");
-            if(placeWhen!=null&&!placeWhen.isEmpty())b.append(", ").append(placeWhen);
+            // Said in the language of the device showing it (decision 256): the place, how near, and when, in their places.
+            boolean near=metres>0,when=placeWhen!=null&&!placeWhen.isEmpty();
+            String place=num(lat)+", "+num(lon);long about=Math.round(metres);
+            b.append(near?(when?Say.t("Near {0} (about {1} m), {2}",place,about,placeWhen):Say.t("Near {0} (about {1} m)",place,about))
+                :(when?Say.t("Near {0}, {1}",place,placeWhen):Say.t("Near {0}",place)));
             b.append("\n").append(web(lat,lon));
         } else {
-            b.append("No location was sent.");
+            b.append(Say.t("No location was sent."));
         }
         return b.toString();
     }

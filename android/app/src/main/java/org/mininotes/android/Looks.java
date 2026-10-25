@@ -115,11 +115,10 @@ final class Looks {
      */
     static boolean onlyUpdates(String said) {
         if(said==null||said.trim().isEmpty())return false;
-        String ending=Unsent.needsUpdate("X").substring(1);
+        // Read in English or in the language in use, which the box's lines are said in (decision 256).
         for(String line:said.split("\n")) {
             String one=line.trim();
-            if(one.endsWith("."))one=one.substring(0,one.length()-1);
-            if(!one.endsWith(ending)||one.length()==ending.length())return false;
+            if(!Say.fits("{0} needs to update Mininotes to receive this.",one)&&!Say.fits("{0} needs to update Mininotes to receive this",one))return false;
         }
         return true;
     }

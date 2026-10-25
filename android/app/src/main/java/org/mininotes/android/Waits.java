@@ -62,43 +62,51 @@ final class Waits {
     /** What waits for one device only because it has not been updated: one thing, and nothing else about it known. */
     static Where needsUpdate(){return new Where(0,0,0,false,false,false,1);}
 
+    /*
+     * Each line is one phrase of the word lists, said in the language in use (decision 256): the name, or a count, is what
+     * goes in its {0}. A device with no name known is "a paired device", said in that language too.
+     */
+
     /** What is said of a device where what was shared waits to be accepted. */
-    static String accepting(String name){return "Waiting for "+name+" to accept it";}
+    static String accepting(String name){return Say.t("Waiting for {0} to accept it.",name);}
 
     /** What is said of a device that is locked while something waits for it. */
-    static String locked(String name){return name+" is locked; it takes it in when opened";}
+    static String locked(String name){return Say.t("{0} is locked; it takes it in when opened.",name);}
+
+    /** What is said of a device whose build is from before collections nested; see {@link Unsent#needsUpdate}. */
+    static String update(String name){return Say.t("{0} needs to update Mininotes to receive this.",name);}
 
     /** One device, by the name to call it, where it stands, and how many answers to it are kept here for want of a way. */
     record Device(String name,Where where,int kept) {}
-
-    private static String files(int n){return n==1?"1 file":n+" files";}
 
     /**
      * Where one person stands, for the box a press on their round opens: the writing, then the files, in words.
      * Their name is the box's title, so it is said here only where the sentence needs it.
      */
     static String person(String name,Where where,int kept) {
-        String said;
-        if(where==null)said=SyncMark.GONE.person();
-        else if(where.waitsLocked())said=locked(name)+".";
-        else if(where.stuck())said=SyncMark.STUCK.person()+(where.lacking()>0?" So "+(where.lacking()==1?"is 1 file":"are "+files(where.lacking()))+".":"");
+        String said;boolean update=false;
+        if(where==null)said=Say.t(SyncMark.GONE.person());
+        else if(where.waitsLocked())said=locked(name);
+        else if(where.stuck())said=Say.t(SyncMark.STUCK.person())+(where.lacking()<=0?"":" "+(where.lacking()==1?Say.t("So is 1 file."):Say.t("So are {0} files.",where.lacking())));
         else if(where.owed()>0&&where.lacking()>0)
-            said="Your latest changes, and "+where.lacking()+" of "+files(where.files())+", have not reached them yet.";
-        else if(where.owed()>0)said=SyncMark.WAITING.person();
-        else if(where.lacking()>0)said=name+" has the text; "+where.lacking()+" of "+files(where.files())+" still going.";
-        else if(where.update()>0)said=Unsent.needsUpdate(name)+".";
-        else if(where.asking()>0)said=accepting(name)+".";
-        else if(!where.confirmed())said=SyncMark.SENT.person();
-        else said=where.files()>0?"Has this version, files included.":SyncMark.GONE.person();
+            said=where.files()==1?Say.t("Your latest changes, and 1 of 1 file, have not reached them yet.")
+                :Say.t("Your latest changes, and {0} of {1} files, have not reached them yet.",where.lacking(),where.files());
+        else if(where.owed()>0)said=Say.t(SyncMark.WAITING.person());
+        else if(where.lacking()>0)said=where.files()==1?Say.t("{0} has the text; 1 of 1 file still going.",name)
+            :Say.t("{0} has the text; {1} of {2} files still going.",name,where.lacking(),where.files());
+        else if(where.update()>0){said=update(name);update=true;}
+        else if(where.asking()>0)said=accepting(name);
+        else if(!where.confirmed())said=Say.t(SyncMark.SENT.person());
+        else said=where.files()>0?Say.t("Has this version, files included."):Say.t(SyncMark.GONE.person());
         // And what waits for them to be updated, said as well where something else was said first.
-        if(where!=null&&where.update()>0&&!said.startsWith(Unsent.needsUpdate(name)))said=said+" "+Unsent.needsUpdate(name)+".";
-        return kept>0?said+" An answer to them waits until they are in reach.":said;
+        if(where!=null&&where.update()>0&&!update)said=said+" "+update(name);
+        return kept>0?said+" "+Say.t("An answer to them waits until they are in reach."):said;
     }
 
     /**
      * What an amber mark waits for, one line a device, the one needing something most first: those not heard from,
      * then those that need updating, then writing not with them, then files, then answers kept here. Empty where nothing
-     * is known to wait - words still on the screen, which {@link #UNSAVED} says.
+     * is known to wait: words still on the screen, which {@link #UNSAVED} says. Each line is a sentence, full stop and all.
      *
      * @param notes how many notes it is about: a note's own mark says "your changes", a book's says how many notes
      */
@@ -106,17 +114,19 @@ final class Waits {
         List<String> stuck=new ArrayList<>(),update=new ArrayList<>(),owed=new ArrayList<>(),files=new ArrayList<>(),kept=new ArrayList<>(),
             sent=new ArrayList<>(),locked=new ArrayList<>(),asking=new ArrayList<>();
         for(Device one:devices) {
-            Where at=one.where();String name=one.name()==null||one.name().isBlank()?"a paired device":one.name();
-            if(one.kept()>0)kept.add("Waiting to reach "+name+" with "+(one.kept()==1?"an answer":one.kept()+" answers"));
+            Where at=one.where();boolean unnamed=one.name()==null||one.name().isBlank();
+            String name=unnamed?Say.t("a paired device"):one.name(),Name=unnamed?Say.t("A paired device"):name;
+            if(one.kept()>0)kept.add(one.kept()==1?Say.t("Waiting to reach {0} with an answer.",name):Say.t("Waiting to reach {0} with {1} answers.",name,one.kept()));
             // Said once, and last: nothing waits on anybody here for it.
-            if(at!=null&&at.waitsLocked()){locked.add(locked(name.equals("a paired device")?"A paired device":name));continue;}
+            if(at!=null&&at.waitsLocked()){locked.add(locked(Name));continue;}
             // Nothing goes to a build from before trees that it cannot hold: what waits for that waits for its owner to update it.
-            if(at!=null&&at.update()>0)update.add(Unsent.needsUpdate(name.equals("a paired device")?"A paired device":name));
-            if(at!=null&&at.stuck())stuck.add(name+" has not been heard from for more than three days");
-            else if(at!=null&&at.owed()>0)owed.add("Waiting to reach "+name+" with "+(notes>1?"changes to "+(at.owed()==1?"1 note":at.owed()+" notes"):"your changes"));
-            if(at!=null&&at.lacking()>0)files.add("Waiting for "+name+" to confirm "+files(at.lacking()));
+            if(at!=null&&at.update()>0)update.add(update(Name));
+            if(at!=null&&at.stuck())stuck.add(Say.t("{0} has not been heard from for more than three days.",Name));
+            else if(at!=null&&at.owed()>0)owed.add(notes<=1?Say.t("Waiting to reach {0} with your changes.",name)
+                :at.owed()==1?Say.t("Waiting to reach {0} with changes to 1 note.",name):Say.t("Waiting to reach {0} with changes to {1} notes.",name,at.owed()));
+            if(at!=null&&at.lacking()>0)files.add(at.lacking()==1?Say.t("Waiting for {0} to confirm 1 file.",name):Say.t("Waiting for {0} to confirm {1} files.",name,at.lacking()));
             if(at!=null&&at.owed()==0&&at.lacking()==0&&at.update()==0&&!at.stuck()&&at.asking()>0){asking.add(accepting(name));continue;}
-            if(at!=null&&at.owed()==0&&at.lacking()==0&&at.update()==0&&!at.confirmed()&&!at.stuck())sent.add("Sent to "+name+", waiting for them to say they have it");
+            if(at!=null&&at.owed()==0&&at.lacking()==0&&at.update()==0&&!at.confirmed()&&!at.stuck())sent.add(Say.t("Sent to {0}, waiting for them to say they have it.",name));
         }
         List<String> out=new ArrayList<>(stuck);out.addAll(update);out.addAll(owed);out.addAll(files);out.addAll(kept);out.addAll(sent);out.addAll(asking);out.addAll(locked);
         return out;
@@ -131,6 +141,6 @@ final class Waits {
     /** The whole of the box: one line a device, or what the screen is waiting for where no device is. */
     static String said(List<Device> devices,int notes) {
         List<String> all=lines(devices,notes);
-        return all.isEmpty()?UNSAVED:String.join(".\n",all)+".";
+        return all.isEmpty()?Say.t(UNSAVED):String.join("\n",all);
     }
 }

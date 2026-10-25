@@ -10,10 +10,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import javax.swing.*;
 
-/** Camera access happens only after Start camera, and ends when the dialog closes. */
+/**
+ * Camera access happens only while this is open, and ends when the dialog closes. It starts as the box opens (the owner,
+ * 2026-10-25: "the + should bring the camera so that I can scan one code"; decision 258), Stop camera stopping it.
+ */
 final class DesktopScanner {
     record Code(String text,boolean camera) {}
-    static void open(JFrame owner,Consumer<Code> accepted) {
+    /** Whether the camera starts as the box opens: not in the tests, which picture the box and open no camera (build.gradle). */
+    static volatile boolean atOnce=!"later".equals(System.getProperty("mininotes.camera"));
+    static void open(JFrame owner,Consumer<Code> accepted){open(owner,accepted,null,null);}
+    /**
+     * @param mine      Show my code instead, quietly at the foot, for the other device to scan this one; null for none
+     * @param cancelled where closing it with nothing read goes back to: the box it was opened from; null for nowhere
+     */
+    static void open(JFrame owner,Consumer<Code> accepted,Runnable mine,Runnable cancelled) {
         // The camera's picture in a dark frame of its own, what to do under it, and the other two ways in -
         // a picture of the code, or a link - as buttons beside the camera's own.
         JLabel preview=new JLabel(Say.t("Show the other device's Mininotes code to your camera"),SwingConstants.CENTER);
@@ -23,16 +33,30 @@ final class DesktopScanner {
         };screen.setOpaque(false);screen.setBorder(BorderFactory.createEmptyBorder(6,6,6,6));screen.add(preview);
         DesktopUi.Text progress=DesktopUi.quiet("Start the camera, open a picture of the code, or paste a link.");
         JComboBox<String> cameras=DesktopUi.combo(new String[]{"Default camera"});cameras.setPreferredSize(new Dimension(220,cameras.getPreferredSize().height));cameras.getAccessibleContext().setAccessibleName("Camera");
-        JButton camera=DesktopUi.primary("Start camera",()->{}),image=DesktopUi.button("Open a picture…",()->{}),paste=DesktopUi.button("Paste a link or picture",()->{});
-        JPanel top=new JPanel(new BorderLayout(DesktopUi.S,0));top.setOpaque(false);top.add(DesktopUi.actions(cameras,camera),BorderLayout.WEST);top.add(DesktopUi.footer(image,paste),BorderLayout.EAST);
-        JPanel panel=new JPanel(new BorderLayout(0,12));panel.setOpaque(false);panel.add(top,BorderLayout.NORTH);panel.add(screen);panel.add(progress,BorderLayout.SOUTH);
-        JDialog[] box={null};
+        // The camera is the one way in, filled, at the top; a picture, a link and my own code are the quiet others, under it
+        // (decision 258: "Paste a link stays as the quiet secondary way"). Side by side at the top they ran into each other.
+        JButton camera=DesktopUi.primary("Start camera",()->{}),image=DesktopUi.quietButton("Open a picture…",()->{}),paste=DesktopUi.quietButton("Paste a link or picture",()->{});
+        JPanel top=new JPanel(new BorderLayout(DesktopUi.S,0));top.setOpaque(false);top.add(DesktopUi.actions(cameras,camera),BorderLayout.WEST);
+        JPanel panel=new JPanel(new BorderLayout(0,12));panel.setOpaque(false);panel.add(top,BorderLayout.NORTH);panel.add(screen);
+        JDialog[] box={null};boolean[] went={false};
+        // The other way round, quiet and last: this device's code, for the other one to scan.
+        JButton instead=mine==null?null:DesktopUi.quietButton("Show my code instead",()->{went[0]=true;if(box[0]!=null)box[0].dispose();mine.run();});
+        if(instead!=null)instead.setName("scanShowMine");
+        JPanel under=new JPanel(new BorderLayout(0,6));under.setOpaque(false);under.add(progress,BorderLayout.NORTH);
+        JPanel others=DesktopUi.actions(instead==null?new JComponent[]{image,paste}:new JComponent[]{image,paste,instead});others.setBorder(BorderFactory.createEmptyBorder(0,-6,0,0));
+        under.add(others,BorderLayout.SOUTH);
+        panel.add(under,BorderLayout.SOUTH);
         JDialog dialog=DesktopUi.sheet(owner,"From another device",panel,null,true);box[0]=dialog;
         ExecutorService worker=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"mininotes-qr");t.setDaemon(true);return t;});
         AtomicBoolean closed=new AtomicBoolean(),scanning=new AtomicBoolean(),painting=new AtomicBoolean();
         java.util.List<Webcam> devices=new java.util.ArrayList<>();
         Consumer<Code> found=text->{if(closed.compareAndSet(false,true)){dialog.dispose();worker.shutdown();SwingUtilities.invokeLater(()->accepted.accept(text));}};
-        dialog.addWindowListener(new WindowAdapter(){public void windowClosed(WindowEvent e){closed.set(true);scanning.set(false);worker.shutdown();}});
+        dialog.addWindowListener(new WindowAdapter(){public void windowClosed(WindowEvent e){
+            // Closed with nothing read and not to show my code: back to where it was opened from.
+            boolean nothing=closed.compareAndSet(false,true);
+            scanning.set(false);worker.shutdown();
+            if(nothing&&!went[0]&&cancelled!=null)SwingUtilities.invokeLater(cancelled);
+        }});
         camera.addActionListener(e->{
             if(scanning.get()){scanning.set(false);camera.setText(Say.t("Stopping…"));camera.setEnabled(false);return;}
             int choice=cameras.getSelectedIndex();scanning.set(true);camera.setText(Say.t("Stop camera"));progress.setText(Say.t("Opening camera…"));
@@ -77,6 +101,8 @@ final class DesktopScanner {
                 }
             }catch(Exception failure){progress.setText(Say.t("Could not read clipboard: {0}",failure.getMessage()));}
         });
+        // The camera at once, once the box is up: what the box is for, with a picture or a link as the other ways.
+        if(atOnce)SwingUtilities.invokeLater(()->{if(!closed.get()&&!scanning.get())camera.doClick(0);});
         DesktopUi.show(dialog,700,720);
     }
 

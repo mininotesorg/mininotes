@@ -32,7 +32,7 @@ public final class Desktop {
     /** Whether this PC's notebook is encrypted, always in sight; a click opens Security. */
     final JLabel security=new JLabel();
     /** This build, beside the name in the bar - and, when a newer one is out, the way to it. */
-    static final String VERSION="0.4.028";
+    static final String VERSION="0.4.030";
     final JLabel version=new JLabel();
     /** Beside the version, only while a newer one is out: an outlined button, so it reads as one to press. */
     final JButton updateButton=new JButton();
@@ -2016,7 +2016,7 @@ public final class Desktop {
         else if(done.sent>0)noteSays(NoteLine.sent(namesShown()),NoteLine.Tone.DONE,null);
         else if(asked)noteSays(NoteLine.NOTHING,NoteLine.Tone.DONE,null);
         // Nothing went by itself: the "Sending…" that went ahead of it is taken down, and new typing is left saying so.
-        else if(noteWordsSaid.startsWith("Sending"))noteSays(null,null,null);
+        else if(NoteLine.isSending(noteWordsSaid))noteSays(null,null,null);
     }
     /** A send of the open note that threw: on its line, with the words it threw with behind the click. */
     private void noteFailed(Exception e) {
@@ -4892,7 +4892,7 @@ public final class Desktop {
             Set<String> lined=new HashSet<>();
             for(Sharing.Rule rule:ordered) {
                 if(!lined.add(rule.address))continue;
-                if(bonds.containsKey(rule.address)){people.add(ownDeviceLine(rule.address,((Map<String,String>)data[4]).getOrDefault(rule.address,"My device"),bonds.get(rule.address),owner,box));continue;}
+                if(bonds.containsKey(rule.address)){people.add(ownDeviceLine(rule.address,((Map<String,String>)data[4]).getOrDefault(rule.address,"My device"),bonds.get(rule.address),rule.level,owner,box));continue;}
                 boolean inherited=!rule.target.equals(target.id);
                 // Given by a group: said on the group's line, not again on their own.
                 if(!inherited&&folded.containsKey(rule.address))continue;
@@ -5029,13 +5029,19 @@ public final class Desktop {
      * One of the owner's own devices on a thing's Share box: it has everything, as the owner; what it may do with it, Can
      * write or Can read (decision 180), dropping down to change it, for every thing at once, as Add my device set it.
      */
-    private JPanel ownDeviceLine(String address,String name,Sharing.Rule bond,boolean owner,JDialog[] box) {
-        JPanel who=inkOnRound(DesktopUi.person(name,Say.t("One of your devices, with everything")),name,address);
+    private JPanel ownDeviceLine(String address,String name,Sharing.Rule bond,Sharing.Level onThis,boolean owner,JDialog[] box) {
+        // One with no bond with everything has this thing as it was given it, said before the words (decision 255).
+        String under=bond!=null?Say.t("One of your devices, with everything")
+            :(onThis==null||onThis==Sharing.Level.GONE?"":Say.t(onThis.words())+"  ·  ")+Say.t("One of your devices, not given everything");
+        JPanel who=inkOnRound(DesktopUi.person(name,under),name,address);
         JComponent role=ownDeviceRole(address,name,bond,owner,()->{if(box[0]!=null)box[0].dispose();});
         JPanel right=new JPanel(new GridBagLayout());right.setOpaque(false);right.add(role);
         return DesktopUi.row(who,right);
     }
-    /** What one of my devices may do with everything, dropping down to Can write, Can read and Remove (decision 189). */
+    /**
+     * What one of my devices may do with everything, dropping down to Can write, Can read and Remove (decision 189); one with
+     * no bond, added with nothing yet, says Nothing yet and drops down to Can write and Can read of everything (decision 255).
+     */
     JComponent ownDeviceRole(String address,String name,Sharing.Rule bond,boolean owner,Runnable after) {
         java.util.function.Consumer<Sharing.Level> choose=to->{status.setText(Say.t("Updating access…"));disk.submit(()->{
             // No bond yet: one made, at what was chosen; else the bond changed, or ended with Remove.
@@ -5043,7 +5049,22 @@ public final class Desktop {
             else store.decide(bond,to,System.currentTimeMillis());return null;
         },done->{after.run();network.submit(()->{Post.send(context,store,keys,NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING);return null;},v->{status.setText(Say.t("Access updated"));refresh();},this::failed);},this::failed);};
         List<Sharing.Level> give=List.of(Sharing.Level.WRITE,Sharing.Level.READ);
-        Sharing.Level now=bond==null?Sharing.Level.WRITE:bond.level;
+        if(bond==null) {
+            if(!owner)return roleShown(Sharing.NOTHING_YET,Sharing.NOTHING_YET_DOES);
+            JButton role=new JButton(Say.t(Sharing.NOTHING_YET)+"  ▾");role.setFocusPainted(false);role.setToolTipText(Say.t(Sharing.NOTHING_YET_DOES));
+            role.getAccessibleContext().setAccessibleName("What "+name+" may do: "+Sharing.NOTHING_YET+". "+Sharing.NOTHING_YET_DOES);
+            role.addActionListener(e->{
+                JPopupMenu menu=new JPopupMenu();
+                menu.add(new JRadioButtonMenuItem(DesktopUi.roleLine(Sharing.NOTHING_YET,Sharing.NOTHING_YET_DOES),true));
+                for(Sharing.Level level:give) {
+                    JRadioButtonMenuItem one=new JRadioButtonMenuItem(DesktopUi.roleLine(level.words(),Sharing.everythingDoes(level)),false);
+                    one.addActionListener(a->choose.accept(level));menu.add(one);
+                }
+                menu.show(role,0,role.getHeight());
+            });
+            return role;
+        }
+        Sharing.Level now=bond.level;
         return owner?roleButton(now,give,choose,name):roleShown(now.words(),now.does());
     }
 
@@ -5113,19 +5134,76 @@ public final class Desktop {
     void showCode(NoteStore.Branch target) {
         if(offline){status.setText(Say.t("This session was started offline"));return;}
         Sharing.Scope scope=Sharing.Scope.valueOf(target.kind.name());
+        // Everything is offered only to a device of mine, in its own box (decision 255).
+        if(scope==Sharing.Scope.LIBRARY){addMyDevice();return;}
         disk.submit(()->store.mayGive(scope,target.id),may->{
             if(may.isEmpty()){status.setText(Say.t("Only its owner or an admin can share {0}",target.name));return;}
-            // Add my device: one of my own, with everything, Can write or only Can read; never Admin, which says nothing
-            // between one owner's devices (decision 163: "it might have a reason to only read").
-            if(scope==Sharing.Scope.LIBRARY) {
-                List<Sharing.Level> mine=new ArrayList<>();
-                for(Sharing.Level one:List.of(Sharing.Level.WRITE,Sharing.Level.READ))if(may.contains(one))mine.add(one);
-                Sharing.Level role=mine.isEmpty()?null:DesktopUi.chooseRole(frame,"Add my device","What it may do",mine,mine.get(0),"Show my code");
-                if(role!=null)showCode(target,scope,role);
-                return;
-            }
             Sharing.Level role=offerRole(target.name,may);if(role!=null)showCode(target,scope,role);
         },this::failed);
+    }
+    /**
+     * Add my device (decision 255; the owner, 2026-10-25: "from people and device, I wanted to only have the new device in
+     * my connected device, not necessary share everything. Just adding it and then choosing"): one box, up at once, with
+     * what it gets first, Nothing yet unless Can write or Can read of everything is chosen, and the code under it. The code is
+     * made on a thread of its own and drawn when it is ready: it waited behind whatever the network worker was sending, after
+     * a box asking for a role, and the + seemed to do nothing (the owner on the Pro: "took a bit long... but finally worked").
+     */
+    void addMyDevice() {
+        if(offline){status.setText(Say.t("This session was started offline"));return;}
+        List<Sharing.Level> picks=new ArrayList<>(Arrays.asList(null,Sharing.Level.WRITE,Sharing.Level.READ));
+        Sharing.Level[] chosen={null};String[] line={""},where={null};int[] asked={0};
+        JPanel body=DesktopUi.column();
+        DesktopUi.add(body,DesktopUi.heading("What it gets"));DesktopUi.gap(body,8);
+        JLabel picture=new JLabel(Say.t("Preparing sharing code…"),SwingConstants.CENTER);picture.setForeground(DesktopUi.QUIET);
+        picture.setPreferredSize(new Dimension(340,340));picture.setAlignmentX(Component.CENTER_ALIGNMENT);
+        DesktopUi.Text copied=DesktopUi.quiet(" ");
+        JButton link=button("Copy link",()->{if(line[0].isEmpty())return;Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(Pairing.link(line[0])),null);copied.setText(Say.t("Link copied. Send it to them another way if they cannot scan."));});
+        link.setEnabled(false);
+        Runnable make=()->{
+            int mine=++asked[0];Sharing.Level level=chosen[0];line[0]="";link.setEnabled(false);
+            picture.setIcon(null);picture.setText(Say.t("Preparing sharing code…"));
+            String target=level==null?Sharing.MINE_ONLY:Sharing.EVERYTHING,offer=level==null?Sharing.MINE_OFFER:Sharing.travelling(Sharing.Scope.LIBRARY,"Everything");
+            Sharing.Level offered=level==null?Sharing.Level.READ:level;
+            new Thread(()->{
+                try {
+                    if(where[0]==null)where[0]=address();
+                    String made=keys.line(Node.nameHere(context),where[0],offer,offered,Sharing.Scope.LIBRARY.name(),target);
+                    BufferedImage image=DesktopQr.draw(Pairing.link(made),340);
+                    SwingUtilities.invokeLater(()->{
+                        if(mine!=asked[0])return;
+                        // Showing the code is the decision: whoever scans it within a quarter of an hour is added, as it says.
+                        String key=Sharing.Scope.LIBRARY.name()+":"+target;offers.put(key,offered);offeredAt.put(key,System.currentTimeMillis());
+                        line[0]=made;picture.setText(null);picture.setIcon(new ImageIcon(image));link.setEnabled(true);
+                        picture.getAccessibleContext().setAccessibleName(Say.t("Scan this code with Mininotes on your phone"));
+                    });
+                } catch(Exception failed) {
+                    String said=failed.getMessage()==null?Say.t("That could not be changed."):Say.t(failed.getMessage());
+                    SwingUtilities.invokeLater(()->{if(mine==asked[0])picture.setText("<html><div style='width:300px;text-align:center'>"+said+"</div></html>");});
+                }
+            },"mininotes-code").start();
+        };
+        ButtonGroup group=new ButtonGroup();
+        for(Sharing.Level level:picks) {
+            JRadioButton one=new JRadioButton(Say.t(level==null?Sharing.NOTHING_YET:level.words()),level==null);one.setOpaque(false);
+            one.setFont(DesktopUi.BODY.deriveFont(Font.BOLD));one.setForeground(DesktopUi.INK);
+            one.getAccessibleContext().setAccessibleName(Say.t(level==null?Sharing.NOTHING_YET:level.words())+". "+Say.t(Sharing.everythingDoes(level)));
+            one.addActionListener(e->{if(chosen[0]!=level){chosen[0]=level;make.run();}});
+            group.add(one);DesktopUi.add(body,one);
+            DesktopUi.Text does=DesktopUi.note(Sharing.everythingDoes(level),360,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f));does.setBorder(BorderFactory.createEmptyBorder(0,26,0,0));
+            does.addMouseListener(new MouseAdapter(){public void mouseClicked(MouseEvent e){one.doClick();}});
+            DesktopUi.add(body,does);DesktopUi.gap(body,8);
+        }
+        DesktopUi.gap(body,DesktopUi.S);DesktopUi.add(body,DesktopUi.note("On your other device, open Mininotes and scan this code."));DesktopUi.gap(body,DesktopUi.M);
+        JPanel framed=new JPanel(new GridBagLayout());framed.setOpaque(false);framed.add(DesktopUi.card(null,picture));DesktopUi.add(body,framed);
+        DesktopUi.gap(body,DesktopUi.M);DesktopUi.add(body,DesktopUi.actions(link));DesktopUi.gap(body,DesktopUi.S);DesktopUi.add(body,copied);
+        // Notes only between the owner's devices: the code carries no relay, so only a device on this network can use it.
+        if(Node.onlyMine(context)){DesktopUi.gap(body,DesktopUi.M);DesktopUi.add(body,DesktopUi.quiet("This code works only for devices on this network: this PC sends notes only between your devices."));}
+        status.setText(Say.t("Preparing sharing code…"));
+        make.run();
+        JDialog box=DesktopUi.sheet(frame,"Add my device",DesktopUi.scrolling(body),null,true);
+        DesktopUi.show(box,460,760);
+        // Closed: a code still being made is not drawn into a box nobody sees.
+        asked[0]++;status.setText(" ");
     }
     /** What the code will let them do: the roles this PC may give, each over what it lets them do. Null if none was chosen. */
     Sharing.Level offerRole(String name,List<Sharing.Level> may) {
@@ -5189,51 +5267,65 @@ public final class Desktop {
                 DesktopUi.tell(frame,Say.t("Share “{0}”",target.name),body);
             } catch(Exception e){failed(e);}
         },this::failed);
-    }    void scanCode(NoteStore.Branch shareTarget) {
-        if(offline){status.setText(Say.t("This session was started offline"));return;}
-        DesktopScanner.open(frame,text->receiveCode(text,shareTarget));
     }
-    private void receiveCode(DesktopScanner.Code code,NoteStore.Branch shareTarget) {
+    /**
+     * A code from another device: the camera at once, a picture or a link as the quiet other ways, and, from People and
+     * devices, my own code instead (decision 258). What is read goes into the one path (DesktopJoining).
+     */
+    void scanCode(NoteStore.Branch shareTarget){scanCode(shareTarget,null,null);}
+    /**
+     * @param mine where Show my code instead leads, or null where the scan screen does not offer it
+     * @param back the box it was opened from, opened again when the scan or the path is left, and once the path is done;
+     *             null for none
+     */
+    void scanCode(NoteStore.Branch shareTarget,Runnable mine,Runnable back) {
+        if(offline){status.setText(Say.t("This session was started offline"));return;}
+        DesktopScanner.open(frame,text->receiveCode(text,shareTarget,back),mine,back);
+    }
+    /**
+     * A code read, scanned or pasted, into the one path (decision 258): what it is, a group, what to share, done. Read for
+     * what it is first: anything that is not a Mininotes code is refused, and nothing is kept. A pasted one has six digits
+     * to check, worked out off this thread.
+     */
+    private void receiveCode(DesktopScanner.Code code,NoteStore.Branch shareTarget){receiveCode(code,shareTarget,null);}
+    private void receiveCode(DesktopScanner.Code code,NoteStore.Branch shareTarget,Runnable back) {
         try {
             Pairing.Said said=Pairing.read(Pairing.line(code.text().trim()));
-            disk.submit(()->code.camera()?"":Envelope.code(keys.signing().getPublic(),Keys.publicKey(said.signing)),digits->{
-            JPanel body=DesktopUi.column();
-            DesktopUi.add(body,DesktopUi.person(said.name,said.offer.isEmpty()?"Wants to pair with this PC":Sharing.shown(said.offer)+"  ·  "+said.level.words()));
-            // Wherever the + was that took it, what is shared arrives on Home: said before it is accepted, as on the phone.
-            if(!said.offer.isEmpty()){DesktopUi.gap(body,DesktopUi.S);DesktopUi.add(body,DesktopUi.quiet("It will appear on Home when it arrives."));}
-            if(!said.offer.isEmpty()){DesktopUi.gap(body,DesktopUi.S);DesktopUi.add(body,DesktopUi.note(said.level.does()));}
-            if(!digits.isEmpty()) {
-                // A code read from a picture or a link, not a camera: taken all the same (the owner, 2026-10-02: asking for
-                // digits the other device never showed was a dead end), with what a paste cannot prove said, and how to check.
-                DesktopUi.gap(body,DesktopUi.M);DesktopUi.add(body,DesktopUi.note("Pasted, not scanned. To be sure nobody changed it on the way, open People on both devices afterwards: each shows six digits for the other, and they must be the same. Here:"));
-                DesktopUi.gap(body,DesktopUi.S);JLabel shown=new JLabel(digits);shown.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,28f));shown.setForeground(INK);DesktopUi.add(body,shown);
-            }
-            boolean[] yes={false};JDialog[] box={null};
-            JButton accept=DesktopUi.primary(said.offer.isEmpty()?"Pair":"Accept",()->{yes[0]=true;box[0].dispose();});
-            box[0]=DesktopUi.sheet(frame,said.offer.isEmpty()?"Add "+said.name+"?":"Accept from "+said.name+"?",body,DesktopUi.footer(accept),true);
-            DesktopUi.show(box[0],440,480);if(!yes[0])return;
-            boolean[] elsewhere={false};
-            status.setText(Say.t("Pairing with {0}…",said.name));network.submit(()->{
-                // Only "Add my device" - a code offering everything - is one of the owner's own devices.
-                boolean own=Sharing.Scope.LIBRARY.name().equals(said.scope);
-                store.pairedWith(said.address,said.name,own,said.agreement,said.signing);
-                // Scanning their code is wanting them: ignoring them before is forgotten.
-                Invites.unignore(context,said.signing);
-                if(own)store.setMine(said.address,true);
-                // Only between the owner's devices, a code from another network is saved and said plainly.
-                try{String key=Node.introduce(context,said.address);if(!key.isEmpty())store.knownAs(said.address,key);}catch(Exception unreachable){elsewhere[0]=Node.ON_THE_SAME_WIFI.equals(unreachable.getMessage());/* The code's address remains usable. */}
-                // A plain code too: the device that showed it has to hear about this PC, or it drops as a
-                // stranger's everything this PC shares with it. Kept, and said again at each start until answered.
-                store.accepting(said.address,said.name,said.scope,said.target,said.level);
-                // And what it brings, so it stands on Home as waiting from now (decision 73).
-                store.acceptingOffer(said.address,said.offer);
-                // An earlier copy of it put in the bin or the archive here comes back out: accepting is wanting it.
-                if(!said.target.isEmpty())store.acceptedBack(said.address,said.target);
-                try{Post.accept(context,keys,said,Node.nameHere(context),address());}catch(Exception notNow){return false;}
-                return true;
-            },told->{if(elsewhere[0]){refresh();helpersFor(said.name,()->receiveCode(code,shareTarget));return;}status.setText(said.target.isEmpty()?(told?Say.t("Waiting for {0} to accept",said.name):Say.t("Added. {0} is asked when it is next reachable",said.name)):Say.t("Paired, waiting for {0} to approve and send",said.name));refresh();if(shareTarget!=null)people(shareTarget);},e->{status.setText(Say.t("Pairing has not finished. Reopen the app to retry, or try the link again."));});
-            },this::failed);
-        } catch(Exception e){failed(e);}
+            disk.submit(()->code.camera()?"":Envelope.code(keys.signing().getPublic(),Keys.publicKey(said.signing)),
+                digits->DesktopJoining.open(this,said,digits,shareTarget,back),this::failed);
+        } catch(Exception e){failed(e);if(back!=null)back.run();}
+    }
+    /**
+     * The path's end (decision 258): paired as it was chosen, one of mine or not, told so, then the group and the shares
+     * given and sent, the status line saying each step. {@code ended} has what the box says at its last step: how it went,
+     * and a second line or null; {@code gone} closes it where the helpers' box takes over.
+     */
+    void joined(Pairing.Said said,Joining.Choice choice,java.util.function.BiConsumer<String,String> ended,Runnable gone) {
+        boolean[] elsewhere={false},told={false};int[] failed={0};
+        status.setText(Say.t("Pairing with {0}…",said.name));network.submit(()->{
+            Joining.paired(context,store,said,choice.mine);
+            // Only between the owner's devices, a code from another network is saved and said plainly.
+            try{String key=Node.introduce(context,said.address);if(!key.isEmpty())store.knownAs(said.address,key);}catch(Exception unreachable){elsewhere[0]=Node.ON_THE_SAME_WIFI.equals(unreachable.getMessage());/* The code's address remains usable. */}
+            // A plain code too: the device that showed it has to hear about this PC, or it drops as a
+            // stranger's everything this PC shares with it. Kept, and said again at each start until answered.
+            Joining.accepting(store,said);
+            try{Post.accept(context,keys,said,Node.nameHere(context),address());told[0]=true;}catch(Exception notNow){/* said again until they hear */}
+            Joining.Kept kept=Joining.chosen(store,said,choice);
+            if(!kept.everything&&!kept.grouped&&kept.given.isEmpty())return kept;
+            SwingUtilities.invokeLater(()->status.setText(Say.t("Sharing with {0}…",said.name)));
+            try{failed[0]=Joining.send(context,store,keys,kept);}catch(Exception notNow){failed[0]=1;}
+            return kept;
+        },kept->{
+            refresh();peopleAgain();
+            if(elsewhere[0]){gone.run();helpersFor(said.name,()->joined(said,choice,(a,b)->{},()->{}));return;}
+            String how=failed[0]>0?Say.t("Shared, waiting to send")
+                :Joining.offers(said)?Say.t("Paired, waiting for {0} to approve and send",said.name)
+                :told[0]?Say.t("Waiting for {0} to accept",said.name):Say.t("Added. {0} is asked when it is next reachable",said.name);
+            status.setText(Joining.done(said.name,choice.mine)+"  ·  "+how);
+            // One of mine chosen for a plain code: the other device counts this one as a person until its switch is turned.
+            String more=choice.mine&&!Joining.saysMine(said)?Say.t("On {0}, turn My device on too.",said.name):null;
+            ended.accept(how,more);
+        },e->{status.setText(Say.t("Pairing has not finished. Reopen the app to retry, or try the link again."));ended.accept(Say.t("Pairing has not finished. Reopen the app to retry, or try the link again."),null);});
     }
     private void accepted(Hello.Said said) {
         // A plain code, offering nothing: an invitation, Accept or Ignore (decision 163), but for a device added already.
@@ -5248,21 +5340,40 @@ public final class Desktop {
         if(!frame.isVisible()){DesktopLock.quietUnlessLet(frame);frame.setVisible(true);Node.near(true);if(DesktopLock.front.mayTake())frame.toFront();}
         // Showing the code was the decision: scanned within a quarter of an hour, it is handed over without asking again.
         Long shown=offeredAt.get(key);long age=shown==null?Long.MAX_VALUE:System.currentTimeMillis()-shown;
+        // Add my device with nothing yet (decision 255): added as one of mine, given nothing; asked first where the code is old.
+        if(Sharing.mineOnly(bare,said.target)) {
+            boolean add=age>=0&&age<15*60_000L||DesktopUi.confirm(frame,Say.t("Add {0} as one of your devices?",said.name),Say.t("{0} scanned your code to be one of your devices.",said.name),Say.t("Add it"),false);
+            pendingOffers.remove(key+said.address);if(add)addMine(said);
+            return;
+        }
         boolean give=age>=0&&age<15*60_000L||DesktopUi.confirm(frame,said.name+" scanned your code",said.name+" accepted what you offered. Give them "+level.words()+"? "+level.does(),"Give access",false);
         pendingOffers.remove(key+said.address);if(!give)return;
         Sharing.Scope scope=Sharing.Scope.valueOf(bare);NoteStore.Branch.Kind kind=NoteStore.kindFor(scope);
         status.setText(Say.t("Sharing with {0}…",said.name));network.submit(()->{
             if(!store.mayGive(scope,said.target).contains(level))throw new IllegalStateException("Only its owner or an admin can share this");
-            store.pairedWith(said.address,said.name,false,said.agreement,said.signing);
-            // Everything, accepted: another device of the owner's, marked as theirs here (see Persons).
-            if(scope==Sharing.Scope.LIBRARY)Post.bonded(context,store,said);
+            // Everything, accepted: another device of the owner's, marked as theirs here (see Persons) and given everything.
+            if(scope==Sharing.Scope.LIBRARY)Post.addedAsMine(context,store,said,level);
+            else store.pairedWith(said.address,said.name,false,said.agreement,said.signing);
             try{String contact=Node.introduce(context,said.address);if(!contact.isEmpty())store.knownAs(said.address,contact);}catch(Exception unreachable){/* Fallback to the current address. */}
-            store.give(scope,said.target,said.address,level,null);
+            if(scope!=Sharing.Scope.LIBRARY)store.give(scope,said.target,said.address,level,null);
             return Post.send(context,store,keys,kind,said.target);
         },done->{
             // The open note given to them: how its sending went is said on its line, as any other send of it is.
             if(isOpen(said.target)){status.setText(Say.t("Shared with {0}",said.name));noteSent(done,false);refresh();return;}
             status.setText(Say.t(done.failed>0?"Shared, waiting to send":"Sent, waiting for delivery confirmation"));refresh();if(done.failed>0)tellUnsent(done);},this::failed);
+    }
+    /**
+     * A device that scanned Add my device offering nothing yet (decision 255): one of mine, with the cards a device of mine
+     * has, and nothing of everything; answered, so it stops saying that it accepted. What it gets is chosen on its line.
+     */
+    private void addMine(Hello.Said said) {
+        status.setText(Say.t("Pairing with {0}…",said.name));network.submit(()->{
+            Post.addedAsMine(context,store,said,null);
+            try{String contact=Node.introduce(context,said.address);if(!contact.isEmpty())store.knownAs(said.address,contact);}catch(Exception unreachable){/* the address they sent still works */}
+            NoteStore.Contact saved=store.address(said.address);
+            try{Post.helloBack(context,keys,said,Node.nameHere(context),address(),saved==null?null:saved.contact);}catch(Exception notNow){/* they say it again until they hear */}
+            return null;
+        },done->{status.setText(Say.t("{0} is one of your devices now. Nothing is shared with it yet.",said.name));refresh();peopleAgain();},this::failed);
     }
     /**
      * Somebody scanned this PC's plain code (decision 163: "let's make that as an invitation, for contact and for elements,

@@ -40,6 +40,16 @@ final class Said {
      */
     static long rest(int misses){return misses<=0?0:Math.min(30L*60_000L,60_000L<<Math.min(misses-1,5));}
 
+    /** How long after a device could not be told something it is tried again, and after it was told, the first time it is told again. */
+    static final long TELL_AGAIN=10L*60*1000;
+
+    /**
+     * How long after a device was handed something it never said back it is told again, once told again {@code retold} times:
+     * ten minutes, then twice as long each time, to two hours (decision 257). A relay says yes for a device that is not there,
+     * so a PC left off was told every ten minutes for as long as the phone ran, each a proof of work for each thing it is told.
+     */
+    static long unanswered(int retold){return Math.min(2L*60*60*1000,TELL_AGAIN<<Math.min(Math.max(retold,0),4));}
+
     /** Whether a device missed {@code misses} times in a row, the last at {@code at}, is still left alone at {@code now}. */
     static boolean resting(long at,int misses,long now){return misses>0&&at<=now&&now-at<rest(misses);}
 }

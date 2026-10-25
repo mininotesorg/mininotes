@@ -58,6 +58,8 @@ final class PeopleBox {
         List<NoteStore.Shared> shared=new ArrayList<>();
         /** Senders blocked on this phone, each {address, name}. */
         List<String[]> blocked=new ArrayList<>();
+        /** On the page of a device of mine: its bond with everything, or null for none yet (decision 255). */
+        Sharing.Rule bond;
         /** Share with: what this phone may give, the groups the thing is given to, and where everybody stands on it. */
         List<Sharing.Level> give=new ArrayList<>();Map<String,Groups.Given> given=new HashMap<>();Map<String,NoteStore.Stands> stands=new HashMap<>();
         NoteStore.Contact contact(String address){for(NoteStore.Contact one:contacts)if(one.address.equals(address))return one;return null;}
@@ -74,6 +76,8 @@ final class PeopleBox {
 
     private final ArrayList<Level> levels=new ArrayList<>();
     private AlertDialog box;private ScrollView scroll;private Level laid;
+    /** The list's foot: my code, and the round + (decision 258). */
+    private View listFoot;
     /** The view the list is in, People or Groups, kept while the box is open. */
     private boolean groupsView;
     /** Whether the box is wanted: one closed while it was being read is not put up again. */
@@ -140,6 +144,7 @@ final class PeopleBox {
                 String line=Post.oneSided(a,who);if(line!=null)r.sided.put(who.address,line);
                 if(who.signing.length>0)try{r.checks.put(who.address,Envelope.code(a.keys().signing().getPublic(),Keys.publicKey(who.signing)));}catch(Exception unreadable){/* no digits for it */}
                 r.shared=store.sharedWith(who.address);
+                if(who.mine)r.bond=a.bondOf(who.address);
             }
             a.parlonsBook=store.parlonsBook();
         }
@@ -172,7 +177,10 @@ final class PeopleBox {
         boolean first=box==null;
         if(first) {
             scroll=a.scrolling(body);
-            final AlertDialog made=a.new Box().setTitle(title).setView(scroll).create();
+            LinearLayout whole=a.column();
+            whole.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+            listFoot=foot();whole.addView(listFoot,new LinearLayout.LayoutParams(-1,-2));
+            final AlertDialog made=a.new Box().setTitle(title).setView(whole).create();
             box=made;
             // The phone's Back goes back one level, as ‹ does; from the first level it closes the box, as it always did.
             box.setOnKeyListener((d,code,event)->{
@@ -183,6 +191,7 @@ final class PeopleBox {
             box.setOnDismissListener(d->{if(box==made){open=false;levels.clear();}});
             box.show();
         } else {box.setTitle(title);scroll.removeAllViews();scroll.addView(body);}
+        if(listFoot!=null)listFoot.setVisibility(at.kind==LIST?View.VISIBLE:View.GONE);
         laid=at;
         final int place=at.scroll;final ScrollView pane=scroll;
         pane.post(()->pane.scrollTo(0,place));
@@ -320,7 +329,9 @@ final class PeopleBox {
     private void peopleView(LinearLayout body,final Read r) {
         final String here=a.deviceShown();
         int mine=0,others=0;
-        body.addView(adds("People","Add someone",null));
+        // Neither part has a + of its own: the one round + at the foot adds anybody and any device, and the path after the
+        // scan asks which (decision 258). The two parts built the same way, a heading and their lines.
+        body.addView(a.part("People"));
         // One person, their devices under them (decision 183): devices whose cards say they are one person's, together, under
         // one line with the person's name and how many devices; anybody else a line of their own, as before.
         Map<String,List<NoteStore.Contact>> byPerson=new java.util.LinkedHashMap<>();List<NoteStore.Contact> ordered=new ArrayList<>();
@@ -361,7 +372,7 @@ final class PeopleBox {
         }
         // Each part says what to do when it is empty.
         if(others==0)body.addView(a.under("Nobody else yet. Tap + to connect with someone, or share a note or a folder with them."));
-        body.addView(adds(Groups.MY_DEVICES,"Add my device",()->a.shareSheet(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,"Everything")));
+        body.addView(a.part(Groups.MY_DEVICES));
         for(NoteStore.Contact one:r.contacts)if(one.mine){mine++;body.addView(device(one,r));}
         if(mine==0)body.addView(a.under("No other device yet. Tap + to connect another device of yours and keep the same notes on both."));
         // This device is the one Profile is about: its line goes there, where its name, its code and how it connects are,
@@ -392,18 +403,21 @@ final class PeopleBox {
     }
 
     /**
-     * A part's name with a + at its right that adds to it: the one sign for adding, at the one place, in both parts (the
-     * owner, 2026-10-06: "just put a + on the right side of both My devices and People so that people will understand that
-     * this is to add elements"; decision 106). It was a row under each part's lines and two buttons at the foot of the box.
+     * The one round +, Home's, at the foot on the right, where Home has it (the owner, 2026-10-25: "let's have just one big +
+     * button similar to what we have on the home page ... not start with a branch Personnes or Appareils"; decision 258). It
+     * replaces the + by People and the + by My devices (decision 106): the camera opens at once, and what was scanned is asked
+     * after. My code, for the other device to scan, quietly at the left of the same foot.
      */
-    private View adds(String part,String does,final Runnable go) {
-        LinearLayout line=new LinearLayout(a);line.setGravity(Gravity.BOTTOM);
-        line.addView(a.part(part),new LinearLayout.LayoutParams(0,-2,1));
-        // By People, the ways to connect, theirs and mine, from the + itself (decision 110); by My devices, the code.
-        TextView plus=a.tap("+",does,Math.round(MainActivity.READING*1.25f),a.INK,v->{if(go!=null)go.run();else a.connectWithSomeone(v);});
-        plus.setMinWidth(a.dp(48));plus.setGravity(Gravity.CENTER);
-        line.addView(plus);
-        return line;
+    private View foot() {
+        android.widget.FrameLayout foot=new android.widget.FrameLayout(a);
+        TextView mine=a.tap("Show my code","Show my code",MainActivity.QUIET,a.MUTED,v->a.myAddress());
+        mine.setGravity(Gravity.CENTER_VERTICAL);mine.setMinHeight(a.dp(48));mine.setPadding(a.dp(4),0,a.dp(12),0);mine.setTag("showMyCode");
+        foot.addView(mine,new android.widget.FrameLayout.LayoutParams(-2,-2,Gravity.START|Gravity.CENTER_VERTICAL));
+        TextView plus=a.roundPlus("Add someone or a device",v->a.scanFromPeople());plus.setTag("peoplePlus");
+        android.widget.FrameLayout.LayoutParams place=new android.widget.FrameLayout.LayoutParams(a.dp(56),a.dp(56),Gravity.END|Gravity.CENTER_VERTICAL);
+        place.setMargins(0,a.dp(8),a.dp(4),a.dp(8));
+        foot.addView(plus,place);
+        return foot;
     }
 
     /** One device or person in the list: their round in their colour, their name, how they are reached, and › to their page. */
@@ -504,7 +518,7 @@ final class PeopleBox {
             body.addView(a.person(member,one.name,one.address));
         }
         if(in.isEmpty())body.addView(a.under(mine?"No other device yet. Add my device to keep the same notes on both.":"Nobody in this group yet. Add people to put somebody in it."));
-        if(mine)body.addView(a.tapRow("Add my device…",()->a.shareSheet(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,"Everything")));
+        if(mine)body.addView(a.tapRow("Add my device…",()->a.addMyDevice(null)));
         else {
             // Whoever is not in it yet, dropped down under the members: a tap adds, and the list stays for the next one.
             TextView turn=a.label(at.adding?"▴":"▾",MainActivity.QUIET,a.MUTED);turn.setPadding(a.dp(12),0,0,0);
@@ -625,6 +639,11 @@ final class PeopleBox {
         // What they have, thing by thing, with the rights on each changed here or taken away; what came through a group says
         // which, and changed here it becomes their own.
         body.addView(a.part("Shared with "+who.name));
+        // One of mine: what it may do with everything first, Nothing yet where it was added with nothing (decision 255).
+        if(who.mine&&who.paired()) {
+            body.addView(a.ownDeviceRow(who,r.bond,"Everything",this::draw));
+            body.addView(a.under(r.bond==null?Sharing.NOTHING_YET_DOES:Sharing.everythingDoes(r.bond.level)));
+        }
         for(final NoteStore.Shared one:r.shared)
             body.addView(thing(one,why(one,one.group.isEmpty()?null:"through "+r.groupName(one.group),who.name),one.mayChange,one.level,
                 to->rights(one.scope,one.target,who,one.rule,to,this::draw),()->rights(one.scope,one.target,who,one.rule,Sharing.Level.GONE,this::draw)));

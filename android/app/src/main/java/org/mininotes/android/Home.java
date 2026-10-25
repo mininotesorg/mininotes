@@ -417,9 +417,10 @@ final class Home {
     /** One plain line for the PC's settings on what it holds, never who for by name or what. */
     static String said(int holding,int collecting) {
         if(holding<0)return "";
-        if(holding>0)return "Holding "+(holding==1?"1 message":holding+" messages")+" for your phones until they collect "+(holding==1?"it.":"them.");
-        if(collecting>0)return "Your phones collect from this PC, with no relay between.";
-        return "Your phones collect from this PC when they can reach it.";
+        if(holding>0)return holding==1?Say.t("Holding 1 message for your phones until they collect it.")
+            :Say.t("Holding {0} messages for your phones until they collect them.",holding);
+        if(collecting>0)return Say.t("Your phones collect from this PC, with no relay between.");
+        return Say.t("Your phones collect from this PC when they can reach it.");
     }
 
     // ---- a device leaving something, and collecting it -----------------------------------------------------

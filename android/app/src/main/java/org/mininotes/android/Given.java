@@ -106,32 +106,36 @@ final class Given {
             String k=kind==null?"":kind.toLowerCase(Locale.ROOT);
             pictures&=k.startsWith("image/");videos&=k.startsWith("video/");pdfs&=k.equals("application/pdf");
         }
-        String one=pictures?"picture":videos?"video":pdfs?"PDF":"file";
-        if(n==1)return "A "+one;
-        return n+" "+one+"s";
+        // In the language in use (decision 256): one phrase for one, and one for a count, of each kind.
+        if(pictures)return n==1?Say.t("A picture"):Say.t("{0} pictures",n);
+        if(videos)return n==1?Say.t("A video"):Say.t("{0} videos",n);
+        if(pdfs)return n==1?Say.t("A PDF"):Say.t("{0} PDFs",n);
+        return n==1?Say.t("A file"):Say.t("{0} files",n);
     }
 
     /** The line on the busy strip while files are copied in. */
-    static String adding(int files){return files==1?"Adding the file…":"Adding "+files+" files…";}
+    static String adding(int files){return files==1?Say.t("Adding the file…"):Say.t("Adding {0} files…",files);}
 
     /**
      * The one line said once they are in. The name when there was one, a count when there were more, and
      * how many were not taken - which ones, and why, are said in a box of their own.
      */
     static String added(int kept,String onlyName,int refused) {
-        String done=kept==0?"Nothing was added":kept==1?(onlyName==null||onlyName.isEmpty()?"1 file":onlyName)+" added"
-            :kept+" files added";
-        return refused==0||kept==0?done:done+", "+refused+" not";
+        if(kept==0)return Say.t("Nothing was added");
+        boolean named=kept==1&&onlyName!=null&&!onlyName.isEmpty(),none=refused==0;
+        if(kept==1)return named?(none?Say.t("{0} added",onlyName):Say.t("{0} added, {1} not",onlyName,refused))
+            :(none?Say.t("1 file added"):Say.t("1 file added, {0} not",refused));
+        return none?Say.t("{0} files added",kept):Say.t("{0} files added, {1} not",kept,refused);
     }
 
     /** One file that was not taken, and why, for the list that says so. */
-    static String refusal(String name,String why){return Attachment.named(name)+" – "+why;}
+    static String refusal(String name,String why){return Attachment.named(name)+" – "+Say.t(why);}
 
     /** The box listing what was not taken. */
     static String refusals(List<String> lines) {
-        StringBuilder said=new StringBuilder(lines.size()==1?"This was not added:\n\n":"These were not added:\n\n");
+        StringBuilder said=new StringBuilder(Say.t(lines.size()==1?"This was not added:":"These were not added:")).append("\n\n");
         for(String line:lines)said.append(line).append('\n');
-        return said.append("\nNothing else was changed.").toString().trim();
+        return said.append('\n').append(Say.t("Nothing else was changed.")).toString().trim();
     }
 
     /** Why a file was not taken, in the few words each reason needs. */

@@ -108,6 +108,71 @@ public class WordsEverywhereTest {
         assertTrue(bareWords("\"v\"+VERSION").isEmpty());
     }
 
+    /**
+     * A fourth rule (decision 256; the owner, 2026-10-25, a PC set to French: "the error message, Pro could not reach
+     * PixelPro is also in english"): the shared classes that build sentences for both apps' screens build each one as a
+     * phrase of the lists, Say.t("{0} could not reach {1}", …), never English glued to a name, "…"+who+" could not reach "
+     * +…, which no list can say in another language. Words handed to a call (Say.t, an exception, a log) are that call's;
+     * words glued to words are one constant. What is left is named here with why.
+     */
+    static final List<String> SENTENCES=List.of("Unsent","NoteLine","Waits","Looks","Given","Shrink","FirstShare","Drop","Home","Routes",
+        "Recording","PrivateSpace","Things","Persons","Linking","Help","Parlons","Called","Sharing","SyncStatus","Sections");
+    static final Set<String> GLUED_ON_PURPOSE=Set.of(
+        "Unsent.java \"something else (\"",            // a log line's kind of failure, never on a screen
+        "Drop.java \"more than \"",                       // a constant, "more than 20 files at once", listed as it is
+        "Drop.java \" files at once\"",
+        "Recording.java \"Recording \"",                  // a file's name, kept as data
+        "Help.java \"geo:\"","Help.java \"https://www.openstreetmap.org/?mlat=\"","Help.java \"&mlon=\"","Help.java \"#map=17/\"",
+        "Sharing.java \"the collection \"","Sharing.java \"the note \"","Sharing.java \"the file \"", // an offer as it travels, read by every build
+        "Sharing.java \" folder\"",                       // Sharing.shortly: the name in a title the phone puts together itself
+        "Sections.java \"Page \"");                       // a tab's name written into the note's own text
+    @Test public void sharedSentencesAreNotGluedEnglish() throws Exception {
+        List<String> glued=new ArrayList<>();
+        for(String name:SENTENCES) {
+            String file=name+".java",text=noComments(Files.readString(ROOT.resolve("android/app/src/main/java/org/mininotes/android").resolve(file),StandardCharsets.UTF_8));
+            for(String[] one:glued(text))if(!GLUED_ON_PURPOSE.contains(file+" "+one[1]))glued.add(file+":"+one[0]+"  "+one[1]);
+        }
+        assertTrue(glued.size()+" sentences in shared classes are English glued to a name or a number, which stays English in every language:\n"
+            +String.join("\n",glued),glued.isEmpty());
+    }
+    @Test public void theGuardFindsGluedSentences() {
+        assertEquals(List.of("\" could not reach \""),glued("return what+\" could not reach \"+who;").stream().map(one->one[1]).toList());
+        assertTrue(glued("return Say.t(\"{0} could not reach {1}\",what,who);").isEmpty());
+        assertTrue(glued("static final String A=\"Pictures you add\"\n    +\" are made smaller.\";").isEmpty());
+        assertTrue(glued("throw new IllegalArgumentException(\"Too long: \"+n);").isEmpty());
+        assertTrue(glued("return where+\" · \"+owed;").isEmpty());
+    }
+
+    /** Each literal with words in it glued with + to something that is not another literal, outside any call: line and words. */
+    static List<String[]> glued(String text) {
+        List<String[]> found=new ArrayList<>();
+        for(int i=0;i<text.length();i++) {
+            char c=text.charAt(i);
+            if(c=='('&&i>0&&(Character.isJavaIdentifierPart(text.charAt(i-1))||text.charAt(i-1)=='>')){i=closing(text,i+1);continue;}
+            if(c=='\''){i=literalEnd(text,i)-1;continue;}
+            if(c!='"')continue;
+            int end=literalEnd(text,i);String said=text.substring(i,end);
+            String before=text.substring(0,i).stripTrailing(),after=text.substring(end).stripLeading();
+            boolean left=before.endsWith("+")&&!before.substring(0,before.length()-1).stripTrailing().endsWith("\"");
+            boolean right=after.startsWith("+")&&!after.substring(1).stripLeading().startsWith("\"");
+            if((left||right)&&words(said.substring(1,said.length()-1)))found.add(new String[]{String.valueOf(text.substring(0,i).split("\n",-1).length),said});
+            i=end-1;
+        }
+        return found;
+    }
+    /** The source without its comments, line for line, so a line number still points at the line. */
+    static String noComments(String text) {
+        StringBuilder out=new StringBuilder();
+        for(int i=0;i<text.length();i++) {
+            char c=text.charAt(i);
+            if(c=='"'||c=='\''){int end=literalEnd(text,i);out.append(text,i,end);i=end-1;continue;}
+            if(text.startsWith("//",i)){int end=text.indexOf('\n',i);if(end<0)end=text.length();i=end-1;continue;}
+            if(text.startsWith("/*",i)){int end=text.indexOf("*/",i);end=end<0?text.length():end+2;for(int k=i;k<end;k++)if(text.charAt(k)=='\n')out.append('\n');i=end-1;continue;}
+            out.append(c);
+        }
+        return out.toString();
+    }
+
     /** The words in quotes an argument hands on as they are: not inside Say.t or any other call, nor in a class body. */
     static List<String> bareWords(String argument) {
         List<String> found=new ArrayList<>();

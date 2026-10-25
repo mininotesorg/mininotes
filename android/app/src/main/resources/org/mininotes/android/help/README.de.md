@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 afc0641c40eed2999c2ac47e7f27c64cd554ed024330bd7b8c9cbe20b18a265d -->
+<!-- Translated from README.md, SHA-256 a78f7778ee3e66851fb3a075691b87fc51902d2d0cebd76aceca20322bba7a36 -->
 
 # Mininotes
 
@@ -44,6 +44,22 @@ Alles reist Ende zu Ende versiegelt über das Minima-Netzwerk oder direkt von Ge
 ## 1. Neuigkeiten
 
 Das Neueste zuerst. Jede Version ist auf Telefon und PC gleich, sofern nichts anderes dasteht.
+
+### 0.4.030
+
+- *Personen und Geräte* hat ein einziges rundes +, das die Kamera öffnet: Scanne den Code des anderen Geräts, sag dann,
+  was es ist (eines deiner Geräte oder jemand anderes), leg es in eine Gruppe, wenn du willst, und wähle, was es
+  bekommt. *Meinen Code zeigen* steht daneben.
+- Ein Telefon, das nach einer Abwesenheit zurück ist, wird nicht mehr langsam: Was während seiner Abwesenheit für es
+  aufbewahrt wurde, kommt einmal und wird einmal beantwortet.
+
+### 0.4.029
+
+- *Mein Gerät hinzufügen* fragt zuerst, was das neue Gerät bekommt: *Noch nichts*, oder alles zum Lesen oder zum
+  Schreiben. Mit *Noch nichts* ist es eines deiner Geräte, bekommt, was du danach mit ihm teilst, und du wählst auf
+  seiner Zeile in *Personen und Geräte*. Sein Fenster öffnet sich sofort.
+- Meldungen, die aus Namen gebaut sind, etwa eine Notiz, die ein Gerät nicht erreichen konnte, oder was ein
+  Kopplungscode anbietet, sind in deiner Sprache, auf dem Gerät, das sie zeigt.
 
 ### 0.4.028
 

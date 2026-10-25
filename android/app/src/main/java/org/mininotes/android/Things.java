@@ -179,10 +179,11 @@ final class Things {
 
     /** What a collection holds, in a few words: "3 collections · 2 notes", "5 notes", or "Empty". */
     static String holds(int collections,int notes) {
-        String inner=collections==1?"1 folder":collections+" folders";
-        String pages=notes==1?"1 note":notes+" notes";
+        // In the language in use (decision 256): a phrase for one and one for a count.
+        String inner=collections==1?Say.t("1 folder"):Say.t("{0} folders",collections);
+        String pages=notes==1?Say.t("1 note"):Say.t("{0} notes",notes);
         if(collections>0&&notes>0)return inner+" · "+pages;
         if(collections>0)return inner;
-        return notes>0?pages:"Empty";
+        return notes>0?pages:Say.t("Empty");
     }
 }

@@ -82,9 +82,10 @@ final class PrivateSpace {
      * needed at one a minute; or Saved.
      */
     static String saying(boolean full,int batchesLeft) {
-        if(full)return "Private storage is full";
-        if(batchesLeft<=0)return "Saved";
-        return "Saving privately… "+(batchesLeft==1?"less than a minute":"about "+batchesLeft+" minutes")+" left. Keep Mininotes open.";
+        if(full)return Say.t("Private storage is full");
+        if(batchesLeft<=0)return Say.t("Saved");
+        return batchesLeft==1?Say.t("Saving privately… less than a minute left. Keep Mininotes open.")
+            :Say.t("Saving privately… about {0} minutes left. Keep Mininotes open.",batchesLeft);
     }
     /** What this space's line says now. */
     String saying(boolean full){return saying(full,space.batchesLeft());}

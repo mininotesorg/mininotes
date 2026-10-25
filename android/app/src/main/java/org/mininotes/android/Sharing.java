@@ -30,6 +30,32 @@ final class Sharing {
     static final String EVERYTHING="*";
 
     /**
+     * What an Add my device code names when it offers nothing yet (decision 255; the owner, 2026-10-25: "I wanted to only
+     * have the new device in my connected device, not necessary share everything. Just adding it and then choosing"). Its
+     * scope is the library's, so whatever scans it, a build from before included, counts the device that showed it as its
+     * owner's; the device that showed it adds the other as one of the owner's with no bond with everything. Never the target
+     * of a rule.
+     */
+    static final String MINE_ONLY="mine";
+    /** The words such a code carries, which a build from before shows as they are, as it shows any offer's. */
+    static final String MINE_OFFER="this device as one of yours, nothing shared yet";
+    /** Whether a code or a hello names that: one of the owner's devices, with nothing yet. */
+    static boolean mineOnly(String scope,String target) {
+        return Scope.LIBRARY.name().equals(Pairing.scopeIn(scope))&&MINE_ONLY.equals(target);
+    }
+
+    /** What a device of mine with no bond with everything is said to have, and under it what that means. */
+    static final String NOTHING_YET="Nothing yet";
+    static final String NOTHING_YET_DOES="One of your devices. It gets what you share with it, and Temp. Choose here what it may do with everything.";
+
+    /** What a role on everything lets one of my devices do, where it is chosen: Can write or Can read, of everything here. */
+    static String everythingDoes(Level level) {
+        if(level==Level.WRITE)return "Everything here. It can read it and change it.";
+        if(level==Level.READ)return "Everything here. It can see it and get changes.";
+        return level==null?NOTHING_YET_DOES:level.does();
+    }
+
+    /**
      * What a share lets the other end do.
      *
      * <p>Three, because two was not enough to say the thing people actually mean. Reading is a copy that
@@ -284,8 +310,9 @@ final class Sharing {
      * whoever starts or stops having it, and, for one shared on its own, that its own people keep it whatever the move.
      */
     static String fileMoveSaid(boolean alone) {
-        return "Whoever starts receiving it gets it now. What has already reached somebody stays with them."
-            +(alone?" The people it is shared with on its own keep it, wherever it is.":"");
+        // Two sentences, each said in the language in use (decision 256).
+        String said=Say.t("Whoever starts receiving it gets it now. What has already reached somebody stays with them.");
+        return alone?said+" "+Say.t("The people it is shared with on its own keep it, wherever it is."):said;
     }
 
     /** What a file's share code says to whoever shows it (decision 93): a build from before files went on their own cannot take one. */
@@ -329,17 +356,20 @@ final class Sharing {
      * @param brief tiles are narrow, so they take the first half and leave the counting to the cards
      */
     static String says(State state,int owed,boolean brief) {
-        String where;
+        boolean mine;
         switch(state) {
-            case DEVICES: where="My devices"; break;
-            case OTHERS: where="Shared"; break;
+            case DEVICES: mine=true; break;
+            case OTHERS: mine=false; break;
             // "Another device" rather than "somebody else": what arrives may be from your own tablet as
             // easily as from a friend, and calling both of them somebody else was wrong half the time.
-            case THEIRS: return brief?"From a device":"From another device";
+            case THEIRS: return Say.t(brief?"From a device":"From another device");
             default: return null;
         }
+        // In the language in use (decision 256), each way of saying it a phrase of its own.
+        String where=Say.t(mine?"My devices":"Shared");
         if(brief)return owed>0?where+" · "+owed:where;
-        return owed>0?where+" · "+owed+" waiting":where+" · up to date";
+        if(mine)return owed>0?Say.t("My devices · {0} waiting",owed):Say.t("My devices · up to date");
+        return owed>0?Say.t("Shared · {0} waiting",owed):Say.t("Shared · up to date");
     }
 
     /** What is being shared, in as few words as a title can carry — the thing, and what kind of thing. */
@@ -373,26 +403,45 @@ final class Sharing {
      */
     static String shown(String offer) {
         if(offer==null)return "";
-        return offer.startsWith("the collection ")?"the folder "+offer.substring(15):offer;
+        // It travels in English, which every build reads; it is said here in the language of the device showing it (decision
+        // 256: an offer from a PC showed in English on a phone), the thing's name kept as its owner wrote it.
+        if(offer.startsWith("the collection "))return Say.t("the folder {0}",offer.substring(15));
+        if(offer.startsWith("the note "))return Say.t("the note {0}",offer.substring(9));
+        if(offer.startsWith("the file "))return Say.t("the file {0}",offer.substring(9));
+        return Say.t(offer);
+    }
+
+    /**
+     * What a code offered, said on the device that showed it once somebody scanned it: everything, or the thing by its name,
+     * in the language in use. Where the thing has no name left, it is "this folder", "this file", "this note".
+     */
+    static String offering(Scope scope,String name) {
+        boolean named=name!=null&&!name.isBlank();
+        switch(scope) {
+            case LIBRARY: return Say.t("every folder and note");
+            case COLLECTION: case BOOK: case THING: return named?Say.t("the folder “{0}”",name.trim()):Say.t("this folder");
+            case FILE: return named?Say.t("the file “{0}”",name.trim()):Say.t("this file");
+            default: return Say.t("this note");
+        }
     }
 
     /** What that mark means, said in full for anybody who cannot see it. */
     static String describe(State state,int addresses) {
         switch(state) {
-            case DEVICES: return addresses==1?"On one device of yours":"On "+addresses+" devices of yours";
-            case OTHERS: return addresses==1?"Shared with one address":"Shared with "+addresses+" addresses";
-            case THEIRS: return "Shared with you by another device";
-            default: return "On this device only";
+            case DEVICES: return addresses==1?Say.t("On one device of yours"):Say.t("On {0} devices of yours",addresses);
+            case OTHERS: return addresses==1?Say.t("Shared with one address"):Say.t("Shared with {0} addresses",addresses);
+            case THEIRS: return Say.t("Shared with you by another device");
+            default: return Say.t("On this device only");
         }
     }
 
     /** What the reader is told they are sharing, at each level. */
     static String describe(Scope scope,String name) {
         switch(scope) {
-            case LIBRARY: return "every folder and note";
-            case COLLECTION: case BOOK: case THING: return "the folder "+name+", and everything in it";
-            case FILE: return "the file "+name;
-            default: return "this note";
+            case LIBRARY: return Say.t("every folder and note");
+            case COLLECTION: case BOOK: case THING: return Say.t("the folder {0}, and everything in it",name);
+            case FILE: return Say.t("the file {0}",name);
+            default: return Say.t("this note");
         }
     }
 

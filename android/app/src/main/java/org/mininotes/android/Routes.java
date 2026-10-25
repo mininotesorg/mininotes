@@ -124,7 +124,7 @@ final class Routes {
 
     /** "Last sent: direct, 2 min ago", or empty where nothing has gone to it since the record began. */
     static String lastSent(Last last,long now) {
-        return last==null?"":"Last sent: "+last.way().said+", "+ago(now-last.at());
+        return last==null?"":Say.t("Last sent: {0}, {1}",Say.t(last.way().said),ago(now-last.at()));
     }
 
     /**
@@ -141,13 +141,13 @@ final class Routes {
     }
 
     static String ago(long ms) {
-        if(ms<60_000L)return "just now";
+        if(ms<60_000L)return Say.t("just now");
         long minutes=ms/60_000L;
-        if(minutes<60)return minutes+" min ago";
+        if(minutes<60)return Say.t("{0} min ago",minutes);
         long hours=minutes/60;
-        if(hours<24)return hours+" h ago";
+        if(hours<24)return Say.t("{0} h ago",hours);
         long days=hours/24;
-        return days==1?"yesterday":days+" days ago";
+        return days==1?Say.t("yesterday"):Say.t("{0} days ago",days);
     }
 
     /**
@@ -158,14 +158,17 @@ final class Routes {
      * @param near  how many paired devices are heard on this network now
      */
     static String doorLine(boolean running,int door,int near) {
-        if(!running)return "Direct connections: "+NOT_STARTED.toLowerCase(java.util.Locale.ROOT);
-        if(door<=0)return "Direct connections: closed, this device could not open its door";
-        return "Direct connections: open on port "+door+(near<=0?"":near==1?" · 1 device on this Wi-Fi":" · "+near+" devices on this Wi-Fi");
+        // In the language in use (decision 256): each line one phrase, the port and how many in their places.
+        if(!running)return Say.t("Direct connections: not connected yet");
+        if(door<=0)return Say.t("Direct connections: closed, this device could not open its door");
+        if(near<=0)return Say.t("Direct connections: open on port {0}",door);
+        return near==1?Say.t("Direct connections: open on port {0} · 1 device on this Wi-Fi",door)
+            :Say.t("Direct connections: open on port {0} · {1} devices on this Wi-Fi",door,near);
     }
 
     static String travelLine(boolean helpers) {
-        return helpers?"Notes travel with helpers: direct when they can, through a relay when not"
-            :"Notes travel only between my devices: direct, never through a relay";
+        return Say.t(helpers?"Notes travel with helpers: direct when they can, through a relay when not"
+            :"Notes travel only between my devices: direct, never through a relay");
     }
 
     // ---- files near first ------------------------------------------------------------------------------------

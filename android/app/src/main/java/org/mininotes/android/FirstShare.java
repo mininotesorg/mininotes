@@ -36,52 +36,57 @@ final class FirstShare {
      */
     static String title(List<String> senders,int count,String onlyName) {
         String who=names(senders);
-        if(count<=1)return who+" shared “"+(onlyName==null||onlyName.isBlank()?"something":onlyName.trim())+"” with you";
-        return who+" shared "+count+" things with you";
+        if(count>1)return Say.t("{0} shared {1} things with you",who,count);
+        return onlyName==null||onlyName.isBlank()?Say.t("{0} shared something with you",who):Say.t("{0} shared “{1}” with you",who,onlyName.trim());
     }
 
     /** "Ana", "Ana and Ben", "Ana, Ben and Cy": people as a sentence names them. Somebody where nobody is known. */
     static String names(List<String> who) {
-        if(who==null||who.isEmpty())return "Somebody";
+        if(who==null||who.isEmpty())return Say.t("Somebody");
         if(who.size()==1)return who.get(0);
-        return String.join(", ",who.subList(0,who.size()-1))+" and "+who.get(who.size()-1);
+        return Parlons.names(who);
     }
 
     /** What it is and the rights given, under the pop-up's line: "A folder · Can write". */
     static String what(NoteStore.Branch.Kind kind,Sharing.Level level) {
-        String it=kind==NoteStore.Branch.Kind.PAGE?"A note":kind==NoteStore.Branch.Kind.FILE||kind==NoteStore.Branch.Kind.WAITING?"A file":"A folder";
-        return level==null||level==Sharing.Level.GONE?it:it+" · "+level.words();
+        String it=Say.t(kind==NoteStore.Branch.Kind.PAGE?"A note":kind==NoteStore.Branch.Kind.FILE||kind==NoteStore.Branch.Kind.WAITING?"A file":"A folder");
+        return level==null||level==Sharing.Level.GONE?it:it+" · "+Say.t(level.words());
     }
 
     /** A line in Waiting for you, under its name: "from Ana · Can write". */
     static String from(String who,Sharing.Level level) {
-        String said="from "+(who==null||who.isBlank()?"somebody":who.trim());
-        return level==null||level==Sharing.Level.GONE?said:said+" · "+level.words();
+        String said=who==null||who.isBlank()?Say.t("from somebody"):Say.t("from {0}",who.trim());
+        return level==null||level==Sharing.Level.GONE?said:said+" · "+Say.t(level.words());
     }
 
     /** The Refuse box's title. */
-    static String refuseTitle(String name){return "Refuse “"+named(name)+"”?";}
+    static String refuseTitle(String name){return name==null||name.isBlank()?Say.t("Refuse it?"):Say.t("Refuse “{0}”?",name.trim());}
 
     /** The blocked-sender row's question, before the record is deleted. */
     static String deleteBlocked(String name) {
-        String who=name==null||name.isBlank()?"this sender":name.trim();
-        return "Delete “"+who+"”?";
+        return name==null||name.isBlank()?Say.t("Delete this sender?"):Say.t("Delete “{0}”?",name.trim());
     }
 
     /** Said once it is accepted, where it is now: Home for a note or a folder, where files shared with you go for a file. */
-    static String accepted(String name,String where){return "“"+named(name)+"” is "+(where==null||where.isBlank()||"Home".equals(where)?"on Home":"in "+where)+" now";}
+    static String accepted(String name,String where) {
+        boolean home=where==null||where.isBlank()||"Home".equals(where);
+        if(name==null||name.isBlank())return home?Say.t("It is on Home now"):Say.t("It is in {0} now",where);
+        return home?Say.t("“{0}” is on Home now",name.trim()):Say.t("“{0}” is in {1} now",name.trim(),where);
+    }
 
     /** Said once it is refused. */
     static String refusedSaid(boolean told,int reached) {
-        if(!told)return "Refused quietly. It is deleted here";
-        return reached>0?"Refused, and they were told. It is deleted here":"Refused. They could not be reached now, so they were not told. It is deleted here";
+        if(!told)return Say.t("Refused quietly. It is deleted here");
+        return Say.t(reached>0?"Refused, and they were told. It is deleted here":"Refused. They could not be reached now, so they were not told. It is deleted here");
     }
 
     /** The sender's notice: "Parisa refused “Saturday market”", and their words under it where they wrote any. */
     static String notice(String who,String name,String words) {
-        String said=(who==null||who.isBlank()?"Somebody":who.trim())+" refused “"+named(name)+"”";
+        boolean somebody=who==null||who.isBlank(),something=name==null||name.isBlank();
+        String said=somebody?(something?Say.t("Somebody refused something"):Say.t("Somebody refused “{0}”",name.trim()))
+            :(something?Say.t("{0} refused something",who.trim()):Say.t("{0} refused “{1}”",who.trim(),name.trim()));
+        // Their own words, as they wrote them.
         return words==null||words.isBlank()?said:said+"\n“"+words.trim()+"”";
     }
 
-    private static String named(String name){return name==null||name.isBlank()?"something":name.trim();}
 }

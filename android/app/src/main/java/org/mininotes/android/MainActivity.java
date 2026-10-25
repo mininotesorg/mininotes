@@ -568,8 +568,9 @@ public final class MainActivity extends Activity {
         busyWords.setTextColor(INK);
         busyTurning.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(MUTED));
         busyTurning.setVisibility(going?View.VISIBLE:View.GONE);
-        busyWords.setText(what);
-        busyStrip.setContentDescription(what);
+        // In the language in use, as the PC's status line says it: a sentence built around a name is matched to its phrase.
+        busyWords.setText(Say.t(what));
+        busyStrip.setContentDescription(Say.t(what));
         // On the window rather than on the screen that is showing: screens are rebuilt as somebody moves
         // about, and what is going on goes on whichever of them they are looking at.
         android.view.ViewGroup window=(android.view.ViewGroup)getWindow().getDecorView();
@@ -1596,6 +1597,8 @@ public final class MainActivity extends Activity {
     private TextView noteWords;
     /** What a tap on those words does: null for what a tap on the mark does, or the reasons behind "see why". */
     private Runnable wordsClicked;
+    /** What the line was given, before it is said in the language in use: what the checks on it read, as on the PC. */
+    private String noteWordsSaid="";
     private final Runnable wordsAway=()->noteSays(null,null,null);
 
     /** The open note's syncing said on its own line; gone a few seconds later unless it is still going on. Null clears it. */
@@ -1603,9 +1606,9 @@ public final class MainActivity extends Activity {
         handler.removeCallbacks(wordsAway);
         if(noteWords==null)return;
         boolean said=words!=null&&!words.trim().isEmpty()&&tone!=null;
-        noteWords.setText(said?words:"");noteWords.setVisibility(said?View.VISIBLE:View.GONE);wordsClicked=said?click:null;
+        noteWordsSaid=said?words:"";noteWords.setText(said?Say.t(words):"");noteWords.setVisibility(said?View.VISIBLE:View.GONE);wordsClicked=said?click:null;
         if(!said)return;
-        noteWords.setTextColor(inkOf(tone.mark));noteWords.setContentDescription(words);
+        noteWords.setTextColor(inkOf(tone.mark));noteWords.setContentDescription(Say.t(words));
         // Something that could not go stays until it is tapped or the next send goes: gone after five seconds, it
         // was gone before anybody could tap "see why".
         if(!NoteLine.stays(words)&&tone!=NoteLine.Tone.FAILED)handler.postDelayed(wordsAway,5000);
@@ -1633,7 +1636,7 @@ public final class MainActivity extends Activity {
         else if(done.sent>0)noteSays(NoteLine.sent(namesShown()),NoteLine.Tone.DONE,null);
         else if(asked)noteSays(NoteLine.NOTHING,NoteLine.Tone.DONE,null);
         // Nothing went by itself: the "Sending…" that went ahead of it is taken down, and new typing is left saying so.
-        else if(noteWords!=null&&noteWords.getText().toString().startsWith("Sending"))noteSays(null,null,null);
+        else if(noteWords!=null&&NoteLine.isSending(noteWordsSaid))noteSays(null,null,null);
     }
 
     /** A send of the open note that threw: on its line, with the words it threw with behind the tap. */
@@ -2811,7 +2814,7 @@ public final class MainActivity extends Activity {
         String titleWas=keptTitle==null?"":keptTitle;
         if(whole().equals(kept)&&titleNow.equals(titleWas)) {
             saved=edits;failed=false;saidState();
-            if(noteWords!=null&&NoteLine.SAVING.contentEquals(noteWords.getText()))noteSays(null,null,null);
+            if(noteWords!=null&&NoteLine.SAVING.equals(noteWordsSaid))noteSays(null,null,null);
             // The mark that went to waiting at the first key says again where the note stands.
             askWhatIsOwed();refreshOwed();
             // No words, but kept all the same by a file put on it: in the place its + was, as its first word would put it
@@ -2852,7 +2855,7 @@ public final class MainActivity extends Activity {
                    // A new note is one of the things open from its first written word.
                    homeScreen().noteOpened(written);
                    saved=Math.max(saved,attempt);failed=false;saidState();
-                   if(saved==edits&&noteWords!=null&&NoteLine.SAVING.contentEquals(noteWords.getText()))noteSays(null,null,null);
+                   if(saved==edits&&noteWords!=null&&NoteLine.SAVING.equals(noteWordsSaid))noteSays(null,null,null);
                    askWhatIsOwed();refreshOwed();},
             error->{if(active==note)warn();
                 else if(active==null&&!shelves)recover(written);
@@ -5532,12 +5535,19 @@ public final class MainActivity extends Activity {
             long age=System.currentTimeMillis()-at;
             if(age>=0&&age<15*60_000L&&them.level.ordinal()<=level.ordinal()){giveItTo(them,scope);return;}
         } catch(NumberFormatException old){/* asked below */}
+        // Add my device with nothing yet (decision 255), from a code shown a while ago: asked, then added with nothing.
+        if(Sharing.mineOnly(scope.name(),them.target)) {
+            new Box().setTitle(Say.t("Add {0} as one of your devices?",them.name))
+                .setMessage(Say.t("{0} scanned your code to be one of your devices.",them.name))
+                .setPositiveButton(Say.t("Add it"),(d,w)->giveItTo(them,scope)).setNegativeButton(Say.t("Cancel"),null).show();
+            return;
+        }
         background.submit(()->store.nameOf(them.target,scope==Sharing.Scope.COLLECTION),called->{
-            String what=called==null||called.toString().trim().isEmpty()
-                ?Sharing.describe(scope,"this"):Sharing.shortly(scope,called.toString());
-            new Box().setTitle(them.name+" accepted")
-                .setMessage(them.name+" scanned the code offering "+what+", as "
-                    +them.level.words()+": "+them.level.does()+"\n\nGive it to them?")
+            // In this phone's language (decision 256), what was offered named as this phone names it.
+            String what=Sharing.offering(scope,called==null?"":called.toString());
+            new Box().setTitle(Say.t("{0} accepted",them.name))
+                .setMessage(Say.t("{0} scanned the code offering {1}, as {2}: {3}",them.name,what,Say.t(them.level.words()),Say.t(them.level.does()))
+                    +"\n\n"+Say.t("Give it to them?"))
                 .setPositiveButton("Give it to them",(d,w)->giveItTo(them,scope))
                 .show();
         },e->{});
@@ -5580,30 +5590,54 @@ public final class MainActivity extends Activity {
     private TextView codeWaiting;private String codeWaitingFor="";
     /** That line, saying something new, if the code up offers this thing. */
     private void codeSays(String target,String words) {
-        if(codeWaiting!=null&&codeWaiting.isAttachedToWindow()&&target.equals(codeWaitingFor))codeWaiting.setText(words);
+        if(codeWaiting!=null&&codeWaiting.isAttachedToWindow()&&target.equals(codeWaitingFor))codeWaiting.setText(Say.t(words));
     }
 
     /** Saved as a device, given what they accepted, and sent it — in that order and in one go. */
     private void giveItTo(final Hello.Said them,final Sharing.Scope scope) {
-        final int job=busy("Adding "+them.name+"\u2026");
-        codeSays(them.target,them.name+" accepted. Sending it to them\u2026");
+        if(Sharing.mineOnly(scope.name(),them.target)){addMine(them);return;}
+        final int job=busy(Say.t("Adding {0}…",them.name));
+        codeSays(them.target,Say.t("{0} accepted. Sending it to them…",them.name));
         network.submit(()->{
-            store.pairedWith(them.address,them.name,false,them.agreement,them.signing);
-            // Everything, accepted: that is another device of the owner's, and it is marked as theirs here.
-            if(scope==Sharing.Scope.LIBRARY)Post.bonded(this,store,them);
-            busySay(job,"Finding "+them.name+" on the network\u2026");
+            // Everything, accepted: that is another device of the owner's, marked as theirs here and given everything.
+            if(scope==Sharing.Scope.LIBRARY)Post.addedAsMine(this,store,them,them.level);
+            else store.pairedWith(them.address,them.name,false,them.agreement,them.signing);
+            busySay(job,Say.t("Finding {0} on the network…",them.name));
             try {
                 String key=Node.introduce(this,them.address);
                 if(!key.isEmpty())store.knownAs(them.address,key);
             } catch(Exception notNow){/* the address they sent still works until it does not */}
-            store.give(scope,them.target,them.address,them.level,null);
+            if(scope!=Sharing.Scope.LIBRARY)store.give(scope,them.target,them.address,them.level,null);
             Listening.settle(this);
             return null;
         // It said "has it" here, before a word had been sent. What it says now is what is true: the
         // sending is next, and the strip goes on into it.
         },done->{askToSaySo();refresh();refreshOwed();sendAfterSharing(scope,them.target,job,them.name);
-                codeSays(them.target,them.name+" accepted. It is on its way to them: show the code to somebody else, or close.");},
-            e->{busyDone(job,null);codeSays(them.target,"Could not give it to "+them.name+".");alert("Could not give it to them. Nothing was changed.");});
+                codeSays(them.target,Say.t("{0} accepted. It is on its way to them: show the code to somebody else, or close.",them.name));},
+            e->{busyDone(job,null);codeSays(them.target,Say.t("Could not give it to {0}.",them.name));alert("Could not give it to them. Nothing was changed.");});
+    }
+
+    /**
+     * A device that scanned Add my device offering nothing yet (decision 255): one of mine, with the cards a device of mine
+     * has, and nothing of everything; answered, so it stops saying that it accepted. What it gets is chosen on its line.
+     */
+    private void addMine(final Hello.Said them) {
+        final int job=busy(Say.t("Adding {0}…",them.name));
+        network.submit(()->{
+            Post.addedAsMine(this,store,them,null);
+            try {
+                String key=Node.introduce(this,them.address);
+                if(!key.isEmpty())store.knownAs(them.address,key);
+            } catch(Exception notNow){/* the address they sent still works until it does not */}
+            Listening.settle(this);
+            String mine=getSharedPreferences("settings",MODE_PRIVATE).getString("address","");
+            NoteStore.Contact saved=store.address(them.address);
+            try{Post.helloBack(this,keys(),them,yourName(),mine,saved==null?null:saved.contact);}catch(Exception notNow){/* they say it again until they hear */}
+            return null;
+        },done->{
+            String said=Say.t("{0} is one of your devices now. Nothing is shared with it yet.",them.name);
+            busyDone(job,said);codeSays(them.target,said);refresh();
+        },e->{busyDone(job,null);alert("Could not pair with "+them.name+". Nothing was changed.");});
     }
 
     /** Saved as a device, introduced, and answered, so their phone stops saying hello. */
@@ -7505,40 +7539,19 @@ public final class MainActivity extends Activity {
      * @param then where a plain code, once paired, leads instead of People and devices: the Share with box it was scanned
      *             from, so the note being shared is not forgotten (the connect review, 2026-10-14); null for People
      */
-    private void readPairing(String said,boolean scanned,boolean outside,Runnable then) {
+    private void readPairing(String said,boolean scanned,boolean outside,Runnable then){readPairing(said,scanned,outside,then,null);}
+    /** @param chosen the thing whose Share box the code was scanned from, chosen for them on the path already; null for none */
+    private void readPairing(String said,boolean scanned,boolean outside,Runnable then,final NoteStore.Branch chosen) {
         final Pairing.Said them;
         try{them=Pairing.read(said);}catch(IllegalArgumentException e){alert(e.getMessage());return;}
-        if(scanned) {
-            if(them.offer.isEmpty()&&outside){pairOrAccept(them,"",then);return;}
-            if(them.offer.isEmpty()){keepPairing(them,then);return;}
-            pairOrAccept(them,"",then);
-            return;
-        }
+        // Scanned or pasted, in here or from outside, the one path (decision 258): what it is, a group, what to share, done.
+        // Nothing is kept before its last button, so a camera that opened the app on its own account keeps nothing unasked.
+        if(scanned){new JoiningBox(this,them,"",then,chosen).open();return;}
         // Pasted, or a link from somewhere else: taken as a scanned code is (the owner, 2026-10-02: a pasted code that asked
-        // for six digits the other phone never showed was a dead end). What a paste cannot prove - that nothing changed
-        // it on the way - is said, with the six digits both phones show for each other under People and devices.
+        // for six digits the other phone never showed was a dead end). What a paste cannot prove, that nothing changed it
+        // on the way, is said on the path's first step, with the six digits both phones show for each other.
         background.submit(()->Envelope.code(keys().signing().getPublic(),Keys.publicKey(them.signing)),
-            digits->pairOrAccept(them,digits,then),e->alert("That line's keys could not be read. Nothing was saved."));
-    }
-
-    /**
-     * The one box for a code, scanned or pasted: pair with a device, or accept what somebody shares. A pasted one says so,
-     * and the six digits to check: the same on both phones, under People and devices, means nothing came between them.
-     */
-    private void pairOrAccept(final Pairing.Said them,String digits,final Runnable then) {
-        String pasted=digits.isEmpty()?"":"\n\nPasted, not scanned. To be sure nobody changed it on the way, open People and devices"
-            +" on both phones afterwards: each shows six digits for the other, and they must be the same. Here: "+digits+".";
-        if(them.offer.isEmpty()) {
-            new Box().setTitle("Add "+them.name+"?").setMessage("It will be able to share notes with this phone."+pasted)
-                .setPositiveButton("Pair",(d,w)->keepPairing(them,then)).show();
-            return;
-        }
-        new Box().setTitle(them.name+" is sharing with you")
-            .setMessage(Sharing.shown(them.offer)+"\n\n"+them.level.words()+": "+them.level.does()
-                +(them.writes?" What you write goes back to them.":" Writing in it stays on this phone.")
-                +"\n\n"+"It will appear on Home when it arrives."+pasted)
-            .setPositiveButton("Accept",(d,w)->keepPairing(them,then))
-            .show();
+            digits->new JoiningBox(this,them,digits,then,chosen).open(),e->alert("That line's keys could not be read. Nothing was saved."));
     }
 
     /** The strip that is waiting for what somebody offered to arrive, put away by the arriving. */
@@ -7553,7 +7566,8 @@ public final class MainActivity extends Activity {
      * Wi-Fi: said so, with the one way to reach them offered there and then - helpers, switched on, and the pairing
      * finished (the owner, 2026-10-02: "make sure we can share with everybody"). Not now, and it is kept, and told again.
      */
-    private void helpersFor(final Pairing.Said said,final Runnable then) {
+    private void helpersFor(final Pairing.Said said,final Joining.Choice choice,
+                            final java.util.function.BiConsumer<String,String> ended) {
         new Box().setTitle(said.name+" is on another network")
             .setMessage("This phone sends notes only between your devices, on the same Wi-Fi, so it cannot reach "+said.name
                 +". Helpers can: relays that pass sealed notes on, which they cannot read. Their phone needs them too, if it"
@@ -7561,30 +7575,31 @@ public final class MainActivity extends Activity {
             .setPositiveButton("Use helpers",(d,w)->{
                 final int job=busy("Connecting to your relays\u2026");
                 background.submit(()->{Node.onlyMine(this,false);return null;},
-                    done->{busyDone(job,"Helpers carry notes when needed now");keepPairing(said,then);},
+                    done->{busyDone(job,"Helpers carry notes when needed now");keepPairing(said,choice,ended);},
                     e->busyDone(job,"That could not be changed"));
             })
             .setNegativeButton("Not now",(d,w)->toast(said.name+" is saved. This phone tells them again each time it is opened."))
             .show();
     }
 
-    private void keepPairing(Pairing.Said said,final Runnable then) {
-        final int job=busy("Saving "+said.name+"\u2026");
+    /**
+     * The path's end (decision 258): paired as it was chosen, one of mine or not, told so, then the group and the shares
+     * given and sent, the strip saying each step. {@code ended} has what the path's last step says: how it went, and a second
+     * line or null.
+     */
+    void keepPairing(final Pairing.Said said,final Joining.Choice choice,final java.util.function.BiConsumer<String,String> ended) {
+        final int job=busy(Say.t("Adding {0}…",said.name));
         final String[] unreached={null};
         // A code from another network, while notes go only between the owner's devices: saved, and said plainly.
-        final boolean[] elsewhere={false};
+        final boolean[] elsewhere={false};final int[] failed={0};
         network.submit(()->{
-            // Only a code offering everything - "Add my device" - is one of the owner's own devices;
-            // anybody else's code, or a plain one, is somebody until the switch in People says otherwise.
-            boolean own=Sharing.Scope.LIBRARY.name().equals(said.scope);
-            store.pairedWith(said.address,said.name,own,said.agreement,said.signing);
-            // Scanning their code is wanting them: ignoring them before is forgotten.
-            Invites.unignore(this,said.signing);
-            if(own)store.setMine(said.address,true);
+            // One of mine where the path said so (the code says so for Add my device); anybody else is somebody until the
+            // switch in People says otherwise.
+            Joining.paired(this,store,said,choice.mine);
             // And introduce the two nodes, so what was scanned is the last address either of them has to
             // be told by hand. A failure here is not a failure to pair: the keys are saved either way, and
             // sending falls back to the address on the code until an introduction takes.
-            busySay(job,"Finding "+said.name+" on the network\u2026");
+            busySay(job,Say.t("Finding {0} on the network…",said.name));
             try {
                 String key=Node.introduce(this,said.address);
                 if(!key.isEmpty())store.knownAs(said.address,key);
@@ -7597,46 +7612,51 @@ public final class MainActivity extends Activity {
             {
                 String mine=getSharedPreferences("settings",MODE_PRIVATE).getString("address","");
                 // Kept before it is sent, because the sending may be to a phone nobody is holding.
-                store.accepting(said.address,said.name,said.scope,said.target,said.level);
-                // And what it brings, so it stands on Home as waiting from now (decision 73).
-                store.acceptingOffer(said.address,said.offer);
-                // An earlier copy of it put in the bin or the archive here comes back out: accepting is wanting it.
-                if(!said.target.isEmpty())store.acceptedBack(said.address,said.target);
-                busySay(job,said.target.isEmpty()?Say.t("Asking {0} to accept\u2026",said.name):"Telling "+said.name+" you accepted\u2026");
+                Joining.accepting(store,said);
+                busySay(job,said.target.isEmpty()?Say.t("Asking {0} to accept\u2026",said.name):Say.t("Telling {0} you accepted…",said.name));
                 // Not reaching them is not a failure to pair, and is not reported as one: it used to land
                 // in "Could not save that device. Nothing was changed.", after the device had been saved.
                 // What was accepted is kept, and said again every time this opens until they answer.
                 try{Post.accept(this,keys(),said,yourName(),mine);}
                 catch(Exception notNow){unreached[0]=notNow.getMessage()==null?"":notNow.getMessage();}
             }
+            // Then the rest of the path: the group, and what it gets.
+            Joining.Kept kept=Joining.chosen(store,said,choice);
+            if(kept.everything||kept.grouped||!kept.given.isEmpty()) {
+                busySay(job,Say.t("Sharing with {0}…",said.name));
+                try{failed[0]=Joining.send(this,store,keys(),kept);}catch(Exception notNow){failed[0]=1;}
+            }
             return null;
         },done->{
             // There is somebody to hear from now, so the pad goes on listening after it is closed.
             background.submit(()->{Listening.settle(this);return null;},settled->askToSaySo(),e->{});
+            refresh();people().again();
             if(elsewhere[0]) {
                 busyDone(job,null);
-                helpersFor(said,then);
+                ended.accept(Say.t("{0} could not be reached just now.",said.name),null);
+                helpersFor(said,choice,ended);
                 return;
             }
-            if(said.offer.isEmpty()){
-                busyDone(job,unreached[0]!=null?Say.t("Added. {0} is asked when it is next reachable",said.name):Say.t("Waiting for {0} to accept",said.name));
-                // Back to what it was scanned for, where it was a Share with box: they are in its list now, to be given it.
-                if(then!=null)then.run();else addressBook();
+            // One of mine chosen for a plain code: the other device counts this one as a person until its switch is turned.
+            String more=choice.mine&&!Joining.saysMine(said)?Say.t("On {0}, turn My device on too.",said.name):null;
+            if(!Joining.offers(said)){
+                String how=failed[0]>0?Say.t("Shared, waiting to send"):unreached[0]!=null?Say.t("Added. {0} is asked when it is next reachable",said.name):Say.t("Waiting for {0} to accept",said.name);
+                busyDone(job,how);ended.accept(how,more);
                 return;
             }
             if(unreached[0]!=null) {
                 busyDone(job,null);
-                alert(said.name+" could not be reached just now. This phone tells them again by itself, "
-                    +"each time it is opened, until they answer.");
+                ended.accept(Say.t("{0} could not be reached just now.",said.name),more);
                 return;
             }
+            ended.accept(Say.t("Paired, waiting for {0} to approve and send",said.name),more);
             // Scanning a code says what is being offered; it does not fetch it. Nothing is pulled in this
             // app - the other end sends - so the strip stays up saying what is being waited for, until it
             // arrives or until long enough has gone by to say that it has not.
             busySay(job,"Waiting for "+said.name+" to send it\u2026");
             awaiting=job;
             handler.removeCallbacks(notYet);handler.postDelayed(notYet,120_000);
-        },e->{busyDone(job,null);alert("Could not save that device. Nothing was changed.");});
+        },e->{busyDone(job,null);ended.accept(Say.t("Could not save that device. Nothing was changed."),null);});
     }
 
     /** What this phone calls itself when it introduces itself, and what the other end will list it as. */
@@ -8087,7 +8107,10 @@ public final class MainActivity extends Activity {
     private void scanning(final Consumer<String> said,final Runnable orPaste){scanning(said,orPaste,null);}
 
     /** @param back where the back swipe, or a tap beside the camera, goes; null to close. */
-    private void scanning(final Consumer<String> said,final Runnable orPaste,final Runnable back) {
+    private void scanning(final Consumer<String> said,final Runnable orPaste,final Runnable back){scanning(said,orPaste,back,null);}
+
+    /** @param mine Show my code instead, for the other device to scan this one; null where it is not offered */
+    private void scanning(final Consumer<String> said,final Runnable orPaste,final Runnable back,final Runnable mine) {
         if(!Lens.allowed(this)){Lens.ask(this);waitingToScan=true;waitingFor=said;waitingPaste=orPaste;return;}
         // Square, taken from whatever width it is actually given rather than a number decided in advance:
         // asking for a fixed size got a box the dialog then squeezed sideways, and a window that is not the
@@ -8101,6 +8124,7 @@ public final class MainActivity extends Activity {
         body.addView(looking,place);
         AlertDialog.Builder asking=new Box().setTitle("Scan their code").setView(body);
         if(orPaste!=null)asking.setNeutralButton("Paste instead",(d,w)->orPaste.run());
+        if(mine!=null)asking.setNegativeButton("Show my code instead",(d,w)->mine.run());
         final AlertDialog showing=asking.create();
         if(back!=null)showing.setOnCancelListener(d->back.run());
         final Lens[] lens={null};
@@ -8742,6 +8766,8 @@ public final class MainActivity extends Activity {
     /** @param back where the back swipe, or a tap beside the code, goes: the box it was opened from; null to close. */
     void shareSheet(final Sharing.Scope scope,final String target,final String name,final Runnable back) {
         if(scope==null)return;
+        // Everything is offered only to a device of mine, in its own box (decision 255).
+        if(scope==Sharing.Scope.LIBRARY){addMyDevice(back);return;}
         final String offer=Sharing.travelling(scope,name);
         withAddress(()->drawShareCode(scope,target,name,offer,back));
     }
@@ -8827,14 +8853,17 @@ public final class MainActivity extends Activity {
     private Sharing.Level offerLevel=Sharing.Level.WRITE;
 
     /** One of the roles a code can offer, over what it lets them do, with the one it is offering marked. */
-    private View levelPick(Sharing.Level level,boolean on,Runnable pick) {
+    private View levelPick(Sharing.Level level,boolean on,Runnable pick){return choice(level.words(),level.does(),on,pick);}
+
+    /** One choice in a box, its name over what it means, with the one chosen marked. */
+    View choice(String said,String does,boolean on,Runnable pick) {
         LinearLayout one=column();
         one.setPadding(dp(14),dp(10),dp(14),dp(10));
         one.setMinimumHeight(dp(44));
-        TextView words=label(level.words(),READING,INK);
+        TextView words=label(said,READING,INK);
         words.setTypeface(null,on?android.graphics.Typeface.BOLD:android.graphics.Typeface.NORMAL);
         one.addView(words);
-        one.addView(label(level.does(),QUIET,MUTED));
+        if(does!=null&&!does.isEmpty())one.addView(label(does,QUIET,MUTED));
         GradientDrawable edge=new GradientDrawable();
         edge.setColor(on?CARD:0);edge.setCornerRadius(dp(10));
         edge.setStroke(Math.max(1,dp(on?2:1)),on?ACCENT:LINE);
@@ -8842,9 +8871,84 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams place=new LinearLayout.LayoutParams(-1,-2);
         place.setMargins(0,dp(4),0,dp(4));
         one.setLayoutParams(place);
-        one.setContentDescription(level.words()+". "+level.does()+(on?" Chosen.":""));
+        one.setContentDescription(Say.t(said)+(does==null||does.isEmpty()?"":". "+Say.t(does))+(on?" Chosen.":""));
         one.setOnClickListener(v->{if(!on)pick.run();});
         return one;
+    }
+
+    /**
+     * Add my device (decision 255; the owner, 2026-10-25: "from people and device, I wanted to only have the new device in
+     * my connected device, not necessary share everything. Just adding it and then choosing"): one box, up at once, with
+     * what it gets first, Nothing yet unless Can write or Can read of everything is chosen, and the code under it. The code is
+     * made on a thread of its own and drawn when it is ready. It waited for the address behind whatever the network worker
+     * was sending, with the strip that said so under People and devices, so the + seemed to do nothing (the owner on the Pro:
+     * "pressing + beside mes appareils took a bit long... but finally worked").
+     *
+     * @param back where the back swipe goes: the box it was opened from; null to close
+     */
+    void addMyDevice(final Runnable back) {
+        final Sharing.Level[] chosen={null};final String[] where={null},line={""};final int[] asked={0};
+        final AlertDialog[] box={null};
+        LinearLayout body=inside();
+        TextView ask=label("What it gets",QUIET,MUTED);ask.setPadding(0,0,0,dp(4));body.addView(ask);
+        final LinearLayout picks=column();body.addView(picks);
+        View gap=new View(this);body.addView(gap,new LinearLayout.LayoutParams(1,dp(12)));
+        TextView how=under("On your other device, open Mininotes and scan this code.");how.setGravity(Gravity.CENTER);how.setPadding(0,0,0,dp(8));
+        body.addView(how);
+        final LinearLayout code=column();body.addView(code);
+        if(Node.onlyMine(this)) {
+            TextView only=under("This code works only for devices on this Wi-Fi: this phone sends notes only between your devices.");
+            only.setGravity(Gravity.CENTER);only.setPadding(0,dp(8),0,0);body.addView(only);
+        }
+        final Runnable[] make={null},draw={null};
+        draw[0]=()->{
+            picks.removeAllViews();
+            for(final Sharing.Level level:java.util.Arrays.asList(null,Sharing.Level.WRITE,Sharing.Level.READ))
+                picks.addView(choice(level==null?Sharing.NOTHING_YET:level.words(),Sharing.everythingDoes(level),level==chosen[0],
+                    ()->{chosen[0]=level;draw[0].run();make[0].run();}));
+        };
+        make[0]=()->{
+            final int mine=++asked[0];final Sharing.Level level=chosen[0];line[0]="";
+            code.removeAllViews();
+            TextView preparing=under("Preparing sharing code\u2026");preparing.setGravity(Gravity.CENTER);preparing.setPadding(0,dp(24),0,dp(24));
+            code.addView(preparing);
+            final String target=level==null?Sharing.MINE_ONLY:Sharing.EVERYTHING;
+            final String offer=level==null?Sharing.MINE_OFFER:Sharing.travelling(Sharing.Scope.LIBRARY,"Everything");
+            final Sharing.Level offered=level==null?Sharing.Level.READ:level;
+            new Thread(()->{
+                final String[] made={null};
+                try {
+                    if(where[0]==null)where[0]=addressNow();
+                    // Remembered with the time it went up: whoever scans it in the next quarter of an hour is added as it
+                    // says, without this phone asking again: showing the code was the asking.
+                    getSharedPreferences("offers",MODE_PRIVATE).edit().putString(Sharing.Scope.LIBRARY.name()+":"+target,
+                        System.currentTimeMillis()+":"+offered.name()).apply();
+                    made[0]=keys().line(yourName(),where[0],offer,offered,Sharing.Scope.LIBRARY.name(),target);
+                } catch(Exception failed){made[0]=null;}
+                handler.post(()->{
+                    if(mine!=asked[0]||box[0]==null||!box[0].isShowing())return;
+                    code.removeAllViews();
+                    if(made[0]==null){code.addView(label("Could not prepare this device's keys. Nothing was changed.",READING,WARN));return;}
+                    line[0]=made[0];myAddress=where[0];
+                    code.addView(codeView(made[0]));
+                    TextView waiting=under("Waiting for them to scan it\u2026");
+                    waiting.setGravity(Gravity.CENTER);waiting.setPadding(0,dp(10),0,0);code.addView(waiting);
+                    codeWaiting=waiting;codeWaitingFor=target;
+                });
+            },"mininotes-code").start();
+        };
+        draw[0].run();
+        ScrollView up=scrolling(body);
+        up.setDescendantFocusability(android.view.ViewGroup.FOCUS_BEFORE_DESCENDANTS);up.setFocusableInTouchMode(true);
+        box[0]=new Box().setTitle(Say.t("Add my device")).setView(up)
+            .setPositiveButton("Copy",(d,w)->{
+                if(line[0].isEmpty()){toast(Say.t("Preparing sharing code\u2026"));return;}
+                ClipboardManager board=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                if(board!=null)board.setPrimaryClip(ClipData.newPlainText("Mininotes",line[0]));
+                toast("Code copied");
+            })
+            .setOnCancelListener(d->{if(back!=null)back.run();}).show();
+        make[0].run();
     }
 
     /**
@@ -9556,16 +9660,30 @@ public final class MainActivity extends Activity {
      * ended with Remove (the owner, 2026-10-17: "Owner should be in a dropdown ... the possibility to remove someone";
      * decision 189). One with no bond yet is given one at what is chosen.
      */
-    private View ownDeviceRow(final NoteStore.Contact device) {
+    private View ownDeviceRow(final NoteStore.Contact device){return ownDeviceRow(device,bondOf(device.address),device.name,null);}
+
+    /** One of my devices' bond with everything, or null where it has none: added with nothing yet (decision 255). */
+    Sharing.Rule bondOf(String address) {
         Sharing.Rule found=null;
-        for(Sharing.Rule rule:store.shares())if(rule.scope==Sharing.Scope.LIBRARY&&rule.address.equals(device.address)&&rule.level!=Sharing.Level.GONE)found=rule;
-        final Sharing.Rule bond=found;
-        final Sharing.Level now=bond==null?Sharing.Level.WRITE:bond.level;
+        for(Sharing.Rule rule:store.shares())if(rule.scope==Sharing.Scope.LIBRARY&&rule.address.equals(address)&&rule.level!=Sharing.Level.GONE)found=rule;
+        return found;
+    }
+
+    /**
+     * The same, with its bond read already and a name for its left side; {@code after} where something else is drawn again
+     * once it is changed. One with no bond says Nothing yet and drops down to Can write and Can read of everything (decision 255).
+     */
+    View ownDeviceRow(final NoteStore.Contact device,final Sharing.Rule bond,String left,final Runnable after) {
         java.util.function.Consumer<Sharing.Level> set=to->background.submit(()->{
             if(bond==null){if(to!=Sharing.Level.GONE)store.give(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,device.address,to,device.name);}
             else store.decide(bond,to,System.currentTimeMillis());return null;
-        },done->{toast(Say.t("Access updated"));refresh();network.submit(()->Post.send(this,store,keys(),NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING),v->{},e->{});},e->alert("Could not change that. Nothing was changed."));
-        return roleRow(device.name,now.words(),now,java.util.List.of(Sharing.Level.WRITE,Sharing.Level.READ),set,()->set.accept(Sharing.Level.GONE),
+        },done->{toast(Say.t("Access updated"));refresh();if(after!=null)after.run();network.submit(()->Post.send(this,store,keys(),NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING),v->{},e->{});},e->alert("Could not change that. Nothing was changed."));
+        if(bond==null) {
+            final List<Sharing.Level> give=java.util.List.of(Sharing.Level.WRITE,Sharing.Level.READ);
+            List<String> choices=new ArrayList<>();choices.add(Say.t(Sharing.NOTHING_YET));for(Sharing.Level one:give)choices.add(Say.t(one.words()));
+            return dropRow(left,choices,null,0,Say.t(Sharing.NOTHING_YET),at->{if(at>0&&at<=give.size())set.accept(give.get(at-1));});
+        }
+        return roleRow(left,bond.level.words(),bond.level,java.util.List.of(Sharing.Level.WRITE,Sharing.Level.READ),set,()->set.accept(Sharing.Level.GONE),
             ()->inkBox(device.name,null,device.address),device.address);
     }
 
@@ -9940,6 +10058,14 @@ public final class MainActivity extends Activity {
      * whole of it - there is nothing to choose first, and a box offering two ways to do one thing is a box
      * asking a question nobody came with.
      */
+    /**
+     * People and devices' round + (decision 258): the camera at once, Paste instead and Show my code instead on it, and the
+     * one path after the code, whatever it was.
+     */
+    void scanFromPeople() {
+        scanning(said->tookAddress(null,"","",said,true),()->pasted(null,"",""),null,this::myAddress);
+    }
+
     void addFromSomeone() {
         scanning(said->tookAddress(null,"","",said,true),()->pasted(null,"",""));
     }
@@ -9963,7 +10089,8 @@ public final class MainActivity extends Activity {
         // Scanned from a Share with box: once paired, back to it, so the thing being shared is not forgotten (the connect
         // review, 2026-10-14: it only paired, and the note had to be shared again from the start). As the PC does.
         if(taken.startsWith(Pairing.MARK)||taken.startsWith(Pairing.MARK_1)) {
-            readPairing(taken,scanned,false,scope==null?null:()->people().with(scope,target,name,true));
+            readPairing(taken,scanned,false,scope==null?null:()->people().with(scope,target,name,true),
+                scope==null?null:new NoteStore.Branch(NoteStore.kindFor(scope),target,"",name,"",0,0,true));
             return;
         }
         // Anything else is not somebody: a bare address has no keys, so nothing could ever be sealed for it, and any other
@@ -10031,9 +10158,9 @@ public final class MainActivity extends Activity {
     private void confirmStop(Sharing.Scope scope,String target,String name,Sharing.Rule rule) {
         background.submit(()->store.address(rule.address),who->{
             String called=who==null?rule.address:who.name;
-            new Box().setTitle("Stop sharing with "+called+"?")
-                .setMessage(called+" stops receiving "+Sharing.describe(scope,name)+"."
-                    +"\n\nWhatever has already reached them stays with them: this stops what comes next."
+            new Box().setTitle(Say.t("Stop sharing with {0}?",called))
+                .setMessage(Say.t("{0} stops receiving {1}.",called,Sharing.describe(scope,name))
+                    +"\n\n"+Say.t("Whatever has already reached them stays with them: this stops what comes next.")
                     +"\n\n"+rule.address)
                 .setPositiveButton("Stop",(d,w)->background.submit(()->{store.decide(rule,Sharing.Level.GONE,System.currentTimeMillis());return null;},
                     done->{toast("Stopped");refresh();sharedWith(scope,target,name);},
@@ -10315,35 +10442,38 @@ public final class MainActivity extends Activity {
         // The box this is for cannot open until the node has answered, and a tap that opens nothing is a
         // tap somebody makes again.
         final int job=busy("Getting this phone's address\u2026");
-        network.submit(()->{
-            String kept=getSharedPreferences("settings",MODE_PRIVATE).getString("address","");
-            // Only between the owner's devices, what was kept may be a relay this phone is no longer on, or a
-            // door on a network it has left: the door here now, or nothing.
-            if(Node.onlyMine(this)) {
-                String here="";
-                try{for(String one:Node.addresses(this))if(Pairing.reachable(one)){here=one;break;}}catch(Exception e){/* none, then */}
-                if(!here.isEmpty()&&!here.equals(kept))getSharedPreferences("settings",MODE_PRIVATE).edit().putString("address",here).apply();
-                return here;
-            }
-            // The node, asked for what it has now. A failure leaves whatever was kept: an old address is
-            // worth more than none, and this must never be the thing that stops a box opening.
-            try {
-                for(String one:Node.addresses(this))
-                    if(Pairing.reachable(one)&&!one.equals(kept)) {
-                        getSharedPreferences("settings",MODE_PRIVATE).edit().putString("address",one).apply();
-                        return one;
-                    }
-                // No fallback to the permanent address. It reads like the better one - it survives the
-                // host moving, where an ordinary address does not - but it is not an address you can send
-                // to: it is a key and a directory to ask, and the answer only exists once this node has
-                // published itself there and the asker is allowed to read it. A code handed out in a
-                // node's first seconds, before any relay has answered, carried one of these and looked
-                // exactly like a good one. It failed days later, on somebody else's phone, with "directory
-                // replied UNKNOWN" - the app's plumbing turning up in the middle of their afternoon.
-                // Better to have no code yet and say so.
-            } catch(Exception e){/* whatever was kept stands */}
-            return kept;
-        },said->{busyDone(job,null);myAddress=said;then.run();},e->{busyDone(job,null);then.run();});
+        network.submit(this::addressNow,said->{busyDone(job,null);myAddress=said;then.run();},e->{busyDone(job,null);then.run();});
+    }
+
+    /** This phone's address as the node has it now, kept for next time; else what was kept. Blocking, off the main thread. */
+    private String addressNow() {
+        String kept=getSharedPreferences("settings",MODE_PRIVATE).getString("address","");
+        // Only between the owner's devices, what was kept may be a relay this phone is no longer on, or a
+        // door on a network it has left: the door here now, or nothing.
+        if(Node.onlyMine(this)) {
+            String here="";
+            try{for(String one:Node.addresses(this))if(Pairing.reachable(one)){here=one;break;}}catch(Exception e){/* none, then */}
+            if(!here.isEmpty()&&!here.equals(kept))getSharedPreferences("settings",MODE_PRIVATE).edit().putString("address",here).apply();
+            return here;
+        }
+        // The node, asked for what it has now. A failure leaves whatever was kept: an old address is
+        // worth more than none, and this must never be the thing that stops a box opening.
+        try {
+            for(String one:Node.addresses(this))
+                if(Pairing.reachable(one)&&!one.equals(kept)) {
+                    getSharedPreferences("settings",MODE_PRIVATE).edit().putString("address",one).apply();
+                    return one;
+                }
+            // No fallback to the permanent address. It reads like the better one - it survives the
+            // host moving, where an ordinary address does not - but it is not an address you can send
+            // to: it is a key and a directory to ask, and the answer only exists once this node has
+            // published itself there and the asker is allowed to read it. A code handed out in a
+            // node's first seconds, before any relay has answered, carried one of these and looked
+            // exactly like a good one. It failed days later, on somebody else's phone, with "directory
+            // replied UNKNOWN" - the app's plumbing turning up in the middle of their afternoon.
+            // Better to have no code yet and say so.
+        } catch(Exception e){/* whatever was kept stands */}
+        return kept;
     }
 
     /**

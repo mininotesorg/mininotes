@@ -30,13 +30,33 @@ final class NoteLine {
     /** Words that stay up until the work that said them says how it ended: anything still going on. */
     static boolean stays(String words){return words!=null&&words.trim().endsWith("…");}
 
+    /*
+     * The line's own sentences come out in the language in use (decision 256); the three words above stay English, and are
+     * said in it where they are put on the line, which compares them as they are.
+     */
+
     /** "Sending to Ana…": who, where the note reaches few enough to name. */
-    static String sending(List<String> names){String who=who(names);return who.isEmpty()?SENDING:"Sending to "+who+"…";}
+    static String sending(List<String> names) {
+        if(names==null||names.isEmpty())return Say.t(SENDING);
+        if(names.size()==1)return Say.t("Sending to {0}…",names.get(0));
+        if(names.size()==2)return Say.t("Sending to {0} and {1}…",names.get(0),names.get(1));
+        return Say.t("Sending to {0} and {1} others…",names.get(0),names.size()-1);
+    }
+
+    /** Whether the line says a sending is going on: "Sending…" or "Sending to Ana…", in English or the language in use. */
+    static boolean isSending(String words) {
+        if(words==null)return false;
+        for(String one:new String[]{SENDING,"Sending to {0}…","Sending to {0} and {1}…","Sending to {0} and {1} others…"})
+            if(one.equals(words)||Say.fits(one,words))return true;
+        return false;
+    }
 
     /** Gone, said by name; that they have it is theirs to say, and the mark turns to a tick when they do. */
     static String sent(List<String> names) {
-        String who=who(names);
-        return (who.isEmpty()?"Sent":"Sent to "+who)+", waiting for "+(names==null||names.size()<2?"them":"them all")+" to confirm";
+        if(names==null||names.isEmpty())return Say.t("Sent, waiting for them to confirm");
+        if(names.size()==1)return Say.t("Sent to {0}, waiting for them to confirm",names.get(0));
+        if(names.size()==2)return Say.t("Sent to {0} and {1}, waiting for them all to confirm",names.get(0),names.get(1));
+        return Say.t("Sent to {0} and {1} others, waiting for them all to confirm",names.get(0),names.size()-1);
     }
 
     /** Nothing was waiting, and the others were asked for what they have. */
@@ -49,22 +69,14 @@ final class NoteLine {
     static String couldNot(List<Unsent.Problem> problems,int sent) {
         Unsent.Problem first=Unsent.first(problems);
         if(first!=null&&first.why==Unsent.Why.LINKING)return Unsent.linking(first.who);
-        if(sent>0)return "Some of it went. See why";
-        if(first!=null&&!first.who.isEmpty()&&Unsent.distinct(problems).size()==1)return "Could not reach "+first.who+". See why";
-        return "Could not go. See why";
+        if(sent>0)return Say.t("Some of it went. See why");
+        if(first!=null&&!first.who.isEmpty()&&Unsent.distinct(problems).size()==1)return Say.t("Could not reach {0}. See why",first.who);
+        return Say.t("Could not go. See why");
     }
 
     /** The colour of what couldNot says: amber for a link that is on its way, red for the rest. */
     static Tone couldNotTone(List<Unsent.Problem> problems) {
         Unsent.Problem first=Unsent.first(problems);
         return first!=null&&first.why==Unsent.Why.LINKING?Tone.GOING:Tone.FAILED;
-    }
-
-    /** One name, two, or the first and how many more. */
-    private static String who(List<String> names) {
-        if(names==null||names.isEmpty())return "";
-        if(names.size()==1)return names.get(0);
-        if(names.size()==2)return names.get(0)+" and "+names.get(1);
-        return names.get(0)+" and "+(names.size()-1)+" others";
     }
 }

@@ -89,9 +89,14 @@ final class Unsent {
             :why.name().toLowerCase(java.util.Locale.ROOT).replace('_',' ');
     }
 
-    private static String quoted(String thing){return "“"+thing+"”";}
-    private static String device(String who){return who.isEmpty()?"A device":who;}
-    private static String it(String who){return who.isEmpty()?"that device":who;}
+    /*
+     * Every sentence below is one phrase of the word lists, said in the language in use (decision 256: "Pro could not reach
+     * PixelPro" stayed English on a PC set to French): a name or a thing's name is what goes in its {0}, and where there
+     * is no name, or the device is a phone or a PC, the sentence is a phrase of its own, never words glued on.
+     */
+
+    /** Whether "here" is a PC: its sentences say "this PC", a phone's "this phone". */
+    private static boolean pc(String here){return "this PC".equals(here);}
 
     /**
      * What is wrong, in one or two sentences: the device and the thing by their names.
@@ -99,35 +104,60 @@ final class Unsent {
      * @param here what this device is called in a sentence: "this phone", "this PC"
      */
     static String said(Problem p,String here) {
-        String what=p.thing.isEmpty()?"it":quoted(p.thing);
+        boolean pc=pc(here),named=!p.who.isEmpty(),thing=!p.thing.isEmpty();
         switch(p.why) {
-            case NOT_PAIRED: return device(p.who)+" has not been paired with "+here+" yet, so "+what+" cannot be sealed for it.";
-            case ONLY_LISTED: return notLinked(device(p.who),p.listedIn.isEmpty()?p.thing:p.listedIn,here);
+            case NOT_PAIRED:
+                if(thing)return named
+                    ?Say.t(pc?"{0} has not been paired with this PC yet, so “{1}” cannot be sealed for it.":"{0} has not been paired with this phone yet, so “{1}” cannot be sealed for it.",p.who,p.thing)
+                    :Say.t(pc?"A device has not been paired with this PC yet, so “{0}” cannot be sealed for it.":"A device has not been paired with this phone yet, so “{0}” cannot be sealed for it.",p.thing);
+                return named
+                    ?Say.t(pc?"{0} has not been paired with this PC yet, so it cannot be sealed for it.":"{0} has not been paired with this phone yet, so it cannot be sealed for it.",p.who)
+                    :Say.t(pc?"A device has not been paired with this PC yet, so it cannot be sealed for it.":"A device has not been paired with this phone yet, so it cannot be sealed for it.");
+            case ONLY_LISTED: return notLinked(p.who,p.listedIn.isEmpty()?p.thing:p.listedIn,here);
             case LINKING: return linking(p.who);
-            case NOT_REACHED: return p.thing.isEmpty()?(p.who.isEmpty()?"That device":p.who)+" could not be reached just now."
-                :what+" could not reach "+it(p.who)+" just now.";
-            case NOT_IN_REACH: return device(p.who)+" is not in reach, so "+what+" waits: notes go only between your devices, straight from one to the other, and it is not on this network.";
-            case NOT_CONNECTED: return "Mininotes is not connected yet on "+here+".";
-            case TOO_OLD: return what.equals("it")?"A note was written before sharing existed here, and cannot travel."
-                :what+" was written before sharing existed here, and cannot travel.";
-            case NEEDS_UPDATE: return needsUpdate(p.who)+".";
-            default: return p.detail.isEmpty()?"Something went wrong sending "+what+".":p.detail;
+            case NOT_REACHED:
+                if(!thing)return named?Say.t("{0} could not be reached just now.",p.who):Say.t("That device could not be reached just now.");
+                return named?Say.t("“{0}” could not reach {1} just now.",p.thing,p.who):Say.t("“{0}” could not reach that device just now.",p.thing);
+            case NOT_IN_REACH:
+                if(thing)return named
+                    ?Say.t("{0} is not in reach, so “{1}” waits: notes go only between your devices, straight from one to the other, and it is not on this network.",p.who,p.thing)
+                    :Say.t("A device is not in reach, so “{0}” waits: notes go only between your devices, straight from one to the other, and it is not on this network.",p.thing);
+                return named
+                    ?Say.t("{0} is not in reach, so it waits: notes go only between your devices, straight from one to the other, and it is not on this network.",p.who)
+                    :Say.t("A device is not in reach, so it waits: notes go only between your devices, straight from one to the other, and it is not on this network.");
+            case NOT_CONNECTED: return Say.t(pc?"Mininotes is not connected yet on this PC.":"Mininotes is not connected yet on this phone.");
+            case TOO_OLD: return thing?Say.t("“{0}” was written before sharing existed here, and cannot travel.",p.thing)
+                :Say.t("A note was written before sharing existed here, and cannot travel.");
+            case NEEDS_UPDATE: return named?Say.t("{0} needs to update Mininotes to receive this.",p.who):Say.t("A device needs to update Mininotes to receive this.");
+            default:
+                // The words it failed with, said as they came: the network's or the system's, looked up where they are listed.
+                if(!p.detail.isEmpty())return Say.t(p.detail);
+                return thing?Say.t("Something went wrong sending “{0}”.",p.thing):Say.t("Something went wrong sending it.");
         }
     }
 
     /** What the owner can do about it; or, where the pad puts it right by itself, that it will. */
     static String remedy(Problem p,String here) {
+        boolean pc=pc(here),named=!p.who.isEmpty();
         switch(p.why) {
             case NOT_PAIRED:
-                return "Add it: open People and devices, show your code, and scan it on "+it(p.who)+".";
-            case ONLY_LISTED: return "Link with them to send it, or take them off if they should not have it.";
-            case LINKING: return "If they do not, open Mininotes on "+it(p.who)+", or link with them by hand.";
-            case NOT_REACHED: return "Open Mininotes on "+it(p.who)+", on the same Wi-Fi as "+here+" if you can. It stays waiting and goes by itself.";
-            case NOT_IN_REACH: return "Put both on the same Wi-Fi, or let helpers carry it in How notes travel. Until then it stays waiting.";
-            case NOT_CONNECTED: return "Check that "+here+" is online. It goes by itself once it is connected.";
-            case TOO_OLD: return "Copy its words into a new note, and share that one.";
-            case NEEDS_UPDATE: return "It stays waiting, and goes by itself once Mininotes is updated on "+it(p.who)+".";
-            default: return "It stays waiting and is tried again by itself.";
+                return named?Say.t("Add it: open People and devices, show your code, and scan it on {0}.",p.who)
+                    :Say.t("Add it: open People and devices, show your code, and scan it on that device.");
+            case ONLY_LISTED: return Say.t("Link with them to send it, or take them off if they should not have it.");
+            case LINKING: return named?Say.t("If they do not, open Mininotes on {0}, or link with them by hand.",p.who)
+                :Say.t("If they do not, open Mininotes on that device, or link with them by hand.");
+            case NOT_REACHED:
+                if(named)return Say.t(pc?"Open Mininotes on {0}, on the same Wi-Fi as this PC if you can. It stays waiting and goes by itself."
+                    :"Open Mininotes on {0}, on the same Wi-Fi as this phone if you can. It stays waiting and goes by itself.",p.who);
+                return Say.t(pc?"Open Mininotes on that device, on the same Wi-Fi as this PC if you can. It stays waiting and goes by itself."
+                    :"Open Mininotes on that device, on the same Wi-Fi as this phone if you can. It stays waiting and goes by itself.");
+            case NOT_IN_REACH: return Say.t("Put both on the same Wi-Fi, or let helpers carry it in How notes travel. Until then it stays waiting.");
+            case NOT_CONNECTED: return Say.t(pc?"Check that this PC is online. It goes by itself once it is connected."
+                :"Check that this phone is online. It goes by itself once it is connected.");
+            case TOO_OLD: return Say.t("Copy its words into a new note, and share that one.");
+            case NEEDS_UPDATE: return named?Say.t("It stays waiting, and goes by itself once Mininotes is updated on {0}.",p.who)
+                :Say.t("It stays waiting, and goes by itself once Mininotes is updated on that device.");
+            default: return Say.t("It stays waiting and is tried again by itself.");
         }
     }
 
@@ -140,7 +170,7 @@ final class Unsent {
     }
 
     /** The button's words, or null for none. */
-    static String button(Fix fix){return fix==Fix.PAIR?"Add it":fix==Fix.TRAVEL?"How notes travel":null;}
+    static String button(Fix fix){return fix==Fix.PAIR?Say.t("Add it"):fix==Fix.TRAVEL?Say.t("How notes travel"):null;}
 
     /** The button's words for this reason: somebody only listed is linked with by their name. */
     static String button(Problem p) {
@@ -155,7 +185,8 @@ final class Unsent {
      * Said the same in the could-not-go box and in the box their round opens.
      */
     static String linking(String who) {
-        return "Linking with "+(who==null||who.isBlank()?"that device":who.trim())+"… it goes once they answer.";
+        return who==null||who.isBlank()?Say.t("Linking with that device… it goes once they answer.")
+            :Say.t("Linking with {0}… it goes once they answer.",who.trim());
     }
 
     /**
@@ -163,28 +194,34 @@ final class Unsent {
      * the could-not-go box and in the box their round on a note opens.
      */
     static String notLinked(String who,String listedIn,String here) {
-        return (who==null||who.isBlank()?"A device":who.trim())+" is listed for "
-            +(listedIn==null||listedIn.isBlank()?"this":quoted(listedIn.trim()))+", but "+here+" is not linked to them.";
+        boolean pc=pc(here),named=who!=null&&!who.isBlank(),on=listedIn!=null&&!listedIn.isBlank();
+        if(on)return named
+            ?Say.t(pc?"{0} is listed for “{1}”, but this PC is not linked to them.":"{0} is listed for “{1}”, but this phone is not linked to them.",who.trim(),listedIn.trim())
+            :Say.t(pc?"A device is listed for “{0}”, but this PC is not linked to them.":"A device is listed for “{0}”, but this phone is not linked to them.",listedIn.trim());
+        return named
+            ?Say.t(pc?"{0} is listed for this, but this PC is not linked to them.":"{0} is listed for this, but this phone is not linked to them.",who.trim())
+            :Say.t(pc?"A device is listed for this, but this PC is not linked to them.":"A device is listed for this, but this phone is not linked to them.");
     }
 
     /**
      * What waits for a device whose build is from before collections nested (see {@link Why#NEEDS_UPDATE}): "Ana's phone
-     * needs to update Mininotes to receive this", with no full stop, so the could-not-go box and the words about an amber
-     * mark (see {@link Waits}) say it the same way.
+     * needs to update Mininotes to receive this", with no full stop, so the words about an amber mark (see {@link Waits})
+     * list it the same way.
      */
     static String needsUpdate(String who) {
-        return (who==null||who.isBlank()?"A device":who.trim())+" needs to update Mininotes to receive this";
+        return who==null||who.isBlank()?Say.t("A device needs to update Mininotes to receive this")
+            :Say.t("{0} needs to update Mininotes to receive this",who.trim());
     }
 
     /** The one primary action for somebody only listed. */
-    static String link(String who){return who==null||who.isBlank()?"Link with them":"Link with "+who.trim();}
+    static String link(String who){return who==null||who.isBlank()?Say.t("Link with them"):Say.t("Link with {0}",who.trim());}
 
     /** The quiet second action for somebody only listed, or null where nothing lists them. */
     static String takeOff(Problem p) {
         return !listed(p)||p.address.isEmpty()?null:takeOff(p.listedIn);
     }
     static String takeOff(String listedIn) {
-        return listedIn==null||listedIn.isBlank()?"Take them off the list":"Take them off "+quoted(listedIn.trim());
+        return listedIn==null||listedIn.isBlank()?Say.t("Take them off the list"):Say.t("Take them off “{0}”",listedIn.trim());
     }
 
     /** The same reason about the same device said once, however many notes it stopped. In the order they came. */
@@ -204,7 +241,8 @@ final class Unsent {
 
     /** The box's title: whether any of it went. */
     static String title(int sent,int failed) {
-        return sent>0?"Some of it went, and "+(failed==1?"one note":failed+" notes")+" could not":"It could not go";
+        if(sent<=0)return Say.t("It could not go");
+        return failed==1?Say.t("Some of it went, and one note could not"):Say.t("Some of it went, and {0} notes could not",failed);
     }
 
     /** The box's title, naming the device where one device is the whole of it: "“Transfer” could not reach Ana's phone". */
@@ -212,10 +250,10 @@ final class Unsent {
         List<Problem> once=distinct(all);
         if(once.size()!=1||once.get(0).who.isEmpty())return title(sent,failed);
         Problem p=once.get(0);
-        if(sent>0)return "Some of it went, but not to "+p.who;
-        if(p.why==Why.LINKING)return "Linking with "+p.who;
-        String what=!p.thing.isEmpty()?quoted(p.thing):!p.listedIn.isEmpty()?quoted(p.listedIn):"It";
-        return what+" could not reach "+p.who;
+        if(sent>0)return Say.t("Some of it went, but not to {0}",p.who);
+        if(p.why==Why.LINKING)return Say.t("Linking with {0}",p.who);
+        String what=!p.thing.isEmpty()?p.thing:p.listedIn;
+        return what.isEmpty()?Say.t("It could not reach {0}",p.who):Say.t("“{0}” could not reach {1}",what,p.who);
     }
 
     /** The box's words: each reason and what to do about it, a paragraph each; at most three, then how many more. */
@@ -226,7 +264,8 @@ final class Unsent {
             if(out.length()>0)out.append("\n\n");
             out.append(said(once.get(at),here)).append(' ').append(remedy(once.get(at),here));
         }
-        if(once.size()>3)out.append("\n\n").append(once.size()-3).append(once.size()-3==1?" more reason, the same way.":" more reasons, the same way.");
-        return out.length()==0?"It stays waiting and is tried again by itself.":out.toString();
+        int more=once.size()-3;
+        if(more>0)out.append("\n\n").append(more==1?Say.t("1 more reason, the same way."):Say.t("{0} more reasons, the same way.",more));
+        return out.length()==0?Say.t("It stays waiting and is tried again by itself."):out.toString();
     }
 }

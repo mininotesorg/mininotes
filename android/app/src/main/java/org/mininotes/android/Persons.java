@@ -291,9 +291,11 @@ final class Persons {
      */
     static String oneSided(boolean mineHere,boolean readsCards,boolean mineThere,String thisOne) {
         if(!readsCards||mineHere==mineThere)return null;
-        return mineThere
-            ?"It counts this "+thisOne+" as one of your devices. Turn My device on here too so names travel."
-            :"It does not count this "+thisOne+" as one of your devices. Turn My device on there too so names travel.";
+        boolean pc="PC".equals(thisOne);
+        if(mineThere)return Say.t(pc?"It counts this PC as one of your devices. Turn My device on here too so names travel."
+            :"It counts this phone as one of your devices. Turn My device on here too so names travel.");
+        return Say.t(pc?"It does not count this PC as one of your devices. Turn My device on there too so names travel."
+            :"It does not count this phone as one of your devices. Turn My device on there too so names travel.");
     }
 
     /**

@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 afc0641c40eed2999c2ac47e7f27c64cd554ed024330bd7b8c9cbe20b18a265d -->
+<!-- Translated from README.md, SHA-256 a78f7778ee3e66851fb3a075691b87fc51902d2d0cebd76aceca20322bba7a36 -->
 
 # Mininotes
 
@@ -44,6 +44,22 @@ voyage scellé de bout en bout sur le réseau Minima, ou directement d'un appare
 ## 1. Nouveautés
 
 Les plus récentes d'abord. Chaque version est la même sur le téléphone et sur le PC, sauf mention contraire.
+
+### 0.4.030
+
+- *Personnes et appareils* a un seul + rond qui ouvre l'appareil photo : scannez le code de l'autre appareil, puis dites
+  ce que c'est (un de vos appareils ou quelqu'un d'autre), mettez-le dans un groupe si vous voulez, et choisissez ce
+  qu'il reçoit. *Afficher mon code* est à côté.
+- Un téléphone qui revient après une absence ne ralentit plus : ce qui a été gardé pour lui pendant son absence arrive
+  une seule fois, et reçoit une seule réponse.
+
+### 0.4.029
+
+- *Ajouter mon appareil* demande d'abord ce que le nouvel appareil reçoit : *Rien pour l’instant*, ou tout, en lecture
+  ou en écriture. Avec *Rien pour l’instant*, c'est l'un de vos appareils, il reçoit ce que vous partagez ensuite avec
+  lui, et vous choisissez sur sa ligne dans *Personnes et appareils*. Sa fenêtre s'ouvre aussitôt.
+- Les messages faits de noms, comme une note qui n'a pas pu joindre un appareil ou ce qu'offre un code d'association,
+  sont dans votre langue, sur l'appareil qui les affiche.
 
 ### 0.4.028
 

@@ -12,23 +12,28 @@ final class SyncStatus {
         String brief(String device){return brief(device,ZonedDateTime.now());}
         String brief(String device,ZonedDateTime now) {
             return switch(status) {
-                case ONLY_HERE -> "Only on "+device+" · saved "+shortly(saved,now);
-                case CONFIRMED -> "✓ Synced "+shortly(confirmed,now);
-                case WAITING, NOT_CONFIRMED -> "↑ Saved "+shortly(saved,now)+" · waiting to sync";
-                case MATCHING -> "↑ Saved "+shortly(saved,now)+" · waiting for the others";
-                default -> status;
+                // In the language in use (decision 256), the device as it is called and the time in their places.
+                case ONLY_HERE -> Say.t(here(device)?"Only on this phone · saved {0}":pc(device)?"Only on this PC · saved {0}":"Only on {1} · saved {0}",shortly(saved,now),device);
+                case CONFIRMED -> Say.t("✓ Synced {0}",shortly(confirmed,now));
+                case WAITING, NOT_CONFIRMED -> Say.t("↑ Saved {0} · waiting to sync",shortly(saved,now));
+                case MATCHING -> Say.t("↑ Saved {0} · waiting for the others",shortly(saved,now));
+                default -> Say.t(status);
             };
         }
         /** Whether something written here has not reached everybody yet: worth saying before a tab closes. */
         boolean unsent(){return status.equals(WAITING)||status.equals(NOT_CONFIRMED)||status.equals(MATCHING);}
         /** Everything, exactly: for a tooltip or a tap. */
         String detail(String device) {
-            return "Saved on "+device+": "+date(saved)
-                +"\n"+(status.equals(CONFIRMED)?"Everyone it is shared with has this version: "+date(confirmed)
-                    :status.equals(ONLY_HERE)?"Not shared.":status+".")
-                +"\n\nTimes are local to "+device+". Devices that are offline may have newer edits. Files kept with the note, up to 16 MB each, go with it, and those kept with a folder go with the folder; larger ones stay on this device.";
+            boolean phone=here(device),pc=pc(device);
+            return Say.t(phone?"Saved on this phone: {0}":pc?"Saved on this PC: {0}":"Saved on {1}: {0}",date(saved),device)
+                +"\n"+(status.equals(CONFIRMED)?Say.t("Everyone it is shared with has this version: {0}",date(confirmed))
+                    :status.equals(ONLY_HERE)?Say.t("Not shared."):Say.t(status+"."))
+                +"\n\n"+Say.t(phone?"Times are local to this phone.":pc?"Times are local to this PC.":"Times are local to {0}.",device)
+                +" "+Say.t("Devices that are offline may have newer edits. Files kept with the note, up to 16 MB each, go with it, and those kept with a folder go with the folder; larger ones stay on this device.");
         }
     }
+    private static boolean here(String device){return "this phone".equals(device);}
+    private static boolean pc(String device){return "this PC".equals(device);}
     private static String date(long millis) {
         return DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm:ss z")
             .format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()));
@@ -79,7 +84,7 @@ final class SyncStatus {
         /** Where they stand, in the words a tap on their round shows: the writing and the files (see Waits.person). */
         String standing(){return says==null||says.isEmpty()?mark.person():says;}
         /** What a tap on their round says: who, then where they stand, in plain words. */
-        String called(){return name.isEmpty()?"A paired device":name;}
+        String called(){return name.isEmpty()?Say.t("A paired device"):name;}
         /** What the round of somebody not linked says: being linked through the list and waiting for them, or not at all. */
         String notLinked(String here){return linking?Unsent.linking(called()):Unsent.notLinked(called(),listedIn,here);}
     }
@@ -125,7 +130,7 @@ final class SyncStatus {
             if(known!=null&&known.paired()&&!waiting) {
                 String name=store.nameFor(address);
                 out.add(new Person(address,name,owed.getOrDefault(address,SyncMark.GONE),true,"",null,false,
-                    Waits.person(name.isEmpty()?"A paired device":name,where.get(address),kept(address))));
+                    Waits.person(name.isEmpty()?Say.t("A paired device"):name,where.get(address),kept(address))));
                 continue;
             }
             // Named in the list and never paired here: which list, so the round can say where to take them off.

@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 afc0641c40eed2999c2ac47e7f27c64cd554ed024330bd7b8c9cbe20b18a265d -->
+<!-- Translated from README.md, SHA-256 a78f7778ee3e66851fb3a075691b87fc51902d2d0cebd76aceca20322bba7a36 -->
 
 # Mininotes
 
@@ -44,6 +44,22 @@ sellado de extremo a extremo por la red Minima, o directamente de dispositivo a 
 ## 1. Novedades
 
 Lo más reciente primero. Cada versión es igual en el teléfono y en el PC salvo que se indique otra cosa.
+
+### 0.4.030
+
+- *Personas y dispositivos* tiene un solo + redondo que abre la cámara: escanea el código del otro dispositivo, luego di
+  qué es (uno de tus dispositivos u otra persona), ponlo en un grupo si quieres y elige qué recibe. *Mostrar mi código*
+  está al lado.
+- Un teléfono que vuelve tras estar fuera ya no se ralentiza: lo que se guardó para él mientras no estaba llega una sola
+  vez y se responde una sola vez.
+
+### 0.4.029
+
+- *Añadir mi dispositivo* pregunta primero qué recibe el dispositivo nuevo: *Nada aún*, o todo para leer o para
+  escribir. Con *Nada aún* es uno de tus dispositivos, recibe lo que después compartas con él, y eliges en su línea de
+  *Personas y dispositivos*. Su ventana se abre al instante.
+- Los mensajes hechos con nombres, como una nota que no pudo llegar a un dispositivo o lo que ofrece un código de
+  vinculación, están en tu idioma, en el dispositivo que los muestra.
 
 ### 0.4.028
 

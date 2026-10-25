@@ -178,32 +178,40 @@ final class Drop {
     /** Why a file was not sent, in the few words each reason needs; see {@link Given#refusal}. */
     static final String TOO_BIG="larger than 16 MB", EMPTY="it is empty", TOO_MANY="more than "+FILES_MOST+" files at once";
 
-    static String files(int count){return count==1?"1 file":count+" files";}
+    /*
+     * Said in the language in use (decision 256): one phrase for one file and one for a count, the name and the size in
+     * their places. Log lines name their counts with these too.
+     */
+    static String files(int count){return count==1?Say.t("1 file"):Say.t("{0} files",count);}
 
     /** The question put to the person a stranger's files are for. */
     static String asking(String who,int count,long bytes) {
-        return who+" wants to send you "+(count==1?"a file":count+" files")+" ("+Attachment.size(bytes)+")";
+        return count==1?Say.t("{0} wants to send you a file ({1})",who,Attachment.size(bytes))
+            :Say.t("{0} wants to send you {1} files ({2})",who,count,Attachment.size(bytes));
     }
 
     /** The same, under the name of whoever it is from, where the name is already said. */
-    static String wants(int count,long bytes){return "Wants to send you "+(count==1?"a file":count+" files")+" ("+Attachment.size(bytes)+")";}
+    static String wants(int count,long bytes) {
+        return count==1?Say.t("Wants to send you a file ({0})",Attachment.size(bytes)):Say.t("Wants to send you {0} files ({1})",count,Attachment.size(bytes));
+    }
 
     /** Said once everything a sending lists is here. */
-    static String arrived(String who,int count){return who+" sent you "+(count==1?"a file":count+" files");}
+    static String arrived(String who,int count){return count==1?Say.t("{0} sent you a file",who):Say.t("{0} sent you {1} files",who,count);}
 
     /** The busy line while a sending is made ready. */
-    static String sending(String who,int count){return "Sending "+files(count)+" to "+who+"…";}
+    static String sending(String who,int count){return count==1?Say.t("Sending 1 file to {0}…",who):Say.t("Sending {0} files to {1}…",count,who);}
 
     /** Said once Send has done what it can now: handed to them, or waiting until they can be reached. */
     static String afterSending(String who,boolean handed,boolean takes) {
-        if(!takes)return "Waiting for "+who+" to update Mininotes";
-        return handed?"Sent. Waiting for "+who+" to take them":"Waiting for "+who+". They go when "+who+" can be reached";
+        if(!takes)return Say.t("Waiting for {0} to update Mininotes",who);
+        return handed?Say.t("Sent. Waiting for {0} to take them",who):Say.t("Waiting for {0}. They go when {0} can be reached",who);
     }
 
     /** What the sender is told when the other device answers. */
     static String answered(String who,int count,int state) {
-        return state==DELIVERED?(count==1?"The file":"The "+count+" files")+" reached "+who
-            :state==REFUSED?who+" refused "+(count==1?"the file":"the "+count+" files"):"";
+        if(state==DELIVERED)return count==1?Say.t("The file reached {0}",who):Say.t("The {0} files reached {1}",count,who);
+        if(state==REFUSED)return count==1?Say.t("{0} refused the file",who):Say.t("{0} refused the {1} files",who,count);
+        return "";
     }
 
     /**
@@ -214,25 +222,25 @@ final class Drop {
      */
     static String state(int state,String who,boolean takes) {
         switch(state) {
-            case SENDING: return "Sending…";
-            case WAITING: return takes?"Waiting for "+who:"Waiting for "+who+" to update Mininotes";
-            case DELIVERED: return "Delivered";
-            case REFUSED: return "Refused";
-            case ASKING: return "Waiting for your answer";
-            case FETCHING: return "Coming…";
+            case SENDING: return Say.t("Sending…");
+            case WAITING: return takes?Say.t("Waiting for {0}",who):Say.t("Waiting for {0} to update Mininotes",who);
+            case DELIVERED: return Say.t("Delivered");
+            case REFUSED: return Say.t("Refused");
+            case ASKING: return Say.t("Waiting for your answer");
+            case FETCHING: return Say.t("Coming…");
             default: return "";
         }
     }
 
     /** What the drop box says under its name: how many are new, else how many files it holds. */
-    static String boxDetail(int fresh,int files){return fresh>0?fresh+" new":files==0?"Nothing yet":files(files);}
+    static String boxDetail(int fresh,int files){return fresh>0?Say.t("{0} new",fresh):files==0?Say.t("Nothing yet"):files(files);}
 
     /** What was not sent, on one line under what is going. */
-    static String notSentLine(List<String> lines){return lines.isEmpty()?"":"Not sent: "+String.join("; ",lines);}
+    static String notSentLine(List<String> lines){return lines.isEmpty()?"":Say.t("Not sent: {0}",String.join("; ",lines));}
 
     /** The box listing what was not sent. */
     static String notSent(List<String> lines) {
-        StringBuilder said=new StringBuilder(lines.size()==1?"This was not sent:\n\n":"These were not sent:\n\n");
+        StringBuilder said=new StringBuilder(Say.t(lines.size()==1?"This was not sent:":"These were not sent:")).append("\n\n");
         for(String line:lines)said.append(line).append('\n');
         return said.toString().trim();
     }

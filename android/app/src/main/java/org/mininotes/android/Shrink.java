@@ -50,22 +50,26 @@ final class Shrink {
         +" Other files are packed on this device when that saves room, and go to others as they are.";
     static final String ALREADY="Shrink the pictures already here…";
     static final String LOOKING="Looking at the pictures…";
-    static String looking(int done,int of){return "Looking at the pictures: "+done+" of "+of;}
-    static String asking(int count){return count==1?"Shrink 1 picture?":"Shrink "+count+" pictures?";}
+    // The sentences below are said in the language in use (decision 256): one phrase for one picture, one for a count.
+    static String looking(int done,int of){return Say.t("Looking at the pictures: {0} of {1}",done,of);}
+    static String asking(int count){return count==1?Say.t("Shrink 1 picture?"):Say.t("Shrink {0} pictures?",count);}
     static String asked(int count,long before,long after,int left) {
-        String said=(count==1?"It takes ":"They take ")+Attachment.size(before)+" now and would take "+Attachment.size(after)
-            +": about "+Attachment.size(Math.max(0,before-after))+" freed. "
-            +(count==1?"It replaces the original, which cannot be had back.":"Each replaces its original, which cannot be had back.");
+        String now=Attachment.size(before),then=Attachment.size(after),freed=Attachment.size(Math.max(0,before-after));
+        String said=count==1?Say.t("It takes {0} now and would take {1}: about {2} freed. It replaces the original, which cannot be had back.",now,then,freed)
+            :Say.t("They take {0} now and would take {1}: about {2} freed. Each replaces its original, which cannot be had back.",now,then,freed);
         return left>0?said+"\n\n"+leftAlone(left):said;
     }
     static String leftAlone(int left) {
-        return (left==1?"1 picture that went to somebody or came from somebody is":left+" pictures that went to somebody or came from somebody are")
-            +" left as "+(left==1?"it is":"they are")+", so every copy stays the same.";
+        return left==1?Say.t("1 picture that went to somebody or came from somebody is left as it is, so every copy stays the same.")
+            :Say.t("{0} pictures that went to somebody or came from somebody are left as they are, so every copy stays the same.",left);
     }
-    static String nothing(int left){return "Nothing to shrink: the pictures here are already small."+(left>0?"\n\n"+leftAlone(left):"");}
-    static String yes(int count){return count==1?"Shrink it":"Shrink them";}
-    static String shrinking(int count){return count==1?"Shrinking 1 picture…":"Shrinking "+count+" pictures…";}
-    static String shrunk(int count,long freed){return (count==1?"1 picture shrunk":count+" pictures shrunk")+": "+Attachment.size(Math.max(0,freed))+" freed";}
+    static String nothing(int left){return Say.t("Nothing to shrink: the pictures here are already small.")+(left>0?"\n\n"+leftAlone(left):"");}
+    static String yes(int count){return Say.t(count==1?"Shrink it":"Shrink them");}
+    static String shrinking(int count){return count==1?Say.t("Shrinking 1 picture…"):Say.t("Shrinking {0} pictures…",count);}
+    static String shrunk(int count,long freed){
+        String size=Attachment.size(Math.max(0,freed));
+        return count==1?Say.t("1 picture shrunk: {0} freed",size):Say.t("{0} pictures shrunk: {1} freed",count,size);
+    }
     static final String UNCHANGED="Nothing was changed";
 
     // ---- pictures -------------------------------------------------------------------------------------------------

@@ -107,19 +107,29 @@ final class Parlons {
      * devices, and why any did not have it: out of reach now, or a Mininotes from before.
      */
     static String said(boolean removed,String here,List<String> sent,List<String> notReached,List<String> older) {
-        StringBuilder words=new StringBuilder(removed?"Removed":"Saved");
-        if(sent.isEmpty()&&notReached.isEmpty()&&older.isEmpty())return words.append(" on ").append(here).toString();
-        if(!sent.isEmpty())words.append(removed?" here, and on ":", and sent to ").append(names(sent));
-        else words.append(" on ").append(here);
-        if(!notReached.isEmpty())words.append(". ").append(names(notReached)).append(" could not be reached now: save again later");
-        if(!older.isEmpty())words.append(". ").append(names(older)).append(older.size()==1?" needs":" need").append(" an update of Mininotes first");
-        return words.toString();
+        // Each sentence one phrase in the language in use (decision 256), the devices' names in their places.
+        boolean pc="this PC".equals(here);
+        String first=!sent.isEmpty()?(removed?Say.t("Removed here, and on {0}",names(sent)):Say.t("Saved, and sent to {0}",names(sent)))
+            :removed?Say.t(pc?"Removed on this PC":"Removed on this phone"):Say.t(pc?"Saved on this PC":"Saved on this phone");
+        return first+notReached(notReached)+older(older);
     }
 
-    /** "Pro", "Pro and Laptop", "Pro, Tablet and Laptop". */
+    /** The sentences after the first, for the devices that could not be reached and those that need a newer Mininotes. */
+    static String notReached(List<String> notReached) {
+        return notReached.isEmpty()?"":". "+Say.t("{0} could not be reached now: save again later",names(notReached));
+    }
+    static String older(List<String> older) {
+        if(older.isEmpty())return "";
+        return ". "+(older.size()==1?Say.t("{0} needs an update of Mininotes first",names(older)):Say.t("{0} need an update of Mininotes first",names(older)));
+    }
+
+    /**
+     * "Pro", "Pro and Laptop", "Pro, Tablet and Laptop": names as a sentence lists them, the last two joined by the language
+     * in use's "and" (a phrase of its own, "{0} and {1}", would be found in any words with "and" in them).
+     */
     static String names(List<String> all) {
         if(all.size()==1)return all.get(0);
-        return String.join(", ",all.subList(0,all.size()-1))+" and "+all.get(all.size()-1);
+        return String.join(", ",all.subList(0,all.size()-1))+" "+Say.t("and")+" "+all.get(all.size()-1);
     }
 
     // ---- the card -------------------------------------------------------------------------------------------

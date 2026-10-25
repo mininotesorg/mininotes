@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 afc0641c40eed2999c2ac47e7f27c64cd554ed024330bd7b8c9cbe20b18a265d -->
+<!-- Translated from README.md, SHA-256 a78f7778ee3e66851fb3a075691b87fc51902d2d0cebd76aceca20322bba7a36 -->
 
 # Mininotes
 
@@ -45,6 +45,22 @@ Wi-Fi.
 ## 1. Novità
 
 Le più recenti per prime. Ogni versione è uguale sul telefono e sul PC, salvo dove è indicato diversamente.
+
+### 0.4.030
+
+- *Persone e dispositivi* ha un solo + tondo che apre la fotocamera: scansiona il codice dell'altro dispositivo, poi di'
+  che cos'è (uno dei tuoi dispositivi o un'altra persona), mettilo in un gruppo se vuoi e scegli che cosa riceve.
+  *Mostra il mio codice* è accanto.
+- Un telefono che torna dopo essere stato via non rallenta più: ciò che è stato tenuto per lui mentre era via arriva una
+  volta sola, e riceve risposta una volta sola.
+
+### 0.4.029
+
+- *Aggiungi il mio dispositivo* chiede prima che cosa riceve il nuovo dispositivo: *Ancora niente*, oppure tutto in
+  lettura o in scrittura. Con *Ancora niente* è uno dei tuoi dispositivi, riceve ciò che poi condividi con lui, e scegli
+  sulla sua riga in *Persone e dispositivi*. La sua finestra si apre subito.
+- I messaggi composti da nomi, come una nota che non ha potuto raggiungere un dispositivo o ciò che offre un codice di
+  associazione, sono nella tua lingua, sul dispositivo che li mostra.
 
 ### 0.4.028
 

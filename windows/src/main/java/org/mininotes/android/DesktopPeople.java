@@ -45,8 +45,8 @@ final class DesktopPeople {
         List<Sharing.Level> give=List.of();Map<String,Groups.Given> given=Map.of();Map<String,NoteStore.Stands> stands=Map.of();
         /** Whose each contact's device is, by address, as its about-me card said (decision 183); absent where it never said. */
         Map<String,String> persons=Map.of();
-        /** My own devices, each with its bond, or none (decision 189). */
-        Map<String,Sharing.Rule> bonds=Map.of();
+        /** My own devices, each with its bond, or none (decision 189); and whether this PC may give everything (decision 255). */
+        Map<String,Sharing.Rule> bonds=Map.of();boolean givesEverything;
         NoteStore.Contact contact(String address){for(NoteStore.Contact one:contacts)if(one.address.equals(address))return one;return null;}
         Groups.Group group(String id){for(Groups.Group one:groups)if(one.id.equals(id))return one;return null;}
         String groupName(String id){if(Groups.MINE.equals(id))return Groups.MY_DEVICES;Groups.Group one=group(id);return one==null?"a group":one.name;}
@@ -140,6 +140,7 @@ final class DesktopPeople {
                 String line=Post.oneSided(app.context,who);if(line!=null)r.sided.put(who.address,line);
                 if(who.signing.length>0)try{r.checks.put(who.address,Envelope.code(app.keys.signing().getPublic(),Keys.publicKey(who.signing)));}catch(Exception unreadable){/* no digits for it */}
                 r.shared=store.sharedWith(who.address);
+                if(who.mine){r.bonds=app.ownBonds();r.givesEverything=!store.mayGive(Sharing.Scope.LIBRARY,Sharing.EVERYTHING).isEmpty();}
             }
             app.parlonsBook=store.parlonsBook();
         }
@@ -158,8 +159,12 @@ final class DesktopPeople {
     private void lay(Level at,Read r) {
         JPanel body=DesktopUi.column();JComponent more=null;String title=at.name;JComponent[] buttons={};JComponent last=null;
         switch(at.kind) {
-            // No foot: what adds to a part is the + beside its name (decision 106).
-            case LIST: list(body,r);buttons=new JComponent[0];break;
+            // One round + at the foot on the right, where Home has it, and my code quietly at the left (decision 258).
+            case LIST: {
+                list(body,r);
+                JButton mine=DesktopUi.quietButton("Show my code…",this::showMine);mine.setName("showMyCode");
+                buttons=new JComponent[]{mine};last=plus();break;
+            }
             case SELF: self(body,r);break;
             case GROUP: {
                 Groups.Group group=r.group(at.id);
@@ -195,7 +200,8 @@ final class DesktopPeople {
         String to=above.hasNext()?above.next().name:backTo;
         DesktopUi.head(box,to,this::back,title,more);
         holder.removeAll();scroll=DesktopUi.scrolling(body);holder.add(scroll);
-        foot.removeAll();foot.add(DesktopUi.actions(buttons),BorderLayout.WEST);
+        // In the middle of the foot's height, as tall as the round + makes it.
+        foot.removeAll();JPanel west=new JPanel(new GridBagLayout());west.setOpaque(false);west.add(DesktopUi.actions(buttons));foot.add(west,BorderLayout.WEST);
         // The way out, last and on the right, where the eye ends.
         // Apart from the others by a gap, and the box at least as wide as the foot, so no two buttons ever touch (the owner,
         // 2026-10-16: "the buttons are not touching each other").
@@ -328,22 +334,13 @@ final class DesktopPeople {
             }
             }
         }
-        // Each part says what to do when it is empty.
-        JButton connect=adds("addPerson","Add someone",null);
-        connect.addActionListener(e->{
-            // The ways to connect, theirs and mine, from the + itself (decision 110), as the phone's +.
-            JPopupMenu ways=new JPopupMenu();
-            item(ways,"Scan a code or paste their link…",()->leave(()->app.scanCode(null)));
-            ways.addSeparator();
-            item(ways,"Copy my link",app::copyMyLink);
-            item(ways,"Show my code…",()->app.profile(box,"People and devices"));
-            ways.show(connect,0,connect.getHeight());
-        });
-        section(body,"People",connect);
+        // Each part says what to do when it is empty. Neither has a + of its own: the one round + at the foot adds anybody
+        // and any device, and the path after the scan asks which (decision 258).
+        section(body,"People");
         if(others.getComponentCount()==0)DesktopUi.add(body,DesktopUi.spread("Nobody else yet. Press + to connect with someone, or share a note or a folder with them."));
         else DesktopUi.add(body,DesktopUi.card(null,others));
         DesktopUi.gap(body,DesktopUi.L);
-        section(body,Groups.MY_DEVICES,adds("addDevice","Add my device",()->leave(()->app.showCode(Desktop.library()))));
+        section(body,Groups.MY_DEVICES);
         if(own.getComponentCount()==0)DesktopUi.add(body,DesktopUi.spread("No other device yet. Press + to connect another device of yours and keep the same notes on both."));
         else DesktopUi.add(body,DesktopUi.card(null,own));
         DesktopUi.gap(body,DesktopUi.L);
@@ -376,16 +373,19 @@ final class DesktopPeople {
     }
 
     /**
-     * A + at the right of a part's name, which adds to it: the one sign for adding, at the one place, in both parts (the
-     * owner, 2026-10-06: "just put a + on the right side of both My devices and People so that people will understand that
-     * this is to add elements"; decision 106). What it adds is said under the pointer and to a screen reader.
+     * The one round +, Home's, at the foot on the right (the owner, 2026-10-25: "let's have just one big + button similar to
+     * what we have on the home page ... not start with a branch Personnes or Appareils"; decision 258). It replaces the + by
+     * People and the + by My devices (decision 106): the camera opens at once, and what was scanned is asked after.
      */
-    private JButton adds(String name,String does,Runnable go) {
-        JButton plus=app.button("+",go==null?()->{}:go);plus.setName(name);plus.setToolTipText(Say.t(does));
-        plus.getAccessibleContext().setAccessibleName(does);
-        plus.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,18f));plus.setMargin(new Insets(2,12,4,12));
+    private JButton plus() {
+        JButton plus=DesktopHome.round();plus.setName("peoplePlus");plus.setPreferredSize(new Dimension(56,56));
+        plus.setToolTipText(Say.t("Add someone or a device"));plus.getAccessibleContext().setAccessibleName(Say.t("Add someone or a device"));
+        // The scan, and the path after it, open over the window; left or done, People and devices is opened again.
+        plus.addActionListener(e->leave(()->app.scanCode(null,()->DesktopProfile.open(app,null,null,"Your code"),()->app.people(null))));
         return plus;
     }
+    /** My code, for the other device to scan: Profile at Your code, over this box, with ‹ back to it. */
+    private void showMine(){DesktopProfile.open(app,box,TITLE,"Your code");}
 
     /** One device or person in the list: their round in their colour, their name, how they are reached, and › to their page. */
     private JPanel line(NoteStore.Contact one,Read r) {
@@ -458,7 +458,7 @@ final class DesktopPeople {
         List<NoteStore.Contact> in=r.in.getOrDefault(at.id,List.of());
         List<NoteStore.Contact> out=new ArrayList<>();
         if(!mine)for(NoteStore.Contact one:r.contacts)if(!one.mine&&one.paired()&&!r.groupsOf(one.address).contains(at.id))out.add(one);
-        JButton add=mine?app.button("Add my device…",()->leave(()->app.showCode(Desktop.library())))
+        JButton add=mine?app.button("Add my device…",()->leave(()->app.addMyDevice()))
             :app.button(at.adding?"Add people  ▴":"Add people  ▾",()->{at.adding=!at.adding;draw();});
         section(body,mine?"Devices":"Members",add);
         // Whoever is not in it yet, dropped down under the heading: a click adds, and the list stays for the next one.
@@ -626,6 +626,15 @@ final class DesktopPeople {
         // What they have, thing by thing, with the rights on each changed here or taken away; what came through a group says
         // which, and changed here it becomes their own.
         DesktopUi.gap(body,DesktopUi.L);section(body,Say.t("Shared with {0}",who.name));
+        // One of mine: what it may do with everything first, Nothing yet where it was added with nothing (decision 255).
+        if(who.mine&&r.bonds.containsKey(who.address)) {
+            Sharing.Rule bond=r.bonds.get(who.address);
+            JComponent role=app.ownDeviceRole(who.address,who.name,bond,r.givesEverything,this::draw);
+            JPanel words=DesktopUi.column();DesktopUi.add(words,DesktopUi.body("Everything"));
+            DesktopUi.add(words,DesktopUi.note(bond==null?Sharing.NOTHING_YET_DOES:Sharing.everythingDoes(bond.level)));
+            DesktopUi.add(body,DesktopUi.card(null,DesktopUi.row(words,role)));
+            DesktopUi.gap(body,DesktopUi.S);
+        }
         if(r.shared.isEmpty())DesktopUi.add(body,DesktopUi.spread(Say.t("Nothing shared with {0} yet.",who.name)));
         else {
             JPanel things=DesktopUi.column();

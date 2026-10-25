@@ -65,13 +65,13 @@ public class DesktopPeopleBoxTest {
                     assertTrue(said.contains(FirstShare.NOBODY_BLOCKED));
                     assertTrue("Ana under People",said.indexOf("Ana")>people&&said.indexOf("Ana")<mine);
                     assertTrue("the laptop under My devices",said.indexOf("Work laptop")>mine&&said.indexOf("Work laptop")<self);
-                    // Each part's one thing to do is beside its name, the same place in both.
-                    // A + for each, the same sign at the same place (decision 106), and nothing at the foot.
-                    JButton person=named(in,"addPerson"),device=named(in,"addDevice");
-                    assertNotNull(person);assertNotNull(device);assertEquals("+",person.getText());assertEquals("+",device.getText());
-                    assertEquals("Add someone",person.getAccessibleContext().getAccessibleName());assertEquals("Add my device",device.getAccessibleContext().getAccessibleName());
-                    assertEquals("beside their headings, at the same edge",person.getLocationOnScreen().x+person.getWidth(),device.getLocationOnScreen().x+device.getWidth());
-                    assertNull("no foot on the list",button(in,"Scan a code or paste a link…"));
+                    // No + by either part, built the same way: one round + at the foot adds anybody and any device, and the
+                    // path after the scan asks which (decision 258); my code quietly beside it.
+                    assertNull(named(in,"addPerson"));assertNull(named(in,"addDevice"));
+                    JButton plus=named(in,"peoplePlus");assertNotNull(plus);
+                    assertEquals("Add someone or a device",plus.getAccessibleContext().getAccessibleName());
+                    assertNotNull(named(in,"showMyCode"));
+                    assertNull("no Scan a code button on the list",button(in,"Scan a code or paste a link…"));
                     // Under each person, a chip for each group: in is ticked, not in has a plus. None under a device of mine.
                     assertNotNull(called(in,"Ana is in Friends. Take Ana out of Friends"));
                     assertNotNull(called(in,"Ana is not in Colleagues. Put Ana in Colleagues"));

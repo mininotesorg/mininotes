@@ -47,10 +47,20 @@ public final class Waking extends BroadcastReceiver {
         if(!Listening.switchedOn(app))return;
         // The phone stays awake until this says it is finished, and not a moment longer.
         final PendingResult finished=goAsync();
-        new Thread(()->{
+        // The round on a thread of its own, waited for only so long: Android takes a broadcast not finished within ten seconds
+        // for an app not responding, and a round slowed by proof of work and a full heap took longer (Graphene, 2026-10-25,
+        // decision 257). Past the wait the round goes on by itself, as the upkeep's do, and the next alarm is set.
+        final Thread round=new Thread(()->{
             try{if(Node.running())Node.roundNow();}
+            catch(Throwable notNow){/* the next one */}
+        },"mininotes-waking-round");
+        new Thread(()->{
+            try{round.start();round.join(WAITED);}
             catch(Throwable notNow){/* the next one */}
             finally{again(app);finished.finish();}
         },"mininotes-waking").start();
     }
+
+    /** The most the alarm waits for its round, well inside the ten seconds Android gives a broadcast. */
+    private static final long WAITED=7_000L;
 }

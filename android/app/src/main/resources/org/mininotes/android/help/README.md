@@ -43,6 +43,22 @@ travels sealed end to end over the Minima network, or straight from device to de
 
 Newest first. Each version is the same on the phone and the PC unless it says otherwise.
 
+### 0.4.030
+
+- *People and devices* has one round + that opens the camera: scan the other device's code, then say what it is (one
+  of your devices or someone else), put it in a group if you want, and choose what it gets. *Show my code* is beside
+  it.
+- A phone back after being away no longer slows down: what was kept for it while it was away comes once, and is
+  answered once.
+
+### 0.4.029
+
+- *Add my device* asks first what the new device gets: nothing yet, or everything to read or to write. With nothing
+  yet it is one of your devices, gets what you then share with it, and you choose on its line in *People and devices*.
+  Its box opens at once.
+- Messages built from names, such as a note that could not reach a device or what a pairing code offers, are in your
+  language, on the device that shows them.
+
 ### 0.4.028
 
 - A stamped note or file you share takes its stamp with it: the person you share it with sees it in *Stamp on

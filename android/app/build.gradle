@@ -8,8 +8,8 @@ android {
         applicationId 'org.mininotes.android'
         minSdk 28
         targetSdk 35
-        versionCode 4028
-        versionName '0.4.028'
+        versionCode 4030
+        versionName '0.4.030'
         testInstrumentationRunner 'org.mininotes.android.PadPerformanceProbe'
         // True only in the demo build below: made-up notes on first start and pretend recovery words (see Demo).
         buildConfigField 'boolean','DEMO','false'

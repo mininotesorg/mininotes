@@ -118,7 +118,7 @@ final class Linking {
      * this device's any more, that nothing goes to it.
      */
     static String through(String listedIn) {
-        return listedIn==null||listedIn.isBlank()?"Linked through something it no longer has. Nothing is sent to it."
-            :"Linked through “"+listedIn.trim()+"”";
+        return listedIn==null||listedIn.isBlank()?Say.t("Linked through something it no longer has. Nothing is sent to it.")
+            :Say.t("Linked through “{0}”",listedIn.trim());
     }
 }

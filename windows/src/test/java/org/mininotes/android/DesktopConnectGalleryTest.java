@@ -33,22 +33,31 @@ public class DesktopConnectGalleryTest {
             NoteStore.Note note=store.latest();
             NoteStore.Branch groceries=new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,note.id,"","Groceries","",0,0,true);
 
-            // 1. People and devices, its + by People: the ways to connect.
+            store.pairedWith("MxConnectGalleryLaptop@127.0.0.1:9102","Work laptop",true,Envelope.keys().getPublic().getEncoded(),Envelope.keys().getPublic().getEncoded());
+            store.setMine("MxConnectGalleryLaptop@127.0.0.1:9102",true);
+            store.makeGroup("Friends");store.makeGroup("Family");
+
+            // 1. People and devices (decision 258): one round + at the foot on the right, where Home has it, my code quietly at
+            //    the left, and no + by People or by My devices.
             JDialog people=open(pad,()->pad.people(null));
             try {
-                JButton plus=named(people.getContentPane(),"addPerson");assertNotNull("the + by People",plus);
-                SwingUtilities.invokeAndWait(plus::doClick);
-                JPopupMenu[] menu={null};
-                long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
-                while(menu[0]==null&&System.nanoTime()<until) {
-                    SwingUtilities.invokeAndWait(()->{MenuElement[] path=MenuSelectionManager.defaultManager().getSelectedPath();
-                        if(path.length>0&&path[0] instanceof JPopupMenu p&&p.isShowing())menu[0]=p;});
-                    Thread.sleep(50);
-                }
-                assertNotNull("the ways to connect",menu[0]);Thread.sleep(300);
-                SwingUtilities.invokeAndWait(()->{try{picture(menu[0],"connect-01-people-plus");}catch(Exception e){throw new RuntimeException(e);}
-                    menu[0].setVisible(false);MenuSelectionManager.defaultManager().clearSelectedPath();});
+                SwingUtilities.invokeAndWait(()->{
+                    Container in=people.getContentPane();
+                    assertNull("no + by People",named(in,"addPerson"));assertNull("no + by My devices",named(in,"addDevice"));
+                    JButton plus=named(in,"peoplePlus");assertNotNull("the one round +",plus);
+                    assertEquals("Add someone or a device",plus.getAccessibleContext().getAccessibleName());
+                    assertNotNull("my code, quietly",named(in,"showMyCode"));
+                    // At the foot, on the right, as Home's.
+                    java.awt.Point at=SwingUtilities.convertPoint(plus,0,0,people.getRootPane());
+                    assertTrue("at the right",at.x+plus.getWidth()>people.getRootPane().getWidth()-80);
+                    assertTrue("at the foot",at.y+plus.getHeight()>people.getRootPane().getHeight()-90);
+                });
+                shoot(people,"connect-01-people-one-plus");
             } finally {SwingUtilities.invokeAndWait(people::dispose);}
+
+            // 2. The scan screen the + opens: the camera (started at once outside the tests), a picture or a link, and my code
+            //    instead, quietly.
+            dialog(pad,"connect-05-scan",()->DesktopScanner.open(pad.frame,code->{},()->{},null));
 
             // Codes are drawn only by a window that is not offline; turned off for the drawing, with no node started.
             java.lang.reflect.Field offline=Desktop.class.getDeclaredField("offline");offline.setAccessible(true);
@@ -57,13 +66,56 @@ public class DesktopConnectGalleryTest {
                 // 2. Sharing a note by code: the role asked first, then the code.
                 dialog(pad,"connect-02-role-before-code",()->pad.showCode(groceries));
                 dialogAfter(pad,"connect-03-code-for-a-note",()->pad.showCode(groceries),"Show my code");
-                // 3. My other device: the same code box, offering everything.
-                dialog(pad,"connect-04-my-device-role",()->pad.showCode(Desktop.library()));
-                dialogAfter(pad,"connect-05-my-device-code",()->pad.showCode(Desktop.library()),"Show my code");
+                // 3. My other device: one box, what it gets first, Nothing yet unless everything is chosen, and the code under
+                //    it (decision 255).
+                dialog(pad,"connect-04-my-device-what-it-gets",()->pad.showCode(Desktop.library()));
             } finally {SwingUtilities.invokeAndWait(()->{try{offline.setBoolean(pad,true);}catch(Exception e){throw new RuntimeException(e);}});}
 
-            // 4. The other side: a plain code pasted, then a code that shares a note, each read as the scanner reads it.
-            //    Drawn from this PC's own keys under a made-up name; closed without Pair or Accept, so nothing is kept or sent.
+            // 4. The path after a code is read (decision 258), a step at a time. Drawn from this PC's own keys under made-up
+            //    names; closed before Add or Accept, so nothing is kept or sent. A device of mine first: its Add my device code
+            //    says what it is, so One of my devices is chosen; then what it gets, Nothing yet first; then done.
+            String laptop=pad.keys.line("Sam's laptop","MxConnectLaptop@127.0.0.1:9202",Sharing.MINE_OFFER,Sharing.Level.READ,Sharing.Scope.LIBRARY.name(),Sharing.MINE_ONLY);
+            Pairing.Said mine=Pairing.read(Pairing.line(Pairing.link(laptop)));
+            JDialog path=open(pad,()->DesktopJoining.open(pad,mine,"",null,null));
+            try {
+                SwingUtilities.invokeAndWait(()->assertTrue("the code says it is mine",((JRadioButton)named(path.getContentPane(),"joiningMine",JRadioButton.class)).isSelected()));
+                shoot(path,"connect-10-mine-what-is-it");
+                press(path,"Next");
+                SwingUtilities.invokeAndWait(()->{
+                    assertNotNull("no group step for a device of mine: what it gets",showing(path.getContentPane(),"What it gets"));
+                    assertTrue("Nothing yet first",calledIn(path.getContentPane(),"Nothing yet").isSelected());
+                    assertEquals("Add",named(path.getContentPane(),"joiningNext").getText());
+                });
+                shoot(path,"connect-11-mine-what-it-gets");
+                SwingUtilities.invokeAndWait(()->((DesktopJoining)path.getRootPane().getClientProperty("joining")).endedForPicture(true,Say.t("Waiting for {0} to accept","Sam's laptop"),null));
+                shoot(path,"connect-12-mine-done");
+            } finally {SwingUtilities.invokeAndWait(path::dispose);}
+            // Someone else: a plain code, someone else first; a group; what she gets, notes chosen; done.
+            String plainAna=pad.keys.line("Ana","MxConnectAna@127.0.0.1:9201","",Sharing.Level.WRITE,"","");
+            Pairing.Said her=Pairing.read(Pairing.line(Pairing.link(plainAna)));
+            JDialog other=open(pad,()->DesktopJoining.open(pad,her,"",null,null));
+            try {
+                SwingUtilities.invokeAndWait(()->assertTrue("someone else first",((JRadioButton)named(other.getContentPane(),"joiningSomeone",JRadioButton.class)).isSelected()));
+                shoot(other,"connect-13-someone-what-is-it");
+                press(other,"Next");
+                SwingUtilities.invokeAndWait(()->{assertNotNull(calledIn(other.getContentPane(),"No group"));assertNotNull(calledIn(other.getContentPane(),"Friends"));});
+                shoot(other,"connect-14-someone-group");
+                press(other,"Friends");press(other,"Next");
+                press(other,"Choose notes or folders");
+                SwingUtilities.invokeAndWait(()->assertTrue("Home's things, a switch each",startsNamed(other.getContentPane(),"joiningThing ")));
+                shoot(other,"connect-15-someone-what-she-gets");
+                SwingUtilities.invokeAndWait(()->((DesktopJoining)other.getRootPane().getClientProperty("joining")).endedForPicture(false,Say.t("Waiting for {0} to accept","Ana"),null));
+                shoot(other,"connect-16-someone-done");
+            } finally {SwingUtilities.invokeAndWait(other::dispose);}
+            // A plain code chosen as one of mine: done says the other device turns My device on too.
+            JDialog oneSided=open(pad,()->DesktopJoining.open(pad,her,"",null,null));
+            try {
+                SwingUtilities.invokeAndWait(()->((DesktopJoining)oneSided.getRootPane().getClientProperty("joining")).endedForPicture(true,Say.t("Waiting for {0} to accept","Ana"),Say.t("On {0}, turn My device on too.","Ana")));
+                shoot(oneSided,"connect-17-plain-as-mine-done");
+            } finally {SwingUtilities.invokeAndWait(oneSided::dispose);}
+
+            // 5. The same path for what the scanner reads: a plain code pasted, then a code that shares a note, each read as
+            //    the scanner reads it, closed at its first step.
             String plain=pad.keys.line("Ana","MxConnectAna@127.0.0.1:9201",
                 "",Sharing.Level.WRITE,"","");
             String offer=pad.keys.line("Ana","MxConnectAna@127.0.0.1:9201",
@@ -83,6 +135,23 @@ public class DesktopConnectGalleryTest {
         }
     }
 
+    /** A box already open, pictured as it is now. */
+    private static void shoot(JDialog box,String name) throws Exception {
+        Thread.sleep(400);SwingUtilities.invokeAndWait(()->{box.validate();try{shootNow(box,name);}catch(Exception e){throw new RuntimeException(e);}});
+    }
+    /** The button or choice with these words pressed in an open box, and the box let draw again. */
+    private static void press(JDialog box,String words) throws Exception {
+        SwingUtilities.invokeAndWait(()->{AbstractButton b=calledIn(box.getContentPane(),words);assertNotNull("nothing called "+words,b);b.doClick(0);});
+        Thread.sleep(400);SwingUtilities.invokeAndWait(box::validate);
+    }
+    private static Component named(Container in,String name,Class<?> kind) {
+        for(Component c:in.getComponents()){if(kind.isInstance(c)&&name.equals(c.getName()))return c;if(c instanceof Container k){Component f=named(k,name,kind);if(f!=null)return f;}}
+        return null;
+    }
+    private static boolean startsNamed(Container in,String start) {
+        for(Component c:in.getComponents()){if(c.getName()!=null&&c.getName().startsWith(start))return true;if(c instanceof Container k&&startsNamed(k,start))return true;}
+        return false;
+    }
     private static void call(java.lang.reflect.Method m,Desktop pad,DesktopScanner.Code code) {
         try{m.invoke(pad,code,null);}catch(Exception e){throw new RuntimeException(e);}
     }

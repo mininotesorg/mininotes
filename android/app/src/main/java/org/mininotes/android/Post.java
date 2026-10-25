@@ -1116,20 +1116,42 @@ final class Post {
     }
 
     /**
+     * The copies left with carriers lately, by the device they are for, the thing and its kind: each try at sending a note
+     * to a device that is away used to leave another copy of the same revision with every carrier (decision 257).
+     */
+    static final Courier.Lately LEFT=new Courier.Lately(Courier.LEAVE_AGAIN);
+    /** The carriers told lately that a thing they brought here was collected, by carrier, thing and kind (decision 257). */
+    static final Courier.Lately COLLECTED_SAID=new Courier.Lately(Courier.COLLECTED_AGAIN);
+    /** The receipts for carriers waiting their turn: one for each carrier, thing and kind, for the newest revision (decision 257). */
+    static final Courier.Queued COLLECTED_QUEUED=new Courier.Queued();
+    /** Whose things are waiting to be brought, so a burst of arrivals queues one bringing, not one each (decision 257). */
+    private static final java.util.Set<String> BRINGING_SOON=java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** What is held for one device, brought on the answers' thread, queued once however often it is asked for. */
+    private static void bringSoon(Context where,NoteStore store,Keys keys,String who) {
+        if(who==null||!BRINGING_SOON.add(who))return;
+        ANSWERS.execute(()->{BRINGING_SOON.remove(who);bring(where,store,keys,who);});
+    }
+
+    /**
      * A copy of something sealed for {@code them}, left with the devices that can carry it: every other
      * paired device whose build has said it carries, those heard from lately first. Nothing is waited for
-     * and nothing counted - this is on top of the sending, which goes on as it did.
+     * and nothing counted - this is on top of the sending, which goes on as it did. The same revision is
+     * left once in {@link Courier#LEAVE_AGAIN}, however often it is sent: the carriers keep it till it is
+     * collected.
      */
     private static void leaveWithCarriers(Context where,NoteStore store,Keys keys,MaximaNode node,NoteStore.Contact them,
                                           int sort,byte[] page,long revision,byte[] inner) {
         if(store==null||!Courier.fits(inner))return;
+        String once=fingerprint(them)+" "+Courier.hex(page)+" "+sort;
+        if(!LEFT.take(once,revision,System.currentTimeMillis()))return;
+        int left=0;
         try {
             byte[] forWhom=Envelope.fingerprint(Keys.publicKey(them.signing));
             List<NoteStore.Contact> carriers=new ArrayList<>();
             for(NoteStore.Contact one:store.addresses())
                 if(one.paired()&&sendsTo(store,one)&&!one.address.equals(them.address)&&!java.util.Arrays.equals(one.signing,them.signing)&&doesCarry(where,one))carriers.add(one);
             carriers.sort((a,b)->Boolean.compare(there(b),there(a)));
-            int left=0;
             for(NoteStore.Contact carrier:carriers) {
                 if(left>=Courier.CARRIERS)break;
                 try {
@@ -1141,7 +1163,7 @@ final class Post {
             if(left>0)android.util.Log.i("Mininotes/Post","left a copy with "+left+" device(s) that can carry it");
         } catch(Exception notNow) {
             android.util.Log.w("Mininotes/Post","could not leave a copy to be carried: "+notNow.getClass().getSimpleName());
-        }
+        } finally {if(left==0)LEFT.giveBack(once,revision);}
     }
 
     /**
@@ -1167,23 +1189,35 @@ final class Post {
                     +(said.sort==Courier.NOTE?"a note":"an answer")+", "+said.inner.length+" bytes; "+why+")");
                 return new Landed(null,null);
             }
-            boolean kept=store.carry(fingerprint(from),forWhom,Courier.hex(opened.page),said.sort,opened.revision,said.inner);
-            android.util.Log.i("Mininotes/Post",kept?"carrying something for another device":"not carried: something newer is held, or there is no room");
-            if(kept&&there(them))ANSWERS.execute(()->bring(where,store,keys,forWhom));
+            // Already held at that revision or newer: nothing new to keep, to say or to bring (decision 257).
+            int kept=store.carry(fingerprint(from),forWhom,Courier.hex(opened.page),said.sort,opened.revision,said.inner);
+            if(kept==Courier.ALREADY)return new Landed(null,null);
+            android.util.Log.i("Mininotes/Post",kept==Courier.CARRYING?"carrying something for another device":"not carried: there is no room");
+            if(kept==Courier.CARRYING&&there(them))bringSoon(where,store,keys,forWhom);
             return new Landed(null,null);
         }
         Landed landed=arrived(where,store,keys,said.inner,true);
         // Opened, written down, or found not to be anything: either way there is nothing more to bring.
         final NoteStore.Contact carrier=from;final int collected=Receipt.collected(said.sort);
         final byte[] page=opened.page;final long revision=opened.revision;
+        // Said once to each carrier for the thing, up to this revision, in a while: a carrier lets go of every copy it holds
+        // for this device up to the revision it is told, so one receipt does for all. Each copy brought again used to cost
+        // a receipt sealed and mined here (Graphene, 2026-10-25, decision 257); a receipt lost is said again once the while
+        // is out, the next time the carrier brings it.
+        final String once=fingerprint(carrier)+" "+Courier.hex(page)+" "+said.sort;
+        if(!COLLECTED_SAID.take(once,revision,System.currentTimeMillis()))return landed;
+        // One waiting at a time for each carrier and thing: a newer revision brought meanwhile is what it says.
+        if(!COLLECTED_QUEUED.queue(once,revision))return landed;
         ANSWERS.execute(()->{
+            boolean went=false;long newest=COLLECTED_QUEUED.run(once,revision);
             try {
                 // Something just arrived, so the node is up; where it is not, nothing is started for this.
                 MaximaNode node=Node.running()?Node.node(where):null;
                 if(node==null)return;
-                hand(where,store,keys,node,carrier,Envelope.seal(page,revision,System.currentTimeMillis(),Receipt.wrap(collected),
+                went=hand(where,store,keys,node,carrier,Envelope.seal(page,newest,System.currentTimeMillis(),Receipt.wrap(collected),
                     keys.signing(),Keys.publicKey(carrier.agreement)));
             } catch(Exception notNow){/* it is brought again, and collected again */}
+            finally {if(!went)COLLECTED_SAID.giveBack(once,newest);}
         });
         return landed;
     }
@@ -1840,7 +1874,17 @@ final class Post {
     private static final java.util.Map<String,Long> TOLD_FILES=new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.Set<String> WENT_FILES=java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** A device that could not be told is tried again this much later, not every round. */
-    private static final long TELL_AGAIN=10L*60*1000;
+    private static final long TELL_AGAIN=Said.TELL_AGAIN;
+    /**
+     * How many times this run a device was told again something it was handed and never said back, by kind and fingerprint:
+     * a relay takes it for a device that is not there, so a PC left off was told every ten minutes, for as long as this
+     * device ran, each time a proof of work (decision 257). See {@link Said#unanswered}.
+     */
+    private static final java.util.Map<String,Integer> RETOLD=new java.util.concurrent.ConcurrentHashMap<>();
+    /** How long after it was last handed something not said back is said again to a device. */
+    private static long tellAgain(String kind,String who){Integer times=RETOLD.get(kind+" "+who);return Said.unanswered(times==null?0:times);}
+    /** Told again what it was handed and never said back. */
+    private static void retold(String kind,String who){RETOLD.merge(kind+" "+who,1,Integer::sum);}
 
     /** What a device was told and took within the day, by kind, kept across restarts (decision 225): see Said. Null for nothing. */
     private static String saidLately(Context where,String kind,String who) {
@@ -2148,6 +2192,20 @@ final class Post {
         persons("bonded with one of the owner's devices");
     }
 
+    /**
+     * A device of the owner's that scanned an Add my device code, added here (decision 255): paired, marked as theirs and
+     * bonded as {@link #bonded} does, so it is listed among my devices and has the cards (persons, stamps, groups) as any
+     * device of mine; and given everything at the level the code offered, or nothing where it offered nothing yet. What it
+     * may do with everything is then chosen on its line, and a note or a folder is shared with it as with anybody. Blocking.
+     *
+     * @param everything what it may do with everything, or null for nothing yet
+     */
+    static void addedAsMine(Context where,NoteStore store,Hello.Said them,Sharing.Level everything) {
+        store.pairedWith(them.address,them.name,false,them.agreement,them.signing);
+        bonded(where,store,them);
+        if(everything!=null&&everything!=Sharing.Level.GONE)store.give(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,them.address,everything,null);
+    }
+
     /** A device whose build has said it knows about persons, and whether it said this device is its owner's too. */
     private static void readsCards(Context where,String fingerprint,boolean mineThere) {
         if(where==null||fingerprint==null||fingerprint.isEmpty())return;
@@ -2401,7 +2459,7 @@ final class Post {
         // And that it waits here to be accepted, so their tick does not say "everybody has it" yet (see Asking).
         if(sleeve.answer&&did!=NoteStore.SLEEVE_NOT&&did!=NoteStore.SLEEVE_GONE&&store.waits(NoteStore.Branch.Kind.FILE,sleeve.id))
             sayWaits(where,store,keys,from,opened.page,opened.revision,NoteStore.Branch.Kind.FILE,sleeve.id);
-        if(did==NoteStore.SLEEVE_GONE)return Landed.left(from.name+" deleted a file they shared with you.","").by(from.name,0);
+        if(did==NoteStore.SLEEVE_GONE)return Landed.left(Say.t("{0} deleted a file they shared with you.",from.name),"").by(from.name,0);
         // A file somebody else shared with me on its own, for the first time: it waits, coming and once here (decision 109).
         if(did==NoteStore.SLEEVE_FETCH&&store.waits(NoteStore.Branch.Kind.FILE,sleeve.id))
             return stamped(Landed.waiting(FirstShare.title(List.of(from.name),1,sleeve.name),sleeve.id).by(from.name,0),stamped);
@@ -2732,11 +2790,7 @@ final class Post {
 
     /** The card, sent to every device of the owner's that reads cards and counts this one as theirs, where it changed. */
     private static void sendCards(Context where,NoteStore store,Keys keys) {
-        List<NoteStore.Contact> own=new ArrayList<>();
-        for(NoteStore.Contact them:store.addresses()) {
-            String who=fingerprint(them);
-            if(them.paired()&&Persons.goesTo(them.mine,readsCards(where,who),mineThere(where,who)))own.add(them);
-        }
+        List<NoteStore.Contact> own=cardsGoTo(where,store);
         if(own.isEmpty()||!Node.running())return;
         try {
             Persons.Me me=me(where);
@@ -2990,6 +3044,19 @@ final class Post {
     }
 
     /**
+     * Who the card of persons goes to: every device paired here and marked yours, whose build reads cards and that counts this
+     * one as its owner's too (see {@link Persons#goesTo}). Whatever it may do with everything, nothing at all included.
+     */
+    static List<NoteStore.Contact> cardsGoTo(Context where,NoteStore store) {
+        List<NoteStore.Contact> own=new ArrayList<>();
+        for(NoteStore.Contact them:store.addresses()) {
+            String who=fingerprint(them);
+            if(them.paired()&&Persons.goesTo(them.mine,readsCards(where,who),mineThere(where,who)))own.add(them);
+        }
+        return own;
+    }
+
+    /**
      * Who a stamps card goes to: every device paired here and marked yours, whose build has said it reads stamps and that
      * counts this one as its owner's too (see {@link StampCard#goesTo}). A build from before, and anybody else's device, never.
      */
@@ -3043,25 +3110,57 @@ final class Post {
             List<StampCard.Row> rows=store.stampsCard();
             // Nothing stamped here: nothing to say, and a device with none has nothing to hear.
             if(rows.isEmpty())return;
-            byte[] plain=StampCard.wrap(rows);
-            String hash=Courier.hex(java.security.MessageDigest.getInstance("SHA-256").digest(plain));
             MaximaNode node=Node.node(where);
             if(node==null)return;
+            java.util.Set<String> everything=givenEverything(store);
             int went=0,missed=0;
             for(NoteStore.Contact them:own) {
+                // A device of mine given everything has every stamp; one added with nothing yet (decision 255) only those of
+                // what is shared with it, so the text of a stamped note never reaches a device it was not shared with.
+                List<StampCard.Row> its=everything.contains(them.address)?rows:stampsReaching(store,rows,them.address);
+                if(its.isEmpty())continue;
+                byte[] plain=StampCard.wrap(its);
+                String hash=Courier.hex(java.security.MessageDigest.getInstance("SHA-256").digest(plain));
                 String who=fingerprint(them);
                 if(hash.equals(STAMP_CARDS.get(who))||resting(who))continue;
-                byte[] sealed=Envelope.seal(new byte[16],StampCard.newest(rows),System.currentTimeMillis(),plain,keys.signing(),Keys.publicKey(them.agreement));
+                byte[] sealed=Envelope.seal(new byte[16],StampCard.newest(its),System.currentTimeMillis(),plain,keys.signing(),Keys.publicKey(them.agreement));
                 boolean handed;
                 // One device out of reach is not a card kept from the rest: it goes again at the next round.
                 try{handed=handSaying(where,store,keys,node,them,sealed);}catch(Exception noWay){missed++;continue;}
                 if(handed){STAMP_CARDS.put(who,hash);went++;}else missed++;
             }
-            if(went+missed>0)stamps("stamps card: "+StampCard.count(plain)+" of "+rows.size()+" row(s) sent to "+went+" device(s)"
+            if(went+missed>0)stamps("stamps card: "+rows.size()+" row(s) here, sent to "+went+" device(s)"
                 +(missed>0?", "+missed+" out of reach":""));
         } catch(Exception notNow) {
             stamps("could not send a stamps card: "+Unsent.reason(notNow));
         }
+    }
+
+    /** The devices given everything here: a library rule of theirs that is not gone. */
+    static java.util.Set<String> givenEverything(NoteStore store) {
+        java.util.Set<String> out=new java.util.HashSet<>();
+        for(Sharing.Rule rule:store.shares())
+            if(rule.scope==Sharing.Scope.LIBRARY&&Sharing.EVERYTHING.equals(rule.target)&&rule.level!=Sharing.Level.GONE)out.add(rule.address);
+        return out;
+    }
+    /**
+     * The stamps of what reaches one device (decision 255): a note shared with it, or a file shared with it, or attached to
+     * a note shared with it. A file of the drive, never in the notebook, reaches nobody but a device given everything.
+     */
+    static List<StampCard.Row> stampsReaching(NoteStore store,List<StampCard.Row> rows,String address) {
+        List<StampCard.Row> out=new ArrayList<>();
+        for(StampCard.Row row:rows) {
+            boolean note=Integritas.NOTE.equals(row.kind)||Integritas.TITLED.equals(row.kind);
+            boolean reaches;
+            if(note)reaches=store.reaches(Sharing.Scope.PAGE,row.id).containsKey(address);
+            else if(Integritas.FILE.equals(row.kind)) {
+                reaches=store.reaches(Sharing.Scope.FILE,row.id).containsKey(address);
+                if(!reaches){NoteStore.Held held=store.file(row.id);
+                    reaches=held!=null&&held.held==NoteStore.Branch.Kind.PAGE&&store.reaches(Sharing.Scope.PAGE,held.note).containsKey(address);}
+            } else reaches=false;
+            if(reaches)out.add(row);
+        }
+        return out;
     }
 
     /**
@@ -3454,8 +3553,9 @@ final class Post {
             String who=fingerprint(them);
             if(who.isEmpty()||!them.paired()||!sendsTo(store,them))continue;
             long[] told=told(where,TOLD_OWN,"parlonsOwn",who);
-            if(told!=null&&(told[1]==1&&readsOwnParlons(where,them)||now>=told[0]&&now-told[0]<(told[1]==1?TELL_AGAIN:60_000L)))continue;
+            if(told!=null&&(told[1]==1&&readsOwnParlons(where,them)||now>=told[0]&&now-told[0]<(told[1]==1?tellAgain("parlonsOwn",who):60_000L)))continue;
             if(resting(who))continue;
+            if(told!=null&&told[1]==1)retold("parlonsOwn",who);
             tellOwnParlons(where,store,keys,them);
         }
     }
@@ -3531,8 +3631,9 @@ final class Post {
             String who=fingerprint(them);
             if(who.isEmpty()||!them.paired()||!sendsTo(store,them))continue;
             long[] told=told(where,TOLD_FACE,"faceOwn",who);
-            if(told!=null&&(told[1]==1&&readsOwnFace(where,them)||now>=told[0]&&now-told[0]<(told[1]==1?TELL_AGAIN:60_000L)))continue;
+            if(told!=null&&(told[1]==1&&readsOwnFace(where,them)||now>=told[0]&&now-told[0]<(told[1]==1?tellAgain("faceOwn",who):60_000L)))continue;
             if(resting(who))continue;
+            if(told!=null&&told[1]==1)retold("faceOwn",who);
             tellOwnFace(where,store,keys,them);
         }
     }
@@ -3617,8 +3718,9 @@ final class Post {
             String who=fingerprint(them);
             if(who.isEmpty()||!them.paired()||!sendsTo(store,them))continue;
             long[] told=told(where,TOLD_ABOUT,"aboutMe",who);
-            if(told!=null&&(told[1]==1&&readsAboutMe(where,them)||now>=told[0]&&now-told[0]<(told[1]==1?TELL_AGAIN:60_000L)))continue;
+            if(told!=null&&(told[1]==1&&readsAboutMe(where,them)||now>=told[0]&&now-told[0]<(told[1]==1?tellAgain("aboutMe",who):60_000L)))continue;
             if(resting(who))continue;
+            if(told!=null&&told[1]==1)retold("aboutMe",who);
             tellAboutMe(where,store,keys,them);
         }
     }
@@ -3779,8 +3881,9 @@ final class Post {
             // Said again every while until they say it back: one said to a build from before, updated since, or one that
             // went astray, left both ends saying the other needed updating (Graphene and Pro, 2026-10-10).
             // One that could not be handed at all (the node still starting, say) is tried again a minute on, not ten.
-            if(told!=null&&(told[1]==1&&readsMessages(where,them)||now>=told[0]&&now-told[0]<(told[1]==1?TELL_AGAIN:60_000L)))continue;
+            if(told!=null&&(told[1]==1&&readsMessages(where,them)||now>=told[0]&&now-told[0]<(told[1]==1?tellAgain("messages",who):60_000L)))continue;
             if(resting(who))continue;
+            if(told!=null&&told[1]==1)retold("messages",who);
             tellMessages(where,store,keys,them);
         }
     }
@@ -4368,8 +4471,12 @@ final class Post {
                 // Heard from, so there: nothing sent to them for a while is left with anybody else, and
                 // whatever was being carried for them goes now.
                 final String who=fingerprint(from);
-                HEARD.put(who,System.currentTimeMillis());
-                if(!store.carried(who).isEmpty())ANSWERS.execute(()->bring(where,store,keys,who));
+                long now=System.currentTimeMillis();
+                Long before=HEARD.put(who,now);
+                // Brought at once only to a device back from being away: one that is there is brought things when their turn
+                // comes, or every message from it brought everything held for it again (decision 257).
+                boolean back=before==null||now<before||now-before>=Courier.THERE;
+                if(back&&!store.carried(who).isEmpty())bringSoon(where,store,keys,who);
                 Courier.Said carried=Courier.open(opened.text);
                 if(carried!=null)return carried(where,store,keys,from,opened,carried);
             } else if(Courier.open(opened.text)!=null) {
@@ -4429,7 +4536,9 @@ final class Post {
                 android.util.Log.i("Mininotes/Post","they have left a "+leftAt.name().toLowerCase(java.util.Locale.ROOT)
                     +(any?"":" - which they were not on here, so it changes nothing"));
                 if(!any)return new Landed(null,null);
-                return Landed.left(from.name+" unfollowed a "+(leftAt==Sharing.Scope.PAGE?"note":leftAt==Sharing.Scope.FILE?"file":"folder")+".",id).by(from.name,0);
+                // Said here, in this device's language (decision 256): a phrase for each kind of thing.
+                return Landed.left(leftAt==Sharing.Scope.PAGE?Say.t("{0} unfollowed a note.",from.name):leftAt==Sharing.Scope.FILE?Say.t("{0} unfollowed a file.",from.name)
+                    :Say.t("{0} unfollowed a folder.",from.name),id).by(from.name,0);
             }
             Sharing.Scope offAt=Receipt.removedScope(about);
             if(offAt!=null) {
@@ -4439,8 +4548,9 @@ final class Post {
                 android.util.Log.i("Mininotes/Post","they say this phone is off a "+offAt.name().toLowerCase(java.util.Locale.ROOT)
                     +(any?"":" - which changes nothing here"));
                 if(!any)return new Landed(null,null);
-                return Landed.left(from.name+" removed you from a "+(offAt==Sharing.Scope.PAGE?"note":offAt==Sharing.Scope.FILE?"file":"folder")
-                    +". Your copy stays on "+here()+".",id).by(from.name,0);
+                String kind=offAt==Sharing.Scope.PAGE?Say.t("{0} removed you from a note.",from.name):offAt==Sharing.Scope.FILE?Say.t("{0} removed you from a file.",from.name)
+                    :Say.t("{0} removed you from a folder.",from.name);
+                return Landed.left(kind+" "+Say.t(Node.A_PC?"Your copy stays on this PC.":"Your copy stays on this phone."),id).by(from.name,0);
             }
             if((about==Receipt.COLLECTED||about==Receipt.COLLECTED_ANSWER)&&!brought) {
                 // They have what was being carried for them: that note, or that answer, up to that revision.

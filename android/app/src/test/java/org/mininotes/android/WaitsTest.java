@@ -37,8 +37,8 @@ public class WaitsTest {
     @Test public void notHeardFromComesFirst() {
         List<String> lines=Waits.lines(List.of(new Waits.Device("Test phone",files(2,2),0),
             new Waits.Device("Test tablet",new Waits.Where(1,0,0,false,true),0)),1);
-        assertEquals("Test tablet has not been heard from for more than three days",lines.get(0));
-        assertEquals("Waiting for Test phone to confirm 2 files",lines.get(1));
+        assertEquals("Test tablet has not been heard from for more than three days.",lines.get(0));
+        assertEquals("Waiting for Test phone to confirm 2 files.",lines.get(1));
     }
 
     @Test public void aRoundSaysTheTextAndTheFilesApart() {
@@ -84,12 +84,12 @@ public class WaitsTest {
         // Added up over a collection: three things waiting for it, and nothing about sending again or having it.
         Waits.Where three=update.and(update).and(new Waits.Where(0,0,0,true,false));
         assertEquals(2,three.update());
-        assertEquals(List.of("Old phone needs to update Mininotes to receive this"),Waits.lines(List.of(new Waits.Device("Old phone",three,0)),3));
+        assertEquals(List.of("Old phone needs to update Mininotes to receive this."),Waits.lines(List.of(new Waits.Device("Old phone",three,0)),3));
         // After the ones not heard from, before writing that waits: who has to do something comes first.
         List<String> lines=Waits.lines(List.of(new Waits.Device("Test phone",text(),0),new Waits.Device("Old phone",update,0),
             new Waits.Device("",update,0)),2);
-        assertEquals(List.of("Old phone needs to update Mininotes to receive this","A paired device needs to update Mininotes to receive this",
-            "Waiting to reach Test phone with changes to 1 note"),lines);
+        assertEquals(List.of("Old phone needs to update Mininotes to receive this.","A paired device needs to update Mininotes to receive this.",
+            "Waiting to reach Test phone with changes to 1 note."),lines);
         // Their round says it, alone or after what else waits.
         assertEquals("Old phone needs to update Mininotes to receive this.",Waits.person("Old phone",update,0));
         assertEquals(SyncMark.WAITING.person()+" Old phone needs to update Mininotes to receive this.",

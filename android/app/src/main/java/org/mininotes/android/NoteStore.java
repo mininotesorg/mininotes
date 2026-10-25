@@ -4375,7 +4375,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 List<String> up=tree.above(c.getString(0));
                 if(!tree.live(up))continue;
                 found.add(new Branch(Branch.Kind.COLLECTION,c.getString(0),home(c.getString(2))?Sharing.EVERYTHING:c.getString(2),
-                    c.getString(1),up.isEmpty()?"folder":"folder in "+tree.names(up),0,0,true,c.getInt(3)));
+                    c.getString(1),up.isEmpty()?Say.t("folder"):Say.t("folder in {0}",tree.names(up)),0,0,true,c.getInt(3)));
             }
         }
         dress(found);
@@ -4401,7 +4401,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 if(!tree.live(up))continue;
                 shelves.add(new Object[]{up.size(),new Branch(Branch.Kind.COLLECTION,c.getString(0),
                     home(c.getString(3))?Sharing.EVERYTHING:c.getString(3),c.getString(1),
-                    up.isEmpty()?"folder":"folder in "+tree.names(up),0,0,true,c.getInt(2))});
+                    up.isEmpty()?Say.t("folder"):Say.t("folder in {0}",tree.names(up)),0,0,true,c.getInt(2))});
             }
         }
         shelves.sort((one,other)->Integer.compare((Integer)one[0],(Integer)other[0]));
@@ -4431,7 +4431,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 if(!tree.live(up))continue;
                 all.add(new Object[]{c.getInt(4),new Branch(Branch.Kind.COLLECTION,c.getString(0),
                     home(c.getString(3))?Sharing.EVERYTHING:c.getString(3),c.getString(1),
-                    up.isEmpty()?"folder":"folder in "+tree.names(up),0,0,true,c.getInt(2))});
+                    up.isEmpty()?Say.t("folder"):Say.t("folder in {0}",tree.names(up)),0,0,true,c.getInt(2))});
             }
         }
         Map<String,Integer> at=new HashMap<>();
@@ -6102,34 +6102,42 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     }
 
     /**
-     * Something left here for somebody else, kept - unless a newer one of the same is already here, or there
-     * is no room. A newer revision of the same note from the same device replaces the older.
+     * Something left here for somebody else, kept - unless the same or a newer one is already here, or there is no room.
+     * A note is held once for whoever it is for, whoever left it: the newest revision, which replaces any older one. An
+     * answer is held once for each device that left it, since each says a different device has the note. The same
+     * revision left again is already held, and left as it is, its turn to be brought included: a writer that left it at
+     * every try made the carrier bring it again at once each time, and the device it was for seal and mine a receipt for
+     * each copy (Graphene, 2026-10-25, decision 257).
      *
-     * @return whether it is kept
+     * @return {@link Courier#CARRYING} where it is kept now, {@link Courier#ALREADY} where it or a newer one is held,
+     *         {@link Courier#NO_ROOM} where there is no room
      */
-    boolean carry(String sender,String recipient,String page,int sort,long revision,byte[] bytes) {
+    int carry(String sender,String recipient,String page,int sort,long revision,byte[] bytes) {
         long now=System.currentTimeMillis();
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
         try {
             db.delete("carried","kept<?",new String[]{String.valueOf(now-Courier.KEPT_FOR)});
+            String same=sort==Courier.NOTE?"recipient=? AND page=? AND sort=?":"sender=? AND recipient=? AND page=? AND sort=?";
+            String[] which=sort==Courier.NOTE?new String[]{recipient,page,String.valueOf(sort)}
+                :new String[]{sender,recipient,page,String.valueOf(sort)};
             long had=-1;int count=0;long size=0;
-            try(Cursor c=db.query("carried",new String[]{"revision"},"sender=? AND recipient=? AND page=? AND sort=?",
-                    new String[]{sender,recipient,page,String.valueOf(sort)},null,null,null,"1")) {
-                if(c.moveToFirst())had=c.getLong(0);
+            try(Cursor c=db.rawQuery("SELECT MAX(revision) FROM carried WHERE "+same,which)) {
+                if(c.moveToFirst()&&!c.isNull(0))had=c.getLong(0);
             }
-            if(had>revision){db.setTransactionSuccessful();return false;}
+            if(had>=revision){db.setTransactionSuccessful();return Courier.ALREADY;}
             try(Cursor c=db.rawQuery("SELECT COUNT(*),COALESCE(SUM(size),0) FROM carried",null)) {
                 if(c.moveToFirst()){count=c.getInt(0);size=c.getLong(1);}
             }
             // Room for a new one; one replacing another takes no more room than it did.
-            if(had<0&&(count>=Courier.MOST_KEPT||size+bytes.length>Courier.MOST_BYTES)){db.setTransactionSuccessful();return false;}
+            if(had<0&&(count>=Courier.MOST_KEPT||size+bytes.length>Courier.MOST_BYTES)){db.setTransactionSuccessful();return Courier.NO_ROOM;}
+            db.delete("carried",same,which);
             ContentValues v=new ContentValues();
             v.put("sender",sender);v.put("recipient",recipient);v.put("page",page);v.put("sort",sort);
             v.put("revision",revision);v.put("bytes",android.util.Base64.encodeToString(bytes,android.util.Base64.NO_WRAP));v.put("size",bytes.length);
             v.put("kept",now);v.put("tried",0);v.put("tries",0);
             db.insertWithOnConflict("carried",null,v,SQLiteDatabase.CONFLICT_REPLACE);
             db.setTransactionSuccessful();
-            return true;
+            return Courier.CARRYING;
         } finally {db.endTransaction();}
     }
 
@@ -6583,7 +6591,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             else if(owed.contains(address))state=sleeveReady(id,address)?"Waiting":"Uploading";
             else if(has.contains(address)||got!=null&&got[1]>=revision)state="Has it";
             else if(got!=null&&got[0]>=revision)state="Sent, not confirmed";
-            else if(relayed&&own.contains(address))state="Gets it from "+fromName;
+            else if(relayed&&own.contains(address))state=Say.t("Gets it from {0}",fromName);
             else state="Waiting";
             out.said.put(address,state);
         }
@@ -6969,7 +6977,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             while(c.moveToNext()) {
                 String who=nameFor(c.getString(2));
                 out.add(new Branch(Branch.Kind.WAITING,COMING+c.getString(0),Sharing.EVERYTHING,c.getString(1),
-                    "Coming from "+(who==null||who.isEmpty()?"them":who)+" · "+Attachment.size(c.getLong(3)),0,0,false));
+                    (who==null||who.isEmpty()?Say.t("Coming from them"):Say.t("Coming from {0}",who))+" · "+Attachment.size(c.getLong(3)),0,0,false));
             }
         }
         return out;
@@ -8168,7 +8176,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 if(!tree.live(up))continue;
                 if(taken.getOrDefault(c.getString(0),0L)>=c.getLong(4))continue;
                 found.add(new Object[]{c.getLong(4),new Branch(Branch.Kind.COLLECTION,c.getString(0),c.getString(2),c.getString(1),
-                    up.isEmpty()?"folder on Home":"folder in "+tree.names(up),0,0,true,c.getInt(3))});
+                    up.isEmpty()?Say.t("folder on Home"):Say.t("folder in {0}",tree.names(up)),0,0,true,c.getInt(3))});
             }
         }
         // Its row and when it was last opened: the row alone has no "touched", which sorted every note by its writing only.
@@ -8338,7 +8346,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             while(c.moveToNext()) {
                 List<String> up=tree.above(c.getString(0));
                 shelves.add(new Object[]{up.size(),new Branch(Branch.Kind.COLLECTION,c.getString(0),up.isEmpty()?"":c.getString(2),
-                    c.getString(1),(up.isEmpty()?"folder":"folder in "+tree.names(up))+" · "+Things.holds(c.getInt(3),c.getInt(4)),
+                    c.getString(1),(up.isEmpty()?Say.t("folder"):Say.t("folder in {0}",tree.names(up)))+" · "+Things.holds(c.getInt(3),c.getInt(4)),
                     0,0,false,c.getInt(5))});
             }
         }
@@ -8356,7 +8364,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         try(Cursor c=getReadableDatabase().query("files",FILE_ROW,"away=? AND gone=0 AND "+heldIs(Branch.Kind.PAGE),
                 new String[]{String.valueOf(bin?2:1)},null,null,"added DESC")) {
             while(c.moveToNext()){Held file=held(c);Note in=get(file.note);
-                away.add(fileLine(file,file.note,in==null?"file":"file from “"+in.heading()+"”"));}
+                away.add(fileLine(file,file.note,in==null?Say.t("file"):Say.t("file from “{0}”",in.heading())));}
         }
         return away;
     }

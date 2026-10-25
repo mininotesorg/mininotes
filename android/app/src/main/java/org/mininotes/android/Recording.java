@@ -33,7 +33,7 @@ final class Recording {
     static int minutes(long bytesPerSecond){return bytesPerSecond<=0?0:(int)(STOP_AT/bytesPerSecond/60);}
 
     /** The quiet words in the recording bar: how long it can go on, and what leaving does. */
-    static String limit(long bytesPerSecond){return "Up to "+minutes(bytesPerSecond)+" min · leaving keeps it";}
+    static String limit(long bytesPerSecond){return Say.t("Up to {0} min · leaving keeps it",minutes(bytesPerSecond));}
 
     private static final DateTimeFormatter NAMED=DateTimeFormatter.ofPattern("d MMM, HH:mm",Locale.ENGLISH);
 
