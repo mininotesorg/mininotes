@@ -93,7 +93,7 @@ final class DesktopFileCards extends JPanel {
             @SuppressWarnings("unchecked") java.util.Map<String,Long> lengths=(java.util.Map<String,Long>)loaded[3];
             @SuppressWarnings("unchecked") java.util.Map<String,NoteStore.StampRow> stamped=(java.util.Map<String,NoteStore.StampRow>)loaded[4];
             row.removeAll();faces.clear();
-            for(NoteStore.Held file:files)row.add(card(file,thumbs.get(file.id),states.getOrDefault(file.id,""),lengths.getOrDefault(file.id,-1L),stamped.get(file.id)));
+            for(NoteStore.Held file:files)row.add(card(file,thumbs.get(file.id),Say.t(states.getOrDefault(file.id,"")),lengths.getOrDefault(file.id,-1L),stamped.get(file.id)));
             // Still playing if it is still here: the player finds its new card by the file's id.
             if(playing!=null&&!faces.containsKey(playing))stopPlaying();
             drawn=files.size();
@@ -214,13 +214,13 @@ final class DesktopFileCards extends JPanel {
         }
         JButton delete=new JButton("×");delete.setFocusPainted(false);delete.setMargin(new Insets(0,4,0,4));delete.setFont(DesktopUi.BODY.deriveFont(15f));
         delete.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
-        delete.setToolTipText("Move to bin");delete.getAccessibleContext().setAccessibleName("Delete "+file.name);
+        delete.setToolTipText(Say.t("Move to bin"));delete.getAccessibleContext().setAccessibleName("Delete "+file.name);
         delete.setEnabled(app.page.isEditable());
         delete.addActionListener(e->delete(file));
         JPanel foot=new JPanel(new BorderLayout(4,0));foot.setOpaque(false);foot.setBorder(BorderFactory.createEmptyBorder(6,0,0,0));
         foot.add(words);foot.add(delete,BorderLayout.EAST);
         card.add(face);card.add(foot,BorderLayout.SOUTH);
-        card.setToolTipText("Open "+file.name);card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        card.setToolTipText(Say.t("Open {0}",file.name));card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         MouseAdapter open=new MouseAdapter(){@Override public void mouseClicked(MouseEvent e){if(SwingUtilities.isLeftMouseButton(e))open(file);}};
         card.addMouseListener(open);face.addMouseListener(open);words.addMouseListener(open);
         DesktopMenus.onRightClick(card,e->menu(file).show(e.getComponent(),e.getX(),e.getY()));
@@ -241,10 +241,8 @@ final class DesktopFileCards extends JPanel {
         JMenuItem rename=DesktopMenus.item("Rename…");rename.addActionListener(e->app.home.renameFile(line));rename.setVisible(false);menu.add(rename);
         JMenuItem replace=DesktopMenus.item("Replace with another file…");replace.addActionListener(e->app.home.replaceFile(line));replace.setVisible(false);menu.add(replace);
         app.disk.submit(()->app.store.mayChangeFile(file.id),may->{rename.setVisible(may);replace.setVisible(may);if(menu.isVisible())menu.pack();},e->{});
-        JMenuItem stamp=DesktopMenus.item("Stamp on Minima…");stamp.addActionListener(e->DesktopStamp.files(app,java.util.List.of(file)));menu.add(stamp);
-        JMenuItem verify=DesktopMenus.item("Verify on Minima…");verify.addActionListener(e->DesktopStamp.verifyFile(app,file));menu.add(verify);
-        // A file stamped from here: its menu starts with its stamp, which opens the stamp's box (decisions 218 and 224).
-        DesktopStamp.fileLine(app,menu,file.id);
+        // On Minima: one line, saying how far its stamp is, opening the one window for it (decisions 224 and 253).
+        DesktopStamp.menuLine(app,menu,file.id,()->DesktopStamp.thing(app,file.id,false));
         JMenuItem save=DesktopMenus.item("Save on my computer…");save.addActionListener(e->app.saveCopy(file));menu.add(save);
         JMenuItem send=DesktopMenus.item("Send to a device…");send.addActionListener(e->send(file));menu.add(send);
         JMenuItem move=DesktopMenus.item("Move to another note…");move.setEnabled(app.page.isEditable());move.addActionListener(e->app.home.intoNote(line));menu.add(move);
@@ -304,13 +302,13 @@ final class DesktopFileCards extends JPanel {
         Face face=new Face(millis);
         JButton play=face.button;play.setFocusPainted(false);play.setMargin(new Insets(2,4,2,4));
         play.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
-        play.setToolTipText(here?null:"Opens in your player");
+        play.setToolTipText(here?null:Say.t("Opens in your player"));
         play.addActionListener(e->{if(here)toggle(file);else open(file);});
         face.time.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,15f));face.time.setForeground(Desktop.ACCENT);
         JPanel top=new JPanel(new FlowLayout(FlowLayout.LEFT,2,0));top.setOpaque(false);top.add(play);top.add(face.time);
         tile.add(top,BorderLayout.NORTH);
         if(here)tile.add(face.line,BorderLayout.SOUTH);
-        else{JLabel away=new JLabel("Opens in your player");away.setFont(DesktopUi.BODY.deriveFont(11.5f));away.setForeground(Desktop.QUIET);away.setBorder(BorderFactory.createEmptyBorder(4,8,0,0));tile.add(away,BorderLayout.SOUTH);}
+        else{JLabel away=new JLabel(Say.t("Opens in your player"));away.setFont(DesktopUi.BODY.deriveFont(11.5f));away.setForeground(Desktop.QUIET);away.setBorder(BorderFactory.createEmptyBorder(4,8,0,0));tile.add(away,BorderLayout.SOUTH);}
         faces.put(file.id,face);draw(file.id,face,file.name);
         return tile;
     }
@@ -334,7 +332,7 @@ final class DesktopFileCards extends JPanel {
         },made->{
             if(!id.equals(playing)){made.close();return;}
             clip=made;clip.start();tick.start();ticked();
-        },e->{playing=null;app.status.setText("This PC could not play "+file.name+". Open it from its menu to use another player.");});
+        },e->{playing=null;app.status.setText(Say.t("This PC could not play {0}. Open it from its menu to use another player.",file.name));});
     }
 
     private void ticked() {

@@ -46,10 +46,10 @@ final class DesktopRecorder extends JPanel {
         JLabel dot=new JLabel(dot());dot.getAccessibleContext().setAccessibleName("Recording");
         time.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,14f));time.setForeground(Desktop.INK);
         JLabel limit=new JLabel(Recording.limit(Recording.PC_RATE));limit.setFont(DesktopUi.BODY.deriveFont(12f));limit.setForeground(Desktop.QUIET);
-        JButton cancel=new JButton("Cancel");cancel.setFocusPainted(false);cancel.setToolTipText("Stop and throw this recording away");
+        JButton cancel=new JButton(Say.t("Cancel"));cancel.setFocusPainted(false);cancel.setToolTipText(Say.t("Stop and throw this recording away"));
         cancel.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
         cancel.setForeground(Desktop.QUIET);cancel.addActionListener(e->cancel());
-        JButton stop=DesktopUi.primary("Stop",this::stop);stop.setToolTipText("Stop, and keep it with this note");
+        JButton stop=DesktopUi.primary("Stop",this::stop);stop.setToolTipText(Say.t("Stop, and keep it with this note"));
         add(dot);add(time);add(limit);add(cancel);add(stop);
     }
 
@@ -92,7 +92,7 @@ final class DesktopRecorder extends JPanel {
     void stop(){Take was=end();if(was!=null)keep(was,null,false);}
 
     /** Stop, and throw it away. */
-    void cancel(){if(end()!=null)app.status.setText("Recording thrown away");}
+    void cancel(){if(end()!=null)app.status.setText(Say.t("Recording thrown away"));}
 
     /** The note on the page is changing: a recording going on for another note is stopped and kept there. */
     void leaving(String next){if(take!=null&&!take.note.equals(next))stop();}
@@ -116,7 +116,7 @@ final class DesktopRecorder extends JPanel {
         String why=now.ended;end();
         if(why.equals(Take.CAPPED))keep(now,Recording.CAPPED,false);
         else if(why.equals(Take.SILENT))silent();
-        else app.status.setText("The recording stopped: "+why+". Nothing was kept.");
+        else app.status.setText(Say.t("The recording stopped: {0}. Nothing was kept.",why));
     }
 
     /**
@@ -128,15 +128,15 @@ final class DesktopRecorder extends JPanel {
             "Nothing was recorded. In Windows Settings → Privacy & security → Microphone, turn on “Microphone access” and “Let desktop apps access your microphone”, then press the microphone again.",
             "Open microphone settings",false))
             try{java.awt.Desktop.getDesktop().browse(java.net.URI.create("ms-settings:privacy-microphone"));}
-            catch(Exception unopened){app.status.setText("Open Windows Settings → Privacy & security → Microphone");}
+            catch(Exception unopened){app.status.setText(Say.t("Open Windows Settings → Privacy & security → Microphone"));}
     }
 
     /** Written once as a WAV, sealed on the way if the notebook is locked, then its row: the ordinary attachment path. */
     private void keep(Take was,String said,boolean quiet) {
         byte[] sound=was.sound.toByteArray();
-        if(sound.length<Recording.PC_RATE/4){if(!quiet)app.status.setText("Too short to keep: nothing was recorded");return;}
+        if(sound.length<Recording.PC_RATE/4){if(!quiet)app.status.setText(Say.t("Too short to keep: nothing was recorded"));return;}
         byte[] whole=wav(sound);
-        if(!quiet)app.status.setText("Keeping the recording…");
+        if(!quiet)app.status.setText(Say.t("Keeping the recording…"));
         app.disk.submit(()->{
             String id=UUID.randomUUID().toString();Path dest=app.store.fileFor(id).toPath();
             DesktopFiles.keep(app.context,whole,dest);
@@ -146,7 +146,7 @@ final class DesktopRecorder extends JPanel {
             return null;
         },done->{
             if(quiet)return;
-            app.status.setText(said!=null?said:"Recording kept · "+Recording.clock(sound.length*1000L/Recording.PC_RATE)+" · "+Attachment.size(whole.length));
+            app.status.setText(said!=null?Say.t(said):Say.t("Recording kept · {0} · {1}",Recording.clock(sound.length*1000L/Recording.PC_RATE),Attachment.size(whole.length)));
             app.attachmentsChanged(was.note);
         },quiet?e->{}:app::failed);
     }

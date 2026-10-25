@@ -1,5 +1,5 @@
 plugins { id 'java'; id 'application' }
-version = '0.4.015'
+version = '0.4.027'
 repositories { mavenCentral() }
 java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 application { mainClass = 'org.mininotes.android.Desktop' }
@@ -23,9 +23,9 @@ dependencies {
 
 // Keep the proven store and wire protocol in one place. Only platform names are
 // adapted; generated files are never edited or committed.
-def portable = ['Album','Peek','KeyCard','Arriving','AboutMe','Troubles','Assistant','Integritas','Describe','ReadMe','Sections','Translation','Message','Symbols','Face','Say','Attachment','Background','Envelope','Feedback','Find','Hello','HomeMotion',
+def portable = ['Album','Peek','KeyCard','StampCard','Arriving','AboutMe','Troubles','Assistant','Integritas','Describe','ReadMe','Sections','Translation','Message','Symbols','Face','Say','Attachment','Background','Envelope','Feedback','Find','Hello','HomeMotion',
     'Merge','Outbox','Pairing','Parcel','Point','Receipt','Reorder','RevisionClock',
-    'SchemaMigrations','SyncStatus','SyncMark','Sha3','Sharing','Tint','Update','Vault','Sealed','Courier','Enclosure','Direct','Nearby','Home','Relays','Given','Drop','DropList','Unsent','Persons','Groups','Parlons','Called','Recording','Linking','NoteLine','Waits','Links','Reading','Writers','Things','Carton','Sleeve','Overview','Grid','Layout','Icons','Thumb','Looks','Marks','Routes','FirstShare','Slots','PrivateSpace','PrivateCode','Shrink','Help','NoteFile','Asking','Said']
+    'SchemaMigrations','SyncStatus','SyncMark','Sha3','Sharing','Tint','Update','Vault','Sealed','Courier','Enclosure','Direct','Nearby','Home','Relays','Given','Drop','DropList','Unsent','Persons','Groups','Parlons','Called','Recording','Linking','NoteLine','Waits','Links','Reading','Writers','Things','Carton','Sleeve','Overview','Grid','Layout','Icons','Thumb','Looks','Marks','Routes','FirstShare','Slots','PrivateSpace','PrivateCode','Shrink','Help','NoteFile','Asking','Said','LineEnds','ArrivalNews','LanguageAsk','WaitingPlace']
 def adapted = ['NoteStore','Post','Node','Invites']
 def androidSource = file('../android/app/src/main/java/org/mininotes/android')
 def generated = layout.buildDirectory.dir('generated/sources/shared')

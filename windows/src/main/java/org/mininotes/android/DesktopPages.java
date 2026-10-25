@@ -30,14 +30,14 @@ final class DesktopPages extends JComponent {
                 if(pressed==null)return;
                 if(!carrying&&e.getPoint().distance(pressedAt)<6)return;
                 carrying=true;now=e.getPoint();setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));repaint();
-                home.pad.status.setToolTipText(null);home.pad.status.setText("Let go on another page to change places with it, or on an empty place to move it there  ·  Esc cancels");
+                home.pad.status.setToolTipText(null);home.pad.status.setText(Say.t("Let go on another page to change places with it, or on an empty place to move it there  ·  Esc cancels"));
             }
             public void mouseReleased(MouseEvent e) {
                 setCursor(Cursor.getDefaultCursor());
                 if(!carrying){return;}
                 List<Integer> from=pressed,to=placeAt(e.getPoint());
                 carrying=false;pressed=null;now=null;repaint();
-                if(to==null||to.equals(from)){home.pad.status.setText("Not moved");return;}
+                if(to==null||to.equals(from)){home.pad.status.setText(Say.t("Not moved"));return;}
                 home.movePage(from.get(0),from.get(1),to.get(0),to.get(1));
             }
             public void mouseClicked(MouseEvent e) {
@@ -51,7 +51,7 @@ final class DesktopPages extends JComponent {
         addMouseWheelListener(e->{if(e.isControlDown()&&e.getWheelRotation()<0)away();});
         getInputMap(WHEN_FOCUSED).put(KeyStroke.getKeyStroke("ESCAPE"),"away");
         getActionMap().put("away",new AbstractAction(){public void actionPerformed(ActionEvent e){
-            if(carrying){carrying=false;pressed=null;now=null;repaint();home.pad.status.setText("Not moved");return;}
+            if(carrying){carrying=false;pressed=null;now=null;repaint();home.pad.status.setText(Say.t("Not moved"));return;}
             away();
         }});
     }
@@ -131,7 +131,7 @@ final class DesktopPages extends JComponent {
             if(page.get(0)==0&&page.get(1)==0) {
                 g.setFont(DesktopUi.BODY.deriveFont(12f));g.setColor(DesktopUi.QUIET);
                 // Inside the page, at its foot: under it the next page would cover it.
-                g.drawString("Main page",x+(w-g.getFontMetrics().stringWidth("Main page"))/2f,y+h-10);
+                String main=Say.t("Main page");g.drawString(main,x+(w-g.getFontMetrics().stringWidth(main))/2f,y+h-10);
             }
         }
         g.dispose();

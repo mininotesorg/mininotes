@@ -368,7 +368,7 @@ final class Assistant {
      */
     enum Place {
         PROFILE("My profile","profile","my profile","profil","mon profil"),
-        INTEGRITAS("Integritas","integritas","api key","integritas key","cle api","cle integritas"),
+        INTEGRITAS("Stamping","stamping","integritas","api key","integritas key","cle api","cle integritas","horodatage"),
         PARLONS("Your Parlons! address","parlons","parlons address","parlons! address","adresse parlons"),
         TEXT_SIZE("Text size","text size","size of the text","taille du texte"),
         DESCRIBE("Describe what each thing does","describe","descriptions","description","tooltips","decrire"),

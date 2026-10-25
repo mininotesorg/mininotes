@@ -112,6 +112,8 @@ final class OverviewScreen {
             List<Overview.Open> all=new ArrayList<>();
             for(NoteStore.Branch one:a.store.recent(since)) {
                 if(all.size()>=CARDS)break;
+                // Temp, which Recent lists once used (decision 229), is a place, not a card of something open.
+                if(one.kind==NoteStore.Branch.Kind.TEMP)continue;
                 all.add(new Overview.Open(one.kind==NoteStore.Branch.Kind.PAGE?Overview.Kind.NOTE:Overview.Kind.COLLECTION,one.id));
             }
             List<Object[]> shown=new ArrayList<>();List<String> gone=new ArrayList<>();

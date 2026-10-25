@@ -40,7 +40,16 @@ public final class Listening extends Service {
     static final String NOTE="note";
     /** Said on the way into the pad from the notification that files came: the list of them is opened. */
     static final String RECEIVED="received";
-    private static final int ONGOING=1, LANDED=2, ACCEPTED=3, FILES=4, WAITING=5, SHARED=6;
+    private static final int ONGOING=1, LANDED=2, ACCEPTED=3, FILES=4, WAITING=5, SHARED=6, NEWS=7;
+    /**
+     * Everything that arrived while nobody was looking, in one line with its count (the owner, 2026-10-22: "On the phones we
+     * should have a notification at the phone level and on the app icon on the desktop when something new arrives"; decision
+     * 236). A channel of its own, which may sound, because the old quiet one is the person's to have set as they like, and
+     * an update must not take that from them: it stays, said nothing more.
+     */
+    private static final String NEWS_CHANNEL="news";
+    /** What came since the app was last opened. Kept by this process; one that was ended starts counting again. */
+    private static final ArrivalNews news=new ArrivalNews();
     /** Something shared with me, said so it is seen: louder than an arrival, which is every few seconds while somebody writes. */
     private static final String SHARED_CHANNEL="shared";
     /** What a line was said for already, by the thing it waits under (decision 109): once a run, not once a revision. */
@@ -79,13 +88,21 @@ public final class Listening extends Service {
     }
 
     /** Who is on screen, or null when nobody is any more. */
-    static void watch(Consumer<Post.Landed> there){watcher=there;Node.near(there!=null);}
+    static void watch(Consumer<Post.Landed> there){synchronized(WATCHING){watcher=there;}Node.near(there!=null);}
 
     /**
      * Taken down - but only by whoever put it up. A screen that is going away after another has already
      * come up must not leave the one people are looking at with nobody telling it anything.
      */
-    static synchronized void unwatch(Consumer<Post.Landed> there){if(watcher==there){watcher=null;Node.near(false);}}
+    static void unwatch(Consumer<Post.Landed> there) {
+        synchronized(WATCHING){if(watcher!=there)return;watcher=null;}
+        Node.near(false);
+    }
+    /**
+     * Watching's own lock, not the class's: {@link #hear} holds that while the node starts, which takes seconds, and the
+     * screen calls these as it comes and goes, so it would wait there and Android would say Mininotes is not responding.
+     */
+    private static final Object WATCHING=new Object();
 
     /** Every offer taken up while nobody was looking, handed over once. */
     static List<Hello.Said> unanswered() {
@@ -150,29 +167,36 @@ public final class Listening extends Service {
         if(landed.message)return;
         // Somebody saying they have something is for the marks, not for the person.
         if(landed.answered)return;
-        // Something another person shared with me for the first time (the owner, 2026-10-06; decision 109): said in a line once
-        // for each thing, never for each of its revisions, and the pad asks Accept or Refuse when it is next in front.
+        // Something another person shared with me for the first time (the owner, 2026-10-06; decision 109): counted once for
+        // each thing, never for each of its revisions, and the pad asks Accept or Refuse when it is next in front.
         if(landed.waiting) {
-            if(landed.said!=null&&SAID_WAITING.add(landed.waits))say(app,WAITING,landed.said,Say.t("Open the pad to accept or refuse it."),"",false,SHARED_CHANNEL);
+            if(landed.said!=null&&SAID_WAITING.add(landed.waits))gathered(app,ArrivalNews.Kind.WAITING,landed,landed.waits);
             return;
         }
-        // Shared with me, and here without waiting for an answer (a file from another device of mine): said once, to decide.
+        // Shared with me, and here without waiting for an answer (a file from another device of mine): counted once, to decide.
         if(landed.shared) {
-            if(landed.said!=null&&SAID_WAITING.add(landed.waits))say(app,SHARED,landed.said,Say.t("Open the pad to see what to do with it."),"",false,SHARED_CHANNEL);
+            if(landed.said!=null&&SAID_WAITING.add(landed.waits))gathered(app,ArrivalNews.Kind.WAITING,landed,landed.waits);
             return;
         }
-        // Files sent on their own: that they came, or that somebody wants to send some. Never what they are called.
+        // Files sent on their own: that they came, or that somebody wants to send some. Never what they are called. What came
+        // of a sending from here (reached, refused) is news too, of another kind.
         if(landed.files) {
-            if(landed.said!=null)say(app,FILES,landed.said,landed.asking!=null?"Open the pad to accept or refuse.":"",null,true);
+            if(landed.said!=null)gathered(app,landed.many>0?ArrivalNews.Kind.FILES:ArrivalNews.Kind.OTHER,landed,null);
             return;
         }
         if(landed.accepted!=null) {
+            // Not something that arrived but a question about a person: its own line, where it was always asked.
             synchronized(unanswered){unanswered.add(landed.accepted);}
             if(landed.accepted.target.isEmpty())say(app,ACCEPTED,Say.t("{0} wants to add you",landed.accepted.name),
                 Say.t("Open the pad to accept or ignore."),"",false,SHARED_CHANNEL);
-            else say(app,ACCEPTED,landed.accepted.name+" accepted what you offered",
-                "Open the pad to send it to them.","");
-        } else if(landed.said!=null)say(app,LANDED,landed.said,"",landed.note);
+            else say(app,ACCEPTED,Say.t("{0} accepted what you offered",landed.accepted.name),
+                Say.t("Open the pad to send it to them."),"",false,SHARED_CHANNEL);
+        } else if(landed.said!=null) {
+            // A note shared with me or written in, counted by the note; anything else (somebody left, refused, removed me)
+            // each on its own, since each is a thing that happened once. Landed.left is the one with "people" said.
+            boolean note=!landed.from.isEmpty()&&!landed.people&&!landed.note.isEmpty();
+            gathered(app,!note?ArrivalNews.Kind.OTHER:landed.newly?ArrivalNews.Kind.SHARED:ArrivalNews.Kind.UPDATED,landed,note?landed.note:null);
+        }
     }
 
     /** Listening again, with the notebook as it now is: after the lock went on or came off. */
@@ -231,12 +255,11 @@ public final class Listening extends Service {
 
     /**
      * One line, saying who and what kind of thing — never what the note says. A notification is read by
-     * whoever is holding the phone, locked or not, and by anything else allowed to read notifications.
+     * whoever is holding the phone, locked or not, and by anything else allowed to read notifications. What
+     * arrived is said in one line together now ({@link #gathered}); this is left for a question about a person.
+     *
+     * @param received whether tapping it opens Received files rather than a note
      */
-    private static void say(Context app,int id,String title,String text,String note){say(app,id,title,text,note,false);}
-
-    /** @param received whether tapping it opens Received files rather than a note */
-    private static void say(Context app,int id,String title,String text,String note,boolean received){say(app,id,title,text,note,received,ARRIVED);}
     private static void say(Context app,int id,String title,String text,String note,boolean received,String channel) {
         channels(app);
         Notification.Builder said=new Notification.Builder(app,channel)
@@ -274,6 +297,44 @@ public final class Listening extends Service {
         if(all!=null)try{all.notify(id,said.build());}catch(RuntimeException refused){/* refused is an answer; it still arrived */}
     }
 
+    /**
+     * One more thing in the one line of what arrived (decision 236), said again with the new count: one notification, its
+     * number set so a launcher that shows counts on the icon shows it. It sounds only for the first arrival since the app
+     * was opened or after a quiet spell ({@link ArrivalNews#QUIET}); the rest update it in silence.
+     */
+    private static void gathered(Context app,ArrivalNews.Kind kind,Post.Landed landed,String key) {
+        String title,text,note;boolean sound,files;int total;
+        synchronized(news) {
+            sound=news.arrived(kind,landed.from,key,Math.max(1,landed.many),landed.said,System.currentTimeMillis());
+            title=news.title();text=news.text();note=news.onlyNote();files=news.onlyFiles();total=news.total();
+        }
+        channels(app);
+        Notification.Builder said=new Notification.Builder(app,NEWS_CHANNEL)
+            .setSmallIcon(R.drawable.ic_listening)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setNumber(total)
+            .setBadgeIconType(Notification.BADGE_ICON_SMALL)
+            .setContentIntent(files?openingReceived(app):opening(app,note))
+            // Said again with one more in it: not heard again, unless it is the first after a quiet spell.
+            .setOnlyAlertOnce(!sound)
+            .setAutoCancel(true);
+        NotificationManager all=app.getSystemService(NotificationManager.class);
+        // Refused permission is an answer: it still landed, and the shelves will show it.
+        if(all!=null)try{all.notify(NEWS,said.build());}catch(RuntimeException refused){/* as above */}
+    }
+
+    /**
+     * The app is in front: everything that arrived is seen, so its line goes and the count starts again (decision 236). The
+     * lines said one by one before it, by a build before this one, go too: they were about the same things.
+     */
+    static void seen(Context any) {
+        synchronized(news){news.clear();}
+        NotificationManager all=any.getApplicationContext().getSystemService(NotificationManager.class);
+        if(all==null)return;
+        try{for(int id:new int[]{NEWS,LANDED,FILES,WAITING,SHARED})all.cancel(id);}catch(RuntimeException refused){/* nothing to take away */}
+    }
+
     private static PendingIntent opening(Context app,String note) {
         Intent open=new Intent(app,MainActivity.class)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -294,6 +355,10 @@ public final class Listening extends Service {
      * listening, and the line that says something came. Both quiet. A shared list being written in sends
      * every few seconds, and a pad that chimed each time would be switched off within the hour; anybody
      * who wants a sound can turn that one channel up, which is what channels are for.
+     *
+     * <p>What came is now said on "news" instead (decision 236), which may sound, and does so once for each time somebody
+     * starts after a quiet spell rather than for each of those few seconds ({@link ArrivalNews#QUIET}). "arrived" is still
+     * made, never deleted: deleting a channel loses what the person set on it, and the system keeps count of deleted ones.
      */
     private static void channels(Context app) {
         NotificationManager all=app.getSystemService(NotificationManager.class);
@@ -314,5 +379,9 @@ public final class Listening extends Service {
         all.createNotificationChannel(staying);
         all.createNotificationChannel(arrived);
         all.createNotificationChannel(alarm);
+        NotificationChannel news=new NotificationChannel(NEWS_CHANNEL,Say.t("What arrived"),NotificationManager.IMPORTANCE_DEFAULT);
+        news.setDescription(Say.t("Notes, files and things shared with you, gathered in one line"));
+        news.setShowBadge(true);
+        all.createNotificationChannel(news);
     }
 }

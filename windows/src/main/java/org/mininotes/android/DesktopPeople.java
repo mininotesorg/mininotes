@@ -246,12 +246,12 @@ final class DesktopPeople {
     private JComponent thing(NoteStore.Shared one,String under,String from) {
         JButton name=DesktopUi.quietButton(one.said(),()->app.share(new NoteStore.Branch(one.kind(),one.target,"",one.name,"",0,0,false),box,from));
         name.setForeground(DesktopUi.INK);name.setFont(DesktopUi.BODY);name.setBorder(BorderFactory.createEmptyBorder(2,0,2,6));name.setHorizontalAlignment(SwingConstants.LEFT);
-        name.setToolTipText("Who has “"+one.name+"”");name.getAccessibleContext().setAccessibleName("Open the Share box of "+one.said());
+        name.setToolTipText(Say.t("Who has “{0}”",one.name));name.getAccessibleContext().setAccessibleName("Open the Share box of "+one.said());
         JPanel words=DesktopUi.column();DesktopUi.add(words,DesktopUi.actions(name));
         if(under!=null)DesktopUi.add(words,DesktopUi.quiet(under));
         return withMenu(words,"Who has it…",name::doClick);
     }
-    private void say(String words){app.status.setToolTipText(null);app.status.setText(words);}
+    private void say(String words){app.status.setToolTipText(null);app.status.setText(Say.t(words));}
 
     /**
      * A right-click on a row that had none (the owner, 2026-10-11: "make sure everything across the app has a contextual
@@ -320,7 +320,7 @@ final class DesktopPeople {
                 for(Groups.Group group:r.groups) {
                     boolean in=theirs.contains(group.id);
                     JButton chip=DesktopUi.chip(group.name,in,()->put(one,group,!in));
-                    chip.setToolTipText(in?"Take "+one.name+" out of "+group.name:"Put "+one.name+" in "+group.name);
+                    chip.setToolTipText(in?Say.t("Take {0} out of {1}",one.name,group.name):Say.t("Put {0} in {1}",one.name,group.name));
                     chip.getAccessibleContext().setAccessibleName(one.name+(in?" is in ":" is not in ")+group.name+". "+chip.getToolTipText());
                     chips.add(chip);
                 }
@@ -381,7 +381,7 @@ final class DesktopPeople {
      * this is to add elements"; decision 106). What it adds is said under the pointer and to a screen reader.
      */
     private JButton adds(String name,String does,Runnable go) {
-        JButton plus=app.button("+",go==null?()->{}:go);plus.setName(name);plus.setToolTipText(does);
+        JButton plus=app.button("+",go==null?()->{}:go);plus.setName(name);plus.setToolTipText(Say.t(does));
         plus.getAccessibleContext().setAccessibleName(does);
         plus.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,18f));plus.setMargin(new Insets(2,12,4,12));
         return plus;
@@ -430,24 +430,24 @@ final class DesktopPeople {
     private JPopupMenu menuFor(Groups.Group group,boolean onPage) {
         JPopupMenu menu=new JPopupMenu();
         item(menu,"Rename…",()->{String name=DesktopUi.ask(box,"Rename group","Name",group.name);if(name==null||name.equals(group.name))return;
-            app.groupWork("Renaming "+group.name+"…",()->{app.store.renameGroup(group.id,name);return List.<Groups.Changed>of();},"Renamed to "+name,this::draw);});
+            app.groupWork(Say.t("Renaming {0}…",group.name),()->{app.store.renameGroup(group.id,name);return List.<Groups.Changed>of();},Say.t("Renamed to {0}",name),this::draw);});
         menu.addSeparator();
         item(menu,"Delete group…",()->{
             if(!DesktopUi.confirm(box,"Delete "+group.name+"?","The people in it stay. What was shared with the group is taken from them, unless it was shared with them on their own.","Delete",true))return;
             // From its own page there is no page left to draw: back to the list, in the view it was left in.
-            app.groupWork("Deleting "+group.name+"…",()->app.store.deleteGroup(group.id),"Deleted "+group.name,onPage?this::back:this::draw);});
+            app.groupWork(Say.t("Deleting {0}…",group.name),()->app.store.deleteGroup(group.id),Say.t("Deleted {0}",group.name),onPage?this::back:this::draw);});
         return menu;
     }
 
     private void newGroup() {
         String name=DesktopUi.ask(box,"New group","Name, like Friends or Colleagues",null);if(name==null)return;
-        app.groupWork("Making "+name+"…",()->{app.store.makeGroup(name);return List.<Groups.Changed>of();},"Made "+name,this::draw);
+        app.groupWork(Say.t("Making {0}…",name),()->{app.store.makeGroup(name);return List.<Groups.Changed>of();},Say.t("Made {0}",name),this::draw);
     }
 
     /** Somebody put in a group or taken out of it, at once, said in the status line from start to end. */
     private void put(NoteStore.Contact who,Groups.Group group,boolean in) {
-        app.groupWork((in?"Putting "+who.name+" in ":"Taking "+who.name+" out of ")+group.name+"…",
-            ()->app.store.putInGroup(group.id,who.address,in),who.name+(in?" is in ":" is out of ")+group.name,this::draw);
+        app.groupWork(in?Say.t("Putting {0} in {1}…",who.name,group.name):Say.t("Taking {0} out of {1}…",who.name,group.name),
+            ()->app.store.putInGroup(group.id,who.address,in),in?Say.t("{0} is in {1}",who.name,group.name):Say.t("{0} is out of {1}",who.name,group.name),this::draw);
     }
 
     // ---- a group's page ---------------------------------------------------------------------------------------
@@ -494,8 +494,8 @@ final class DesktopPeople {
         else {
             JPanel things=DesktopUi.column();
             for(NoteStore.Shared one:r.shared) {
-                java.util.function.Consumer<Sharing.Level> choose=to->app.groupWork((to==Sharing.Level.GONE?"Removing ":"Sharing with ")+name+"…",
-                    ()->app.store.shareWithGroup(one.scope,one.target,at.id,to),to==Sharing.Level.GONE?"Removed "+name+" from "+one.name:"Shared with "+name+": "+to.words(),this::draw);
+                java.util.function.Consumer<Sharing.Level> choose=to->app.groupWork(Say.t(to==Sharing.Level.GONE?"Removing {0}…":"Sharing with {0}…",name),
+                    ()->app.store.shareWithGroup(one.scope,one.target,at.id,to),to==Sharing.Level.GONE?Say.t("Removed {0} from {1}",name,one.name):Say.t("Shared with {0}: {1}",name,Say.t(to.words())),this::draw);
                 DesktopUi.add(things,DesktopUi.row(thing(one,null,name),one.mayChange?app.roleButton(one.level,one.give,choose,name):Desktop.roleShown(one.level.words(),one.level.does()+" Only its owner or an admin can change this.")));
             }
             DesktopUi.add(body,DesktopUi.card(null,things));
@@ -504,10 +504,10 @@ final class DesktopPeople {
         if(!mine) {
             DesktopUi.gap(body,DesktopUi.L);
             JButton rename=app.button("Rename…",()->{String called=DesktopUi.ask(box,"Rename group","Name",group.name);if(called==null||called.equals(group.name))return;
-                app.groupWork("Renaming "+group.name+"…",()->{app.store.renameGroup(group.id,called);return List.<Groups.Changed>of();},"Renamed to "+called,this::draw);});
+                app.groupWork(Say.t("Renaming {0}…",group.name),()->{app.store.renameGroup(group.id,called);return List.<Groups.Changed>of();},Say.t("Renamed to {0}",called),this::draw);});
             JButton delete=DesktopUi.danger(Say.t("Delete group…"),()->{
                 if(!DesktopUi.confirm(box,"Delete "+group.name+"?","The people in it stay. What was shared with the group is taken from them, unless it was shared with them on their own.","Delete",true))return;
-                app.groupWork("Deleting "+group.name+"…",()->app.store.deleteGroup(group.id),"Deleted "+group.name,this::back);});
+                app.groupWork(Say.t("Deleting {0}…",group.name),()->app.store.deleteGroup(group.id),Say.t("Deleted {0}",group.name),this::back);});
             JPanel last=DesktopUi.column();
             DesktopUi.add(last,DesktopUi.row(DesktopUi.quiet(Say.t("Its name, as everybody in it sees it.")),rename));DesktopUi.gap(last,DesktopUi.S);
             DesktopUi.add(last,DesktopUi.row(DesktopUi.quiet(Say.t("The people in it stay. What was shared with the group is taken from them.")),delete));
@@ -535,8 +535,8 @@ final class DesktopPeople {
     }
 
     private void mine(NoteStore.Contact who,boolean yes) {
-        say(yes?"Counting "+who.name+" as my device…":"No longer counting "+who.name+" as my device…");
-        app.disk.submit(()->{app.store.setMine(who.address,yes);return null;},done->{say(who.name+(yes?" is one of my devices":" is not one of my devices"));draw();app.refresh();},app::failed);
+        say(yes?Say.t("Counting {0} as my device…",who.name):Say.t("No longer counting {0} as my device…",who.name));
+        app.disk.submit(()->{app.store.setMine(who.address,yes);return null;},done->{say(yes?Say.t("{0} is one of my devices",who.name):Say.t("{0} is not one of my devices",who.name));draw();app.refresh();},app::failed);
     }
 
     /**
@@ -557,7 +557,7 @@ final class DesktopPeople {
     /** Forget, as the phone's does: off the list you pick from, nothing unshared. Asked first. */
     private void forget(NoteStore.Contact who,boolean onPage) {
         if(!DesktopUi.confirm(box,"Forget this device?",who.name+"\n\nAnything already shared with it stays shared; this only removes it from the list you pick from.","Forget",true))return;
-        app.disk.submit(()->{app.store.removeAddress(who.address);return null;},done->{say("Forgotten");if(onPage)back();else draw();},app::failed);
+        app.disk.submit(()->{app.store.removeAddress(who.address);return null;},done->{say(Say.t("Forgotten"));if(onPage)back();else draw();},app::failed);
     }
 
     /** A person's page: how they are reached, their Parlons! address, their groups, what is shared with them, and what can be done to them. */
@@ -603,7 +603,7 @@ final class DesktopPeople {
                 JPanel side=new JPanel(new BorderLayout(DesktopUi.M,0));side.setOpaque(false);side.add(DesktopUi.card(null,code),BorderLayout.WEST);side.add(text);DesktopUi.add(shown,side);}
             catch(Exception noCode){DesktopUi.add(shown,text);}
             DesktopUi.gap(shown,DesktopUi.M);DesktopUi.Text copied=DesktopUi.quiet(" ");
-            DesktopUi.add(shown,DesktopUi.actions(DesktopUi.button("Copy the address",()->{Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(who.address),null);copied.setText("Copied.");})));
+            DesktopUi.add(shown,DesktopUi.actions(DesktopUi.button("Copy the address",()->{Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(who.address),null);copied.setText(Say.t("Copied."));})));
             DesktopUi.gap(shown,4);DesktopUi.add(shown,copied);
             DesktopUi.tell(box,who.name,shown);});
         address.getAccessibleContext().setAccessibleName("Show the address of "+who.name);
@@ -631,10 +631,10 @@ final class DesktopPeople {
             JPanel things=DesktopUi.column();
             for(NoteStore.Shared one:r.shared) {
                 java.util.function.Consumer<Sharing.Level> choose=to->{
-                    say("Updating access…");
+                    say(Say.t("Updating access…"));
                     app.disk.submit(()->{app.store.decide(one.rule,to,System.currentTimeMillis());return null;},done->{draw();
                         app.network.submit(()->{Post.changed(app.context,app.store,app.keys,one.kind(),one.target);Post.removedAgain(app.context,app.store,app.keys);return null;},
-                            v->{say(to==Sharing.Level.GONE?"Removed "+who.name+" from "+one.name:"Access updated");app.refresh();},app::failed);},app::failed);};
+                            v->{say(to==Sharing.Level.GONE?Say.t("Removed {0} from {1}",who.name,one.name):Say.t("Access updated"));app.refresh();},app::failed);},app::failed);};
                 // Whose it is, said as Owner; a role this PC may change, dropping down to what it may give; any other said.
                 JComponent role=one.owner?Desktop.roleShown(Sharing.OWNER,Sharing.OWNER_DOES)
                     :one.mayChange?app.roleButton(one.level,one.give,choose,who.name)
@@ -683,7 +683,7 @@ final class DesktopPeople {
         show.addActionListener(e->{
             JPopupMenu menu=new JPopupMenu();
             item(menu,Called.SHOW_THEIRS,()->save.at(picked,false,onlyHere));
-            item(menu,Called.SHOW_OURS,()->{if(picked.isEmpty())app.status.setText("Type the name we pick first.");else save.at(picked,true,onlyHere);});
+            item(menu,Called.SHOW_OURS,()->{if(picked.isEmpty())app.status.setText(Say.t("Type the name we pick first."));else save.at(picked,true,onlyHere);});
             menu.show(show,0,show.getHeight());
         });
         show.getAccessibleContext().setAccessibleName("Show "+showing);
@@ -760,8 +760,8 @@ final class DesktopPeople {
         JButton fold=DesktopUi.quietButton((open?"▾  ":"▸  ")+Groups.counted(name,in.size(),devices),()->{if(!foldedHere.remove(id))foldedHere.add(id);draw();});
         fold.setForeground(DesktopUi.INK);fold.setFont(DesktopUi.BODY);fold.setMargin(new Insets(2,0,2,6));
         fold.getAccessibleContext().setAccessibleName((open?"Hide who is in ":"Show who is in ")+name);
-        java.util.function.Consumer<Sharing.Level> choose=to->app.groupWork((to==Sharing.Level.GONE?"Removing ":"Sharing with ")+name+"…",
-            ()->app.store.shareWithGroup(scope(),target.id,id,to),to==Sharing.Level.GONE?"Removed "+name:"Shared with "+name+": "+to.words(),this::draw);
+        java.util.function.Consumer<Sharing.Level> choose=to->app.groupWork(Say.t(to==Sharing.Level.GONE?"Removing {0}…":"Sharing with {0}…",name),
+            ()->app.store.shareWithGroup(scope(),target.id,id,to),to==Sharing.Level.GONE?Say.t("Removed {0}",name):Say.t("Shared with {0}: {1}",name,Say.t(to.words())),this::draw);
         JComponent right=given!=null?(r.give.isEmpty()?Desktop.roleShown(given.level.words(),given.level.does()):app.roleButton(given.level,r.give,choose,name))
             :r.give.isEmpty()?null:adds(name,r.give,choose);
         if(rows.getComponentCount()>0)DesktopUi.gap(rows,2);
@@ -807,7 +807,7 @@ final class DesktopPeople {
         boolean follows=false;for(String group:r.groupsOf(who.address))follows|=r.given.containsKey(group);
         boolean canFollow=follows;
         JButton set=new JButton(Say.t(said)+"  ▾");set.setFocusPainted(false);
-        if(stands.level!=null)set.setToolTipText(stands.level.does());
+        if(stands.level!=null)set.setToolTipText(Say.t(stands.level.does()));
         set.getAccessibleContext().setAccessibleName(stands.has()?"What "+who.name+" may do: "+said:stands.how==NoteStore.Stands.REMOVED?who.name+" was removed":"Share with "+who.name);
         set.addActionListener(e->{
             JPopupMenu menu=new JPopupMenu();
@@ -823,7 +823,7 @@ final class DesktopPeople {
                 menu.addSeparator();boolean now=stands.how==NoteStore.Stands.GROUP;
                 JRadioButtonMenuItem as=new JRadioButtonMenuItem(DesktopUi.roleLine(Groups.AS_GROUP,Groups.AS_GROUP_DOES),now);
                 as.getAccessibleContext().setAccessibleName(Groups.AS_GROUP+". "+Groups.AS_GROUP_DOES);
-                as.addActionListener(a->{if(!now)app.groupWork("Giving "+who.name+" the group's rights…",()->app.store.asTheGroup(scope(),target.id,who.address),who.name+" has the group's rights",this::draw);});
+                as.addActionListener(a->{if(!now)app.groupWork(Say.t("Giving {0} the group's rights…",who.name),()->app.store.asTheGroup(scope(),target.id,who.address),Say.t("{0} has the group's rights",who.name),this::draw);});
                 menu.add(as);
             }
             if(stands.has()){menu.addSeparator();item(menu,"Remove",()->{
@@ -835,12 +835,12 @@ final class DesktopPeople {
     /** Rights of their own for one person on the thing, or taken off it (GONE): saved, the box drawn again, then sent. */
     private void own(NoteStore.Contact who,NoteStore.Stands stands,Sharing.Level to) {
         boolean first=stands.rule==null||stands.rule.level==Sharing.Level.GONE,off=to==Sharing.Level.GONE;
-        say(first?"Sharing with "+who.name+"…":off?"Removing "+who.name+"…":"Updating access…");
+        say(first?Say.t("Sharing with {0}…",who.name):off?Say.t("Removing {0}…",who.name):Say.t("Updating access…"));
         app.disk.submit(()->{
             if(first)app.store.give(scope(),target.id,who.address,to,null);else app.store.decide(stands.rule,to,System.currentTimeMillis());
             return null;
         },done->{draw();
             app.network.submit(()->{Post.changed(app.context,app.store,app.keys,target.kind,target.id);Post.removedAgain(app.context,app.store,app.keys);return null;},
-                v->{say(first?"Shared with "+who.name+": "+to.words()+". Waiting for delivery confirmation":off?"Removed "+who.name:"Access updated");app.refresh();},app::failed);},app::failed);
+                v->{say(first?Say.t("Shared with {0}: {1}. Waiting for delivery confirmation",who.name,Say.t(to.words())):off?Say.t("Removed {0}",who.name):Say.t("Access updated"));app.refresh();},app::failed);},app::failed);
     }
 }

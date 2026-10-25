@@ -16,7 +16,10 @@ import java.io.IOException;
  * <p>Sealed in an envelope as any card is, and about the device that sends it only; its first four bytes say what it is,
  * so a build from before, which has never said it reads one ({@link Receipt#ABOUT_ME}), is never sent one. It says nothing
  * a contact could not already tell by putting two names side by side: how many devices a person has, and that they are one.
- * Holds no Android types.
+ *
+ * <p>Its four bytes are a {@link Persons} card's too, and a reader that asked Persons first took every one of these for a
+ * broken card of persons. The bytes stay as they are, so the devices already sending one are read; what tells the two
+ * apart is reading it whole with {@link #open}, before Persons is asked (decision 252). Holds no Android types.
  */
 final class AboutMe {
     static final byte[] MAGIC={'M','N','A','1'};

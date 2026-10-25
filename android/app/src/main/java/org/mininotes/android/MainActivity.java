@@ -417,6 +417,33 @@ public final class MainActivity extends Activity {
      * than becoming a fourth button a box has no room for.
      */
     View tapRow(String said,Runnable go){return row(said,"",go);}
+    /**
+     * A link to a site: its words are where it goes, in the accent and underlined as a link is (the owner, 2026-10-21: "Make
+     * know more a clickable link and use the integritas.technology label"; decision 231).
+     */
+    TextView link(String said,Runnable go) {
+        TextView t=label(said,READING,ACCENT);
+        t.setPaintFlags(t.getPaintFlags()|android.graphics.Paint.UNDERLINE_TEXT_FLAG);
+        t.setGravity(Gravity.CENTER_VERTICAL);t.setMinimumHeight(dp(44));t.setPadding(0,dp(4),dp(4),dp(4));
+        t.setBackgroundResource(touchFeedback());t.setOnClickListener(v->go.run());
+        return t;
+    }
+    /**
+     * The round +, as Home's is drawn: the accent round, a + and no word on it, named for anybody who cannot see it. Home has
+     * it, and Stamped on Minima where its Done was (the owner, 2026-10-21: "put the plus there similar to the + on the home
+     * page"; decision 231). Placed at 56 across.
+     */
+    TextView roundPlus(String says,View.OnClickListener go) {
+        TextView plus=label("+",26,PAPER);
+        plus.setGravity(Gravity.CENTER);plus.setIncludeFontPadding(false);
+        GradientDrawable round=new GradientDrawable();round.setShape(GradientDrawable.OVAL);round.setColor(ACCENT);
+        // The touch shown inside the round and nowhere else: with no mask, a ripple keeps to what it is drawn over.
+        plus.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x40FFFFFF),round,null));
+        plus.setElevation(dp(6));
+        plus.setContentDescription(Say.t(says));
+        if(go!=null)plus.setOnClickListener(go);
+        return plus;
+    }
 
     /**
      * A line in a box: what it is on the left, what it is set to on the right, and an arrow-head at the
@@ -1933,6 +1960,9 @@ public final class MainActivity extends Activity {
         // Shared with me a place, out of the collection 0.2.026 made for it, and the two notes everybody has, once a device
         // (decision 94). First on the worker, which does one thing at a time, so whatever is drawn next has them.
         final String build=version();
+        // A new install: its language asked first, so README and everything else come in it (decision 232); the rest once
+        // it is chosen, the app drawn again in it. One in use, never confirmed, asked once it is open (decision 240).
+        if(languageFirst())return;
         background.submit(()->{store.sharedWithMeBecomesAPlace();boolean welcomed=store.welcome(build);
                 // Read me with private notes in it, where it still says what an earlier build wrote (decision 111).
                 welcomed|=store.readMeAgain();
@@ -1996,14 +2026,25 @@ public final class MainActivity extends Activity {
         // A blank page exists before the window takes focus, so the app draws at once rather than after a
         // disk read. The stored page is dropped into it a moment later — and because that stored page is
         // usually one you are coming back to read, it arrives without the keyboard.
-        else {write(new NoteStore.Note());if(state!=null)quiet();}
+        // A note made from a place's + and not written in yet is not in the notebook, and the screen made again (turned, dark
+        // mode, locked while away, closed by Android behind another app) used to come back on a blank page with a new name:
+        // its words then went on Home, not in Temp (the owner, 2026-10-24: "Again, adding a note to temp, without title saved
+        // it on the desktop not in temp"; decision 238). The same blank note comes back, still on its way to its place.
+        final String waiting=toShelves?null:WaitingPlace.forNote(state!=null&&state.getString("waitingPlace")!=null?state.getString("waitingPlace")
+            :getSharedPreferences("settings",MODE_PRIVATE).getString("waitingPlace",null),id);
+        if(!toShelves) {
+            NoteStore.Note blank=new NoteStore.Note();
+            if(waiting!=null){blank.id=id;blank.book=Things.HOME;placeOnSave.put(id,waiting);}
+            write(blank);if(state!=null)quiet();
+        }
         background.submit(()->new Opening(textSize,
                 toShelves?null:(id!=null?store.get(id):store.latest()),store.someBook()),
             opening->{
                 if(toShelves)return;
                 repaint();if(page!=null)page.setTextSize(pageSize());
-                if(opening.note!=null)load(opening.note);
-                else if(active!=null){active.book=opening.book;restoreReadingPosition(active.id);}},
+                // Written down after all, before the screen went: its first word has put it where it was going.
+                if(opening.note!=null){if(waiting!=null)placeOnSave.remove(id);load(opening.note);}
+                else if(active!=null){if(waiting==null)active.book=opening.book;restoreReadingPosition(active.id);}},
             e->alert(READ_FAILED));
     }
 
@@ -2213,7 +2254,7 @@ public final class MainActivity extends Activity {
             edits++;saidState();if(!readOnly)noteSays(NoteLine.SAVING,NoteLine.Tone.GOING,null);
             handler.removeCallbacks(autoSave);handler.postDelayed(autoSave,SAVE_DELAY);}));
         fill(note);
-        askStamps(note.id,note.body);
+        askStamps(note.id,note.title,note.body);
         // A note you open is a note you are reading. The keyboard comes up when you tap the page, not
         // before — except on a blank one, where there is nothing to read and writing is the only reason
         // you are there.
@@ -2463,8 +2504,12 @@ public final class MainActivity extends Activity {
     }
 
     /** The cards: each tab, the open one the paper itself; then + for another. Only + on a note with no tabs yet. */
+    // A tab held is carried by the finger; tapped it still clicks, and its name is read out (decision 239).
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
     private void drawTabs() {
         if(tabStrip==null||page==null)return;
+        // Drawn again under a tab in hand, writing that arrived say: that tab is let go where it was.
+        tabHeld=-1;tabTo=-1;tabMoving=false;tabStrip.getOverlay().clear();
         tabStrip.removeAllViews();
         String body=whole();
         final List<Sections.Section> all=Sections.of(body);
@@ -2481,7 +2526,16 @@ public final class MainActivity extends Activity {
             card.setBackground(face);
             card.setContentDescription("Tab "+called+(open?", open":""));
             card.setOnClickListener(v->switchTab(index));
-            card.setOnLongClickListener(v->{tabMenu(v,index,called,all.size());return true;});
+            // Held, a tab is in hand: pulled along the row it is carried and put where it is let go, as things are carried
+            // on Home; let go where it was held, its menu (the owner, 2026-10-24: "We have to be able to drag and reorder
+            // the tabs in a note", decision 239).
+            card.setOnLongClickListener(v->{
+                if(readOnly||all.size()<2){tabMenu(v,index,called,all.size());return true;}
+                tabHeld=index;tabMoving=false;tabTo=index;
+                if(v.getParent()!=null)v.getParent().requestDisallowInterceptTouchEvent(true);
+                v.animate().scaleX(1.06f).scaleY(1.06f).setDuration(120).start();
+                return true;});
+            card.setOnTouchListener((v,e)->carryTab(v,e,index,called,all.size()));
             LinearLayout.LayoutParams at=new LinearLayout.LayoutParams(-2,dp(open?38:34));at.setMargins(0,0,dp(4),0);
             tabStrip.addView(card,at);
         }
@@ -2495,6 +2549,55 @@ public final class MainActivity extends Activity {
             add.setGravity(Gravity.CENTER_VERTICAL);add.setPadding(dp(4),0,dp(12),0);
             tabStrip.addView(add,new LinearLayout.LayoutParams(-2,dp(30)));
         }
+    }
+
+    /** A held tab and where it would go; the finger's x when it came down; whether it has been pulled yet (decision 239). */
+    private int tabHeld=-1,tabTo=-1;private float tabDownX;private boolean tabMoving;
+
+    /** The finger on a tab: once held, its moves carry the tab along the row, a bar showing where it would go. */
+    private boolean carryTab(View card,MotionEvent e,int index,String called,int count) {
+        switch(e.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN: tabDownX=e.getRawX();return false;
+            case MotionEvent.ACTION_MOVE: {
+                if(tabHeld!=index)return false;
+                float dx=e.getRawX()-tabDownX;
+                if(!tabMoving&&Math.abs(dx)<ViewConfiguration.get(this).getScaledTouchSlop())return true;
+                tabMoving=true;card.setTranslationX(dx);
+                int[] at=new int[2];tabStrip.getLocationOnScreen(at);float x=e.getRawX()-at[0];
+                int cards=Math.min(count,tabStrip.getChildCount()),slot=0;
+                for(int i=0;i<cards;i++){View c=tabStrip.getChildAt(i);if(c.getLeft()+c.getWidth()/2f<x)slot++;}
+                tabTo=slot>index?slot-1:slot;
+                tabStrip.getOverlay().clear();
+                if(tabTo!=index&&cards>0) {
+                    View last=tabStrip.getChildAt(cards-1);
+                    int markX=slot<cards?tabStrip.getChildAt(slot).getLeft()-dp(2):last.getRight()+dp(2);
+                    android.graphics.drawable.ColorDrawable mark=new android.graphics.drawable.ColorDrawable(INK);
+                    mark.setBounds(markX-dp(1),dp(4),markX+dp(2),tabStrip.getHeight());tabStrip.getOverlay().add(mark);
+                }
+                return true;
+            }
+            case MotionEvent.ACTION_UP: case MotionEvent.ACTION_CANCEL: {
+                if(tabHeld!=index)return false;
+                boolean moved=tabMoving,up=e.getActionMasked()==MotionEvent.ACTION_UP;int to=tabTo;
+                tabHeld=-1;tabTo=-1;tabMoving=false;
+                tabStrip.getOverlay().clear();card.animate().cancel();card.setTranslationX(0);card.setScaleX(1);card.setScaleY(1);
+                if(!up)return false;
+                // Let go where it was held: its menu, as a hold always gave. Let go elsewhere: put there, and open.
+                if(!moved)tabMenu(card,index,called,count);
+                else if(to>=0&&to!=index)moveTab(index,to,to);
+                return false;
+            }
+            default: return false;
+        }
+    }
+
+    /** One tab put in another place, as an edit of the note like any other; said only where it could not be. */
+    private void moveTab(int from,int to,int open) {
+        if(page==null||active==null)return;
+        if(readOnly){toast("Read only");return;}
+        String body=whole(),now=Sections.move(body,from,to);
+        if(now.equals(body)){status(Say.t("That tab could not be moved"));return;}
+        changeTabs(body,now,open);
     }
 
     private void switchTab(int index) {
@@ -2519,6 +2622,9 @@ public final class MainActivity extends Activity {
         if(readOnly)sheet.dimRow("Read only");
         else {
             sheet.row("Rename…",()->renameTab(index,called));
+            // One place at a time, as carrying it does (decision 239); the open tab stays open.
+            if(index>0)sheet.row("Move left",()->moveTab(index,index-1,Sections.follow(tab,index,index-1)));
+            if(index<count-1)sheet.row("Move right",()->moveTab(index,index+1,Sections.follow(tab,index,index+1)));
             if(count>1)sheet.row("Remove this tab…",()->removeTab(index,called));
         }
         sheet.show(card);
@@ -2708,6 +2814,11 @@ public final class MainActivity extends Activity {
             if(noteWords!=null&&NoteLine.SAVING.contentEquals(noteWords.getText()))noteSays(null,null,null);
             // The mark that went to waiting at the first key says again where the note stands.
             askWhatIsOwed();refreshOwed();
+            // No words, but kept all the same by a file put on it: in the place its + was, as its first word would put it
+            // (decision 233). A note with nothing on it is still not in the notebook, and goes nowhere.
+            final String waiting=placeOnSave.get(active.id);final String id=active.id;
+            if(waiting!=null)background.submit(()->{if(store.get(id)==null)return false;placeOnSave.remove(id);intoPlaceNow(NoteStore.Branch.Kind.PAGE,id,waiting);return true;},
+                moved->{if(Boolean.TRUE.equals(moved)&&shelves)refresh();},e->{});
             return;
         }
         final NoteStore.Note note=active;note.body=whole();note.updated=System.currentTimeMillis();
@@ -2735,8 +2846,9 @@ public final class MainActivity extends Activity {
                    // Left while it was being written down: it goes now, not after the rest of its wait (the owner, 2026-10-14).
                    if(wait>0)sendIn(written.id,hurry.remove(written.id)?0:wait);
                    if(active!=note)return;kept=written.body;keptRevision=written.revision;keptTitle=written.title;
-                   // Its text now against the text stamped: the line says at once that it changed since (decision 218).
-                   compareStamps(kept);
+                   // Its title and text now against those stamped: the line says at once that it changed since, a new title
+                   // as much as a word (the owner, 2026-10-21, of renaming a stamped note: "Yes, absolutely"; decision 230).
+                   compareStamps(keptTitle,kept);
                    // A new note is one of the things open from its first written word.
                    homeScreen().noteOpened(written);
                    saved=Math.max(saved,attempt);failed=false;saidState();
@@ -4098,11 +4210,12 @@ public final class MainActivity extends Activity {
             sheet.row("Temporary…",()->temporaryBox(here));
             // Lower down the list (the owner, 2026-10-14).
             if(here.kind==NoteStore.Branch.Kind.PAGE)sheet.row("Versions…",()->versions(here));
-            // Its words as they are now, stamped on Minima, or looked for there (decision 199).
-            // Its stamp first where the open note has one, opening the stamp's box, as This note's on the PC (decision 224).
-            if(here.kind==NoteStore.Branch.Kind.PAGE&&stampShown!=null&&active!=null&&here.id.equals(active.id)){final long stampN=stampShown.n();
-                sheet.row("Stamped on Minima…",Integritas.noteLine(stampShown,stampChanged),()->PhoneStamp.show(this,stampN));}
-            if(here.kind==NoteStore.Branch.Kind.PAGE){sheet.row("Stamp on Minima…",()->PhoneStamp.note(this,here.id,here.name));sheet.row("Verify on Minima…",()->PhoneStamp.verifyNote(this,here.id,here.name));}
+            // On Minima: one row, saying how far the open note's stamp is, opening the one window for it (decisions 199, 224, 253).
+            if(here.kind==NoteStore.Branch.Kind.PAGE) {
+                String how=stampShown!=null&&active!=null&&here.id.equals(active.id)?Integritas.noteLine(stampShown,stampChanged):null;
+                if(how!=null)sheet.row("Stamp on Minima…",how,()->{if(active!=null&&here.id.equals(active.id))save();PhoneStamp.thing(this,here.id,true);});
+                else sheet.row("Stamp on Minima…",()->{if(active!=null&&here.id.equals(active.id))save();PhoneStamp.thing(this,here.id,true);});
+            }
             sheet.row("Archive",()->putAway(here,false));
             sheet.row("Move to bin",()->putAway(here,true));
             // The help request's switch moved out of here into the owner's Profile, one clear place to control it (decision 115).
@@ -4435,6 +4548,50 @@ public final class MainActivity extends Activity {
      * In the owner's order (decision 89): New (what is sent, since what is made is in Home's own rows), People, Find, the
      * places switched off Home, On Home, Backup, and Mininotes itself.
      */
+    /**
+     * At the very first start of a new install, before anything is written (the owner, 2026-10-21: "When we install the app
+     * for the first time, there should be a step where we set the language. So the user gets everything in the language of
+     * its choice, including the README right away"; decision 232): the languages, each in its own words, the phone's own
+     * first and ticked. Whether it asked before the notebook.
+     *
+     * <p>And at every start after, until a language is confirmed once (the owner, 2026-10-24: "When launching for the first
+     * time, or until the language hasn't been confirmed, a pop up window should ask the user to pick his language"; decision
+     * 240): an install already welcomed is asked too, once the app is open rather than before the notebook, with the language
+     * it uses now first and ticked (not the phone's). Confirmed in the box, or by a language chosen anywhere (setLanguage).
+     */
+    private boolean languageFirst() {
+        android.content.SharedPreferences kept=getSharedPreferences("settings",MODE_PRIVATE);
+        LanguageAsk.When when=LanguageAsk.when("true".equals(kept.getString(LanguageAsk.CONFIRMED,"")),
+            !kept.getString(NoteStore.WELCOMED,"").isEmpty(),BuildConfig.DEMO);
+        if(when==LanguageAsk.When.NEVER)return false;
+        if(when==LanguageAsk.When.ONCE_OPEN){handler.postDelayed(()->{if(!isFinishing()&&!isDestroyed())askLanguage(false);},700);return false;}
+        askLanguage(true);
+        return true;
+    }
+    /**
+     * The languages, each in its own words, the one in use first and ticked; a tap on one keeps it. First
+     * (a new install, before the notebook), it always goes on through setLanguage, which draws the app again and lets the
+     * start carry on; for one in use, the same language is only marked confirmed, another is set as today (README in it).
+     */
+    private void askLanguage(final boolean first) {
+        final android.content.SharedPreferences kept=getSharedPreferences("settings",MODE_PRIVATE);
+        final String setting=kept.getString("language",Say.SYSTEM),inUse=Say.resolve(setting,java.util.Locale.getDefault());
+        final List<String> codes=LanguageAsk.order(inUse,Say.LANGUAGES.keySet());
+        final LinearLayout body=inside();final AlertDialog[] box={null};
+        body.addView(under(Say.t("Choose the language Mininotes speaks. It can be changed later in Settings.")));
+        // A tap on a language takes it, as Settings' list does. Ticking one and keeping it with a Continue under the list was
+        // missed on a phone, where the list is taller than the screen: the tick moved, nothing was kept, and the box came
+        // back at every opening (the owner, 2026-10-24: "I picked french but it is not reflected and the window keeps
+        // coming back at every opening of the app").
+        for(final String code:codes)body.addView(row((code.equals(inUse)?"✓  ":"     ")+Say.LANGUAGES.get(code),"",()->{
+            if(box[0]!=null)box[0].dismiss();
+            // The phone's own, followed, kept as "the phone's language", so it goes on following the phone; another, as itself.
+            if(first||!code.equals(inUse))setLanguage(LanguageAsk.kept(code,setting,inUse));
+            else kept.edit().putString(LanguageAsk.CONFIRMED,"true").apply();}));
+        box[0]=new Box().setTitle("Language").setView(scrolling(body)).setCancelable(false).create();
+        box[0].show();
+    }
+
     /** The languages there is a list for, each in its own words, and the phone's own first; picked, the app says it at once. */
     void chooseLanguage() {
         final List<String> codes=new ArrayList<>();final List<String> names=new ArrayList<>();
@@ -4450,10 +4607,12 @@ public final class MainActivity extends Activity {
         box[0]=new Box().setTitle("Language").setView(scrolling(body)).create();
         box[0].show();
     }
-    /** Kept, and the app drawn again in it. */
+    /** Kept, and the app drawn again in it. Chosen anywhere, it is a language confirmed: the box no longer asks (decision 240). */
     void setLanguage(String code) {
-        getSharedPreferences("settings",MODE_PRIVATE).edit().putString("language",code).apply();
+        getSharedPreferences("settings",MODE_PRIVATE).edit().putString("language",code).putString(LanguageAsk.CONFIRMED,"true").apply();
         Say.use(Say.resolve(code,java.util.Locale.getDefault()));
+        // README said in it too, where nobody wrote in it (decision 232), before the app is drawn again.
+        if(store!=null&&background!=null){background.submit(()->store.readMeAgain(true),done->recreate(),e->recreate());return;}
         recreate();
     }
 
@@ -4465,8 +4624,6 @@ public final class MainActivity extends Activity {
         sheet.heading("Send");
         sheet.row("Send files…",this::sendFiles);
         sheet.row("Sent files…",()->homeScreen().sentFiles());
-        // Everything stamped on Minima from here, in its own page; the key is set in My profile (decision 210).
-        sheet.row("Stamped on Minima…",()->PhoneStamp.list(this));
         // People and devices, and From another device…, are in Sync and sharing, at the top (decision 185).
         sheet.line();
         sheet.heading("Find");
@@ -4474,6 +4631,9 @@ public final class MainActivity extends Activity {
         // A question, or something to do, said in words, answered on this phone (decision 191).
         sheet.row("Agent…",()->new AssistantBox(this).open());
         sheet.row("Tree",this::wholeTree);
+        // Everything stamped on Minima from here, last in Find, as on the PC (the owner, 2026-10-21: "Move the Stamped on
+        // Minima in find section of the menu"; decision 230); the key is set in My profile (decision 210).
+        sheet.row("Stamped on Minima…",()->PhoneStamp.list(this));
         // Home's places switched off Home are here instead (decision 78): one way to each, not two.
         if(!onHome(NoteStore.ARCHIVE)||!onHome(NoteStore.BIN)||shelves&&(!onHome(NoteStore.TEMP)||!onHome(NoteStore.RECENT)||!onHome(NoteStore.SHARED))) {
             sheet.line();
@@ -4505,7 +4665,31 @@ public final class MainActivity extends Activity {
         sheet.row(PhoneLock.locked(this)?"Settings  ·  🔒":"Settings",this::settings);
         // Which build this is; tapped, it looks for a newer one.
         sheet.row("Version",Say.t("Version")+"  ·  v"+version(),this::checkForUpdate);
+        // The other app, just above About (the owner, 2026-10-24: "In both platforms we should present the other, in windows
+        // the android and reverse"; decision 241).
+        sheet.row("Mininotes on your PC…",this::onYourPc);
         sheet.row("About…",this::about);
+    }
+
+    /** Where Mininotes for Windows is, the same on every phone (decision 241). */
+    static final String WINDOWS_LINK="https://mininotes.org/windows";
+    /**
+     * Mininotes on a PC (decision 241): that it runs on Windows too, keeping the same notes in step once paired, the link
+     * written out, Share link… (the phone's share sheet) and Copy link, and Done, the one primary.
+     */
+    void onYourPc() {
+        LinearLayout body=inside();final AlertDialog[] box={null};
+        body.addView(label("Mininotes also runs on Windows PCs. Once your PC and this phone are paired, they keep the same notes in step.",READING,INK));
+        TextView link=label(WINDOWS_LINK,READING,MUTED);link.setTextIsSelectable(true);link.setPadding(0,dp(14),0,dp(6));body.addView(link);
+        body.addView(tapRow("Share link…",()->{
+            Intent send=new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT,"Mininotes").putExtra(Intent.EXTRA_TEXT,WINDOWS_LINK);
+            started(Intent.createChooser(send,Say.t("Share link")));}));
+        body.addView(tapRow("Copy link",()->{
+            ClipboardManager board=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+            if(board!=null)board.setPrimaryClip(ClipData.newPlainText("Mininotes for Windows",WINDOWS_LINK));
+            toast("Link copied");}));
+        body.addView(primary("Done",()->{if(box[0]!=null)box[0].dismiss();}));
+        box[0]=new Box().setTitle("Mininotes on your PC").setView(scrolling(body)).create();box[0].show();
     }
 
     /**
@@ -5000,26 +5184,27 @@ public final class MainActivity extends Activity {
     /** The open note's stamped line, its stamps, the one it stands by, and whether its text changed since (decision 218). */
     private TextView stampLine;private java.util.List<NoteStore.StampRow> noteStamps=java.util.List.of();private NoteStore.StampRow stampShown;private boolean stampChanged;
     /** A note's stamps read, and its text compared with them. */
-    private void askStamps(final String id,final String body) {
-        background.submit(()->store.stampsOf(id),all->{if(active==null||!id.equals(active.id))return;noteStamps=all;compareStamps(body);},e->{});
+    private void askStamps(final String id,final String title,final String body) {
+        background.submit(()->store.stampsOf(id),all->{if(active==null||!id.equals(active.id))return;noteStamps=all;compareStamps(title,body);},e->{});
     }
     /**
      * The line under a stamped note's title (the owner, 2026-10-19: "there should be a mention at the top of the note for all
      * this, and as soon as there is a change, this should be notified"; decision 218): stamped and where, waiting for Minima, or
-     * changed since, toned down, a tap then stamping this version.
+     * changed since, toned down, a tap then stamping this version. Each stamp compared in its own form (decision 230): a
+     * titled one with the title and text, an older one with the text alone; the one that matches stands, else the newest.
      */
-    private void compareStamps(String body) {
+    private void compareStamps(String title,String body) {
         if(stampLine==null)return;
         if(noteStamps.isEmpty()){stampShown=null;stampLine.setVisibility(View.GONE);return;}
-        String now;try{now=Integritas.hashOfText(body);}catch(Exception never){return;}
-        stampShown=Integritas.standing(noteStamps,now);stampChanged=!stampShown.hash().equals(now);
+        NoteStore.StampRow match=Integritas.matching(noteStamps,title,body);
+        stampShown=match!=null?match:noteStamps.get(0);stampChanged=match==null;
         String said=Integritas.noteLine(stampShown,stampChanged);
         stampLine.setText("⛓ "+(stampChanged?said+"  ·  "+Say.t("Stamp this version…"):said));
         stampLine.setTextColor(stampChanged?MUTED:stampShown.confirmed()?mix(ACCENT,INK,0.15f):stampShown.waiting()?ACCENT:MUTED);
         stampLine.setVisibility(View.VISIBLE);
     }
     /** Read again: after a stamp, a look that landed, a verification. */
-    void stampLineAgain(){if(active!=null)askStamps(active.id,kept==null?active.body:kept);}
+    void stampLineAgain(){if(active!=null)askStamps(active.id,keptTitle==null?active.title:keptTitle,kept==null?active.body:kept);}
     /**
      * A note's stamped version put back as its text (decision 218), as Versions puts one back: what it says now kept first.
      */
@@ -7561,7 +7746,20 @@ public final class MainActivity extends Activity {
      * <p>They were three rows in a menu, which meant three places to look for one subject. A person setting
      * a phone up for the first time wants all of it at once.
      */
-    void profile() {
+    void profile(){profile(null,null);}
+    /** My profile's part where its stamping is set, opened by that name (decision 231). */
+    static final String STAMPING="Stamping";
+    /** What waits for a key to be saved in Stamping: the stamp or look that asked for one (PhoneStamp.account). */
+    private Runnable afterStampingKey;
+    /**
+     * My profile opened at one of its parts, by its heading: Take me there and Stamped on Minima's account bring you to the
+     * part, and Stamping's key field is in hand when it is still empty (the owner, 2026-10-21: "we need to be brought on the
+     * dedicated section on the profile page and in there we have to label this section clearly, stamping"; decision 231).
+     *
+     * @param then for Stamping, what goes on once a key is saved there; dropped if the box is put down without one
+     */
+    void profile(final String at,final Runnable then) {
+        afterStampingKey=STAMPING.equals(at)?then:null;
         withAddress(()->background.submit(()->{
             String said=getSharedPreferences("settings",MODE_PRIVATE).getString("address","");
             int paired=0,known=0;
@@ -7584,24 +7782,34 @@ public final class MainActivity extends Activity {
             final String backTo=people().onTop();
             if(backTo!=null)body.addView(people().backTo(backTo,()->{if(over[0]!=null)over[0].dismiss();}));
 
+            // The parts, each on a card of its own with its symbol, its name in the title's way of writing and a quiet line of
+            // what it holds, more room between them, and their names at the top as links to each (the owner, 2026-10-21: "In
+            // the profile page, the sections need to be better delimited and labelled, for now it is difficult to find what we
+            // are looking for"; decision 231). The names, order and lines are the PC's where it has the same part.
+            final java.util.Map<String,View> parts=new java.util.LinkedHashMap<>();
+            final ScrollView[] scroll={null};
+            PeopleBox.Flow index=new PeopleBox.Flow(this,dp(14));index.setPadding(0,dp(2),0,dp(6));
+            body.addView(index,new LinearLayout.LayoutParams(-1,-2));
+
             // Two names, each changed where it is: the one other people see, and the one your own devices
             // know this phone by. Until the first is chosen the phone's own name stands in, and it says so.
             final boolean chosen=Node.nameChosen(this);
             // Your picture, big, first, where you have one (the owner, 2026-10-12: "it should be displayed on the profile page").
-            bigFace(body,body.getChildCount(),null);
-            body.addView(part("Your name"));
+            final LinearLayout youPart=section(body,parts,"You","user","Your name, colour, picture and Parlons! address, and what your devices call this phone.");
+            bigFace(youPart,youPart.getChildCount(),null);
+            youPart.addView(part("Your name"));
             final TextView called=nameLine(yourName(),"Change your name");
-            body.addView(called);
-            body.addView(under(chosen?"What other people see.":"Choose the name other people see."));
+            youPart.addView(called);
+            youPart.addView(under(chosen?"What other people see.":"Choose the name other people see."));
             // And the colour they see you in, beside the name (the owner, 2026-10-03: "make it easy to pick a writing
             // colour"): your round and your writing, on every device that has your notes.
             if(palette!=null) {
-                body.addView(part("Your colour"));
-                body.addView(inkRow(Writers.ME),new LinearLayout.LayoutParams(-1,-2));
-                body.addView(under("Everybody sees your round, and your writing, in it."));
+                youPart.addView(part("Your colour"));
+                youPart.addView(inkRow(Writers.ME),new LinearLayout.LayoutParams(-1,-2));
+                youPart.addView(under("Everybody sees your round, and your writing, in it."));
             }
             // Your picture, on your round everywhere you are paired (decision 158).
-            body.addView(part("Your picture"));final String you=yourName()==null?"":yourName();
+            youPart.addView(part("Your picture"));final String you=yourName()==null?"":yourName();
             LinearLayout mine=new LinearLayout(this);mine.setGravity(Gravity.CENTER_VERTICAL);mine.setMinimumHeight(dp(64));
             final View myFace=disc(you.isEmpty()?"?":new String(Character.toChars(you.codePointAt(0))).toUpperCase(java.util.Locale.ROOT),false);
             mine.addView(myFace);
@@ -7610,20 +7818,21 @@ public final class MainActivity extends Activity {
             mine.setBackgroundResource(touchFeedback());
             mine.setOnClickListener(v->faceMenu(v,null,you));
             wearFace(myFace,null);
-            body.addView(mine);
+            youPart.addView(mine);
             // Your Parlons! address, set once and sent by itself to your contacts (decision 147).
-            body.addView(part("Your Parlons! address"));
+            youPart.addView(part("Your Parlons! address"));
             final String myParlons=(String)got[7];
-            body.addView(row(myParlons.isEmpty()?"Not set":Parlons.shortened(myParlons),myParlons.isEmpty()?"Set it":"Change",()->{if(over[0]!=null)over[0].dismiss();myParlonsBox();}));
-            body.addView(under("Your contacts get it by themselves, so they can chat with you in one tap."));
-            body.addView(part("This device"));
+            youPart.addView(row(myParlons.isEmpty()?"Not set":Parlons.shortened(myParlons),myParlons.isEmpty()?"Set it":"Change",()->{if(over[0]!=null)over[0].dismiss();myParlonsBox();}));
+            youPart.addView(under("Your contacts get it by themselves, so they can chat with you in one tap."));
+            youPart.addView(part("This device"));
             final TextView device=nameLine(thisDevice(),"Change what your devices call this phone");
-            body.addView(device);
-            body.addView(under("What your own devices call this one."));
+            youPart.addView(device);
+            youPart.addView(under("What your own devices call this one."));
 
-            body.addView(part("YOUR ADDRESS"));
+            // The code and the address it holds, called Your code as on the PC (it was Your address here).
+            final LinearLayout codePart=section(body,parts,"Your code","qr-code","The code and address other people and devices reach this phone by.");
             if(address.isEmpty())
-                body.addView(under(!Node.allowedOnTheNetwork(this)?"This app is not allowed on the network, so it has no address."
+                codePart.addView(under(!Node.allowedOnTheNetwork(this)?"This app is not allowed on the network, so it has no address."
                     :Node.onlyMine(this)?"Not on a Wi-Fi network, so no other device can reach this phone. With notes only between your devices, pairing needs both on the same Wi-Fi."
                     :"No relay has answered yet, so nothing can reach this phone."));
             else {
@@ -7631,64 +7840,70 @@ public final class MainActivity extends Activity {
                 // the headings have, so it reads as one thing on the page rather than a picture dropped in.
                 LinearLayout.LayoutParams place=new LinearLayout.LayoutParams(-1,-2);
                 place.setMargins(0,dp(6),0,dp(10));
-                body.addView(codeView(line),place);
+                codePart.addView(codeView(line),place);
                 TextView shown=label(address,HEADING,MUTED);
                 shown.setLineSpacing(dp(2),1f);
                 shown.setTextIsSelectable(true);
-                body.addView(shown);
-                body.addView(tapRow("Copy address",()->{
+                codePart.addView(shown);
+                codePart.addView(tapRow("Copy address",()->{
                     ClipboardManager board=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
                     if(board!=null)board.setPrimaryClip(ClipData.newPlainText("Mininotes",address));
                     toast("Address copied");
                 }));
                 // And handed to a message, a mail or a social network, as the link the code holds (decision 110).
-                body.addView(tapRow("Share my link\u2026",this::shareMyLink));
+                codePart.addView(tapRow("Share my link\u2026",this::shareMyLink));
             }
 
             // One line, which only says more when something is wrong. It was four ticked lines about the
             // app's own plumbing - that it is a Maxima node, that it has an address, that there is somebody
             // to send to, that their keys are known - which is what somebody building it wants to see and
             // nobody using it needs to. Connected, or the one thing to do about not being.
-            body.addView(part("Connection"));
+            final LinearLayout connectionPart=section(body,parts,"Connection","wifi","Whether this phone reaches the network, and how notes travel.");
             boolean allowed=Node.allowedOnTheNetwork(this);
             boolean mineOnly=Node.onlyMine(this);
-            step(body,!address.isEmpty(),
+            step(connectionPart,!address.isEmpty(),
                 !address.isEmpty()?(mineOnly?"On this Wi-Fi, only between your devices":"Connected"):allowed?(mineOnly?"Not on a Wi-Fi network":"Connecting\u2026"):"Not connected",
                 !address.isEmpty()?"":allowed?(mineOnly?"Notes wait until your devices are on the same Wi-Fi, or this phone can reach your PC.":"It can take a few seconds to find the network.")
                     :"This app is not allowed on the network. Allow it in the phone's settings.");
-            if(owed>0)body.addView(under(owed==1?"1 note is waiting to go.":owed+" notes are waiting to go."));
+            if(owed>0)connectionPart.addView(under(owed==1?"1 note is waiting to go.":owed+" notes are waiting to go."));
             // Said only while it is true: this phone reached its owner's PC this round or the last few, and what
             // the PC kept for it came from there (see Home).
-            if(!home.isEmpty())body.addView(under(home+"."));
+            if(!home.isEmpty())connectionPart.addView(under(home+"."));
             // Its door and how notes travel, which People and devices said on its line This device: here, where this phone
             // is the subject (the owner: "direct connections open on port 9601 and so on should show in the profile page").
             @SuppressWarnings("unchecked") final List<String> hereLines=(List<String>)got[6];
-            for(String one:hereLines)body.addView(under(one));
+            for(String one:hereLines)connectionPart.addView(under(one));
             // As the PC's Profile has them. The code that offers the whole pad is the one that makes two devices one owner's at
             // both ends; it was the Everything card of the old shelves, and went with them (docs/HOME.md, decision 27).
             final AlertDialog[] up={null};
             // One way in to people and devices, managed in their own place (decision 202).
-            body.addView(part("People and devices"));
+            final LinearLayout peoplePart=section(body,parts,"People and devices","users","The people you share with, and your own devices.");
             // Over this box, which is still here when that one is closed (decision 103: always a way back).
-            body.addView(tapRow("Manage…",()->{if(backTo!=null){if(over[0]!=null)over[0].dismiss();}else addressBook();}));
-            // Integritas, all of it in one place (decision 203): the account and everything stamped.
-            body.addView(part("Integritas"));
+            peoplePart.addView(tapRow("Manage…",()->{if(backTo!=null){if(over[0]!=null)over[0].dismiss();}else addressBook();}));
+            // Integritas, all of it in one place (decision 203), called Stamping, what it is for (decision 231).
+            final LinearLayout stampingPart=section(body,parts,STAMPING,"stamp","Stamp files and notes on the Minima blockchain through your own Integritas account, to prove later that they existed then, unchanged.");
             // The API key typed here, as the Parlons! address could be, and sent to the owner's own devices chosen (decision 210).
-            final LinearLayout integritas=column();body.addView(integritas);integritasPart(integritas);
-            // The help request is no longer here, in plain sight: it is set inside a private space alone (decision 201).
-            body.addView(under("Send your location to people you choose the moment a note or folder you set opens. For when you may be in danger."));
-            body.addView(part("BACKUP"));
-            body.addView(under("One file holding every folder, note and attachment on this phone."));
+            final LinearLayout integritas=column();stampingPart.addView(integritas);
+            // The help request is no longer here, in plain sight: it is set inside a private space alone (decision 201). Its
+            // line, left under Integritas, said what this page no longer holds, and went with the parts (decision 231).
+            final LinearLayout backupPart=section(body,parts,"Backup","archive","One file holding every folder, note and attachment on this phone.");
             LinearLayout both=new LinearLayout(this);
             both.setPadding(0,dp(8),0,dp(2));
             both.addView(pill("Export",()->exportBackup()),new LinearLayout.LayoutParams(0,-2,1f));
             both.addView(gap(0),new LinearLayout.LayoutParams(dp(10),dp(1)));
             both.addView(pill("Import",()->pick(IMPORT)),new LinearLayout.LayoutParams(0,-2,1f));
-            body.addView(both);
+            backupPart.addView(both);
 
+            scroll[0]=scrolling(body);
             final AlertDialog box=new Box().setTitle("My profile")
-                .setView(scrolling(body)).create();
+                .setView(scroll[0]).create();
             up[0]=box;over[0]=box;
+            // The names at the top, each a link to its part.
+            for(final java.util.Map.Entry<String,View> one:parts.entrySet())index.addView(link(one.getKey(),()->scrollTo(scroll[0],one.getValue())));
+            // A key saved in Stamping closes this box for what asked for it; one put down without a key is not waited for.
+            integritasPart(integritas,()->{Runnable waiting=afterStampingKey;afterStampingKey=null;if(waiting!=null){box.dismiss();waiting.run();}},
+                STAMPING.equals(at)?box:null);
+            box.setOnDismissListener(d->afterStampingKey=null);
             // Left as it was, a name is not chosen again: that would say it was decided now, on every device.
             called.setOnClickListener(v->{
                 typeIn(box);
@@ -7701,7 +7916,44 @@ public final class MainActivity extends Activity {
                 editInPlace(device,name->{box.dismiss();if(name.equals(was))profile();else keepThisDevice(name);},Persons.NAME_MOST,null);
             });
             box.show();
+            if(at!=null&&parts.containsKey(at))scrollTo(scroll[0],parts.get(at));
         },e->alert(READ_FAILED)));
+    }
+
+    /**
+     * One part of My profile: on a card of its own, so where one part ends is seen, with its symbol, its name in the title's
+     * way of writing, and a quiet line saying what it holds (decision 231). What the part holds goes in the card returned.
+     */
+    private LinearLayout section(LinearLayout body,java.util.Map<String,View> parts,String name,String glyph,String holds) {
+        LinearLayout card=column();
+        GradientDrawable edge=new GradientDrawable();edge.setColor(CARD);edge.setCornerRadius(dp(14));edge.setStroke(Math.max(1,dp(1)),LINE);
+        card.setBackground(edge);card.setPadding(dp(16),dp(14),dp(16),dp(12));
+        LinearLayout head=new LinearLayout(this);head.setGravity(Gravity.CENTER_VERTICAL);
+        if(Icons.known(glyph)) {
+            View face=new View(this);face.setBackground(IconFace.symbol(this,glyph,ACCENT));
+            face.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            LinearLayout.LayoutParams at=new LinearLayout.LayoutParams(dp(22),dp(22));at.setMarginEnd(dp(12));
+            head.addView(face,at);
+        }
+        TextView named=label(name,READING,INK);named.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);named.setAccessibilityHeading(true);
+        head.addView(named,new LinearLayout.LayoutParams(0,-2,1));
+        card.addView(head);
+        card.addView(under(holds));
+        LinearLayout.LayoutParams place=new LinearLayout.LayoutParams(-1,-2);place.setMargins(0,dp(10),0,dp(10));
+        body.addView(card,place);
+        parts.put(name,card);
+        return card;
+    }
+
+    /** A box's page scrolled to one of its parts, its top a little below the box's, once the page is laid out. */
+    private void scrollTo(final ScrollView scroll,final View part) {
+        if(scroll==null||part==null)return;
+        if(part.isLaidOut()&&scroll.isLaidOut()){scroll.smoothScrollTo(0,Math.max(0,part.getTop()-dp(8)));return;}
+        part.addOnLayoutChangeListener(new View.OnLayoutChangeListener(){
+            @Override public void onLayoutChange(View v,int l,int t,int r,int b,int ol,int ot,int or,int ob) {
+                part.removeOnLayoutChangeListener(this);
+                scroll.post(()->scroll.scrollTo(0,Math.max(0,part.getTop()-dp(8))));
+            }});
     }
 
     /** A name on a page that is changed where it stands: a tap turns it into the field. */
@@ -7748,16 +8000,21 @@ public final class MainActivity extends Activity {
      * My profile's Integritas part: the API key in place, Save, and a switch for each of the owner's own paired devices that
      * gets it, sealed for it, when Save is pressed (the owner, 2026-10-19; decision 210). What was stamped is in the menu.
      */
-    private void integritasPart(final LinearLayout into) {
+    private void integritasPart(final LinearLayout into,final Runnable linked,final AlertDialog typing) {
         background.submit(()->{List<NoteStore.Contact> own=new ArrayList<>();for(NoteStore.Contact one:store.addresses())if(one.mine&&one.paired())own.add(one);
             return new Object[]{store.secret(PhoneStamp.KEY),own};},got->{
-            into.addView(under("Stamp files and notes on the Minima blockchain through your own Integritas account, to prove later that they existed then, unchanged."));
             final EditText key=field("Integritas API key",400);key.setText((String)got[0]);
             key.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
             into.addView(key);
+            // Opened at Stamping with no key yet: the field in hand, the keyboard up on it (decision 231).
+            if(typing!=null&&key.getText().length()==0&&typing.isShowing()) {
+                typeIn(typing);key.requestFocus();
+                key.postDelayed(()->{if(!key.isAttachedToWindow())return;InputMethodManager keys=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);if(keys!=null)keys.showSoftInput(key,0);},150);
+            }
             final TextView help=under("Paste the API key from your profile at integritas.technology. It is kept in your notebook on this phone, locked with it, and sent only to Integritas and to the devices you choose below.");
             into.addView(help);
-            into.addView(tapRow("integritas.technology",()->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(Integritas.SITE)));}catch(Exception none){toast(Integritas.SITE);}}));
+            // Its site as a link, as Stamped on Minima has it (decision 231).
+            into.addView(link("integritas.technology",()->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(Integritas.SITE)));}catch(Exception none){toast(Integritas.SITE);}}),new LinearLayout.LayoutParams(-2,-2));
             @SuppressWarnings("unchecked") final List<NoteStore.Contact> own=(List<NoteStore.Contact>)got[1];
             // The devices it goes to, remembered, and one switched on gets the key at once (decision 223).
             final java.util.Set<String> chosen=Post.keyGoesTo(this,PhoneStamp.KEY);
@@ -7777,6 +8034,8 @@ public final class MainActivity extends Activity {
                 final int job=busy(Say.t(typed.isEmpty()?"Integritas is unlinked":"Integritas is linked"));
                 background.submit(()->{store.setSecret(PhoneStamp.KEY,typed);store.setSecret(PhoneStamp.KEY+".at",String.valueOf(System.currentTimeMillis()));return null;},done->{
                     // Said in the middle of the screen (decision 218).
+                    // What asked for a key goes on with it (PhoneStamp.account; decision 231).
+                    if(!typed.isEmpty()&&linked!=null)linked.run();
                     if(to.isEmpty()){busyDone(job,null);PhoneStamp.notice(this,Say.t(typed.isEmpty()?"Integritas is unlinked":"Integritas is linked"));return;}
                     busySay(job,Say.t("Sending to my devices…"));
                     network.submit(()->Post.sendKey(this,store,keys(),PhoneStamp.KEY,to),said->busyDone(job,said),e->{busyDone(job,null);alert(READ_FAILED);});
@@ -7912,6 +8171,9 @@ public final class MainActivity extends Activity {
             +"layer of Minima, by this phone's own node, so nobody in between can read it. "
             +(PhoneLock.locked(this)?"Notes on this phone, their files and the backups you export are encrypted."
                 :"Notes on this phone are not encrypted, and neither are backups; Security, in the menu, can lock them with a password."),READING,MUTED)));
+        body.addView(gap(8));
+        // The other app, named with the menu entry that tells of it (decision 241); tapped, that entry's box.
+        body.addView(link("Mininotes also runs on Windows: Mininotes on your PC…, in the menu.",this::onYourPc));
         body.addView(gap(14));
         // The icons a note or a collection wears are somebody else's work: named, with their licence, as NOTICE has them.
         body.addView(label("Icons",READING,MUTED));
@@ -10546,7 +10808,6 @@ public final class MainActivity extends Activity {
      */
     private void fileMenu(View card,final NoteStore.Held file,Runnable play,NoteStore.StampRow stamp,boolean changes) {
         Sheet sheet=new Sheet();
-        if(stamp!=null){sheet.row("Stamped on Minima…",Integritas.noteLine(stamp,false),()->PhoneStamp.show(this,stamp.n()));sheet.line();}
         if(play!=null)sheet.row(file.id.equals(playingId)&&player!=null&&player.isPlaying()?"Pause":"Play",play);
         sheet.row("Open",openLine(file),()->openFile(file));
         sheet.row("Open with…",()->openFileWith(file));
@@ -10561,9 +10822,9 @@ public final class MainActivity extends Activity {
         // One way out to the phone, where its own picker says (the owner, 2026-10-18: combine Download and Save a copy; decision 200).
         sheet.row("Save on my phone…",()->saveCopyOf(file.id,file.name,file.kind));
         sheet.row("Send to a device…",()->chooseDevice(java.util.Collections.singletonList(Lending.of(file.id)),new ArrayList<>()));
-        // On Minima, through the person's own Integritas account (decision 199).
-        sheet.row("Stamp on Minima…",()->PhoneStamp.file(this,file));
-        sheet.row("Verify on Minima…",()->PhoneStamp.verifyFile(this,file));
+        // On Minima: one row, saying how far its stamp is, opening the one window for it (decisions 199, 224 and 253).
+        if(stamp!=null)sheet.row("Stamp on Minima…",Integritas.noteLine(stamp,false),()->PhoneStamp.thing(this,file.id,false));
+        else sheet.row("Stamp on Minima…",()->PhoneStamp.thing(this,file.id,false));
         // Into another note, as Put in a note… does on Home: the note picked keeps it from then on.
         sheet.row("Move to another note…",()->putInNote(new NoteStore.Loose(file.id,"","",file.name,file.kind,file.bytes,"",true,false,0,0)));
         sheet.line();
@@ -10577,6 +10838,12 @@ public final class MainActivity extends Activity {
      */
     void filesChanged(NoteStore.Branch.Kind kind,String note) {
         if(kind!=NoteStore.Branch.Kind.PAGE||note==null)return;
+        // A note made from a place's + with a file and no words yet: its first file is its first writing, so it is put in
+        // the place now, as its first word would put it (the owner, 2026-10-21: "if we type nothing in a note in temp and
+        // only add a picture ... the note is saved on the home page but not in the Temp folder"; decision 233).
+        final String place=placeOnSave.get(note);
+        if(place!=null)background.submit(()->{if(store.get(note)==null)return false;placeOnSave.remove(note);intoPlaceNow(NoteStore.Branch.Kind.PAGE,note,place);return true;},
+            moved->{if(Boolean.TRUE.equals(moved)&&shelves)refresh();},e->{});
         network.submit(()->{Post.filesChanged(this,store,keys(),note);return null;},done->askWhatIsOwed(),e->{});
     }
 
@@ -11033,6 +11300,8 @@ public final class MainActivity extends Activity {
             } else Shot.clear(this);
             return;
         }
+        // A file from the phone's storage to stamp, or picked again to verify (decision 230), whatever came back.
+        if(request==PhoneStamp.PICK){PhoneStamp.picked(this,result==RESULT_OK&&data!=null?data.getData():null);return;}
         if(result!=RESULT_OK||data==null)return;
         if(request==ATTACH){final String place=attachingPlace;attachingPlace=null;
             keepFiles(attachingTo,attachingToId,picked(data),new ArrayList<>(),place==null?null:ids->{for(String id:ids)intoPlaceNow(NoteStore.Branch.Kind.FILE,id,place);});return;}
@@ -11215,7 +11484,10 @@ public final class MainActivity extends Activity {
                      .append(step.name==null?"":step.name.replace('\t',' ').replace('\n',' '));
         }
         final String said=where.toString();
-        background.submit(()->{getSharedPreferences("settings",MODE_PRIVATE).edit().putString("where",said).apply();return null;},
+        // And where a note made from a place's + is going, for when Android has closed the app before its first word
+        // (decision 238). Kept also while that word is on its way down: opened again, a note found written is not put again.
+        final String going=!shelves&&active!=null?WaitingPlace.say(active.id,placeOnSave.get(active.id)):null;
+        background.submit(()->{getSharedPreferences("settings",MODE_PRIVATE).edit().putString("where",said).putString("waitingPlace",going).apply();return null;},
             done->{},e->{});
     }
 
@@ -11239,6 +11511,10 @@ public final class MainActivity extends Activity {
         if(home!=null)home.keepViewport(state);
         if(active!=null&&!shelves) {
             state.putString("note",active.id);
+            // Where a note made from a place's + is going, if its first word has not put it there yet (decision 238). After
+            // the flush, so a word written down on the way out has already put it there and nothing waits.
+            String going=WaitingPlace.say(active.id,placeOnSave.get(active.id));
+            if(going!=null)state.putString("waitingPlace",going);
             if(page!=null){Bundle position=page.position();position.putBoolean("keyboard",noteKeyboard);state.putBundle("readingPosition",position);}
         }
         super.onSaveInstanceState(state);
@@ -11450,6 +11726,9 @@ public final class MainActivity extends Activity {
         privately.started();
         handler.removeCallbacks(awayRelock);handler.removeCallbacks(idleCheck);handler.postDelayed(idleCheck,30_000);
         Listening.watch(watching);
+        // In front, and watching: what arrived meanwhile is seen, so its one line goes and its count starts again (the owner,
+        // 2026-10-22, "cleared when the app is opened"; decision 236). Here and not before the lock: the unlock page saw nothing.
+        Listening.seen(this);
         for(Hello.Said them:Listening.unanswered())somebodyAccepted(them);
         // Only on coming back. The first time, the screen was drawn from the notebook a moment ago.
         if(!beenAway)return;
@@ -11956,6 +12235,10 @@ public final class MainActivity extends Activity {
             if(landed.people){askWritable();people().withAgain();}
             // Your groups changed on another device of yours while People and devices was open: drawn again where it is.
             if(landed.groups){people().again();people().withAgain();}
+            // Stamps from another device of yours (decision 252): every line and box showing them told, and those still
+            // waiting for Minima looked for here too where this phone has an Integritas key.
+            if(landed.stamps){Integritas.Watch w=PhoneStamp.watch(this);
+                background.submit(()->{if(!store.secret(Integritas.KEY).isEmpty())w.resume();for(String h:landed.stamped)w.told(h);return null;},v->{},e->{});}
             // Somebody's Parlons! address came from another device of yours: known to the menus, and drawn where it shows.
             if(landed.contacts){background.submit(()->{parlonsBook=store.parlonsBook();return null;},v->{if(active!=null&&!shelves)askWhatIsOwed();},e->{});
                 people().again();}

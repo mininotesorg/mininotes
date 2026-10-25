@@ -45,11 +45,14 @@ public class DesktopStampTest {
                 looks.incrementAndGet();
                 boolean there=anchored.contains(hash)&&pending.getAndDecrement()<=0;
                 answer=there?"{\"status\":\"success\",\"statusCode\":200,\"message\":\"Verification complete\",\"data\":{\"data\":{\"result\":\"full match\",\"blockchainData\":[{\"blockNumber\":777001,"
-                    +"\"blockDate\":\""+java.time.Instant.now()+"\",\"txpowId\":\"0xTXPOW\",\"transactionId\":\"0xTX\",\"matchedHash\":\""+hash+"\"}]}}}"
+                    +"\"blockDate\":\""+java.time.Instant.now()+"\",\"txpowId\":\"0xTXPOW\",\"transactionId\":\"0xTX\",\"matchedHash\":\""+hash+"\"}]}}"
+                    // A report where one is asked for: its link on this stand-in, a synthetic PDF (decision 253).
+                    +("true".equals(x.getRequestHeaders().getFirst("x-report-required"))?",\"file\":{\"fileName\":\"report.pdf\",\"downloadUrl\":\"http://127.0.0.1:"+server.getAddress().getPort()+"/report.pdf\",\"expiresIn\":\"1 hour\"}":"")+"}"
                     :"{\"status\":\"success\",\"statusCode\":200,\"data\":{\"data\":{\"result\":\"no match\",\"blockchainData\":[]}}}";
             }
             byte[] out=answer.getBytes(StandardCharsets.UTF_8);x.sendResponseHeaders(200,out.length);try(OutputStream o=x.getResponseBody()){o.write(out);}
         });
+        server.createContext("/report.pdf",x->{byte[] pdf="%PDF-1.4 synthetic Integritas report".getBytes(StandardCharsets.UTF_8);x.sendResponseHeaders(200,pdf.length);try(OutputStream o=x.getResponseBody()){o.write(pdf);}});
         server.start();
         Integritas.bases=new String[]{"http://127.0.0.1:"+server.getAddress().getPort()+"/core/v2"};
         DesktopStamp.unit=2;
@@ -144,7 +147,9 @@ public class DesktopStampTest {
         SwingUtilities.invokeAndWait(()->DesktopStamp.note(pad,n.id));
         await(()->onEdt(()->dialog("stampBox")!=null&&find(dialog("stampBox"),"stampGo")!=null));
         JDialog box=onEdt(()->dialog("stampBox"));
-        assertEquals(Integritas.hashOfText(n.body),onEdt(()->((javax.swing.text.JTextComponent)find(box,"stampHash")).getText()));
+        // Its title and text (decision 230).
+        assertEquals(Integritas.hashOfNote(n.title,n.body),onEdt(()->((javax.swing.text.JTextComponent)find(box,"stampHash")).getText()));
+        assertEquals(Integritas.hashOfText("Lease\n\nSynthetic lease, signed copy"),Integritas.hashOfNote(n.title,n.body));
         assertEquals("nothing sent yet",0,stamps.get());
         java.awt.Point at=onEdt(box::getLocationOnScreen);Dimension size=onEdt(box::getSize);Rectangle frame=onEdt(()->pad.frame.getBounds());
         assertTrue("centred over the window",Math.abs(at.x+size.width/2-(frame.x+frame.width/2))<=2);
@@ -152,6 +157,8 @@ public class DesktopStampTest {
         // Sent: the request and the address shown; waiting for Minima, while the watch looks; then the block.
         await(()->onEdt(()->find(box,"stampRequest")!=null));
         assertEquals(1,stamps.get());
+        assertTrue("stamped with its title",pad.store.stampsOf(n.id).get(0).titled());
+        assertEquals(Integritas.hashOfNote(n.title,n.body),pad.store.stampsOf(n.id).get(0).hash());
         assertEquals("0xADDRESS",onEdt(()->((javax.swing.text.JTextComponent)find(box,"stampAddress")).getText()));
         await(()->onEdt(()->find(box,"stampBlock")!=null));
         assertEquals("777001",onEdt(()->((javax.swing.text.JTextComponent)find(box,"stampBlock")).getText()));
@@ -183,10 +190,51 @@ public class DesktopStampTest {
         await(()->onEdt(()->!pad.stampLine.changed()&&pad.stampLine.words().endsWith("block 777001")));
         boolean kept=false;for(NoteStore.Version v:pad.store.versions(n.id))kept|=v.body.endsWith("and an unsigned line");
         assertTrue("the text it replaced is a version",kept);
-        // Stamped on Minima… lists it, with its version.
+        // Renamed: the stamp covers the title too, so the note is changed (the owner, 2026-10-21: "Yes, absolutely"); named
+        // back, it stands by its stamp again.
+        SwingUtilities.invokeAndWait(()->pad.title.setText("Lease, renamed"));
+        await(()->onEdt(()->pad.stampLine.changed()));
+        assertTrue(onEdt(pad.stampLine::words).startsWith("Changed since it was stamped on "));
+        SwingUtilities.invokeAndWait(()->pad.title.setText("Lease"));
+        await(()->onEdt(()->!pad.stampLine.changed()&&pad.stampLine.words().endsWith("block 777001")));
+        // Stamped on Minima… is a plain list: one line for each stamp, and its details a click further (decision 230).
         SwingUtilities.invokeAndWait(()->DesktopStamp.list(pad,pad.frame));
-        await(()->onEdt(()->dialog("stampList")!=null));
-        shoot(onEdt(()->dialog("stampList")),"218-stamped-list");
+        long only=pad.store.stampsOf(n.id).get(0).n();
+        await(()->onEdt(()->dialog("stampList")!=null&&find(dialog("stampList"),"stampCard"+only)!=null));
+        JDialog list=onEdt(()->dialog("stampList"));
+        JButton line=onEdt(()->(JButton)find(list,"stampCard"+only));
+        assertTrue(onEdt(line::getText),onEdt(line::getText).startsWith("“Lease”   ·   Note   ·   ")&&onEdt(line::getText).contains("On Minima, block 777001"));
+        assertNull("no fingerprint in the list",onEdt(()->find(list,"listHash")));assertNull("no buttons in a line",onEdt(()->find(list,"stampDetails")));
+        assertNotNull(onEdt(()->find(list,"stampPlus")));
+        assertEquals("Stamp something…",onEdt(()->((JButton)find(list,"stampPlus")).getToolTipText()));
+        // Laid out as Home is (decision 231): no Done, Home's round + at the foot where Done was, below the list; the website a
+        // link in its own words; and the stamps under their heading.
+        assertNull("no Done",onEdt(()->buttonSaying(list,"Done")));
+        assertNull("Know more is the website's own name now",onEdt(()->buttonSaying(list,"Know more  ›")));
+        JButton plusAtFoot=onEdt(()->(JButton)find(list,"stampPlus"));
+        assertTrue("the + is below the list",onEdt(()->plusAtFoot.getLocationOnScreen().y>line.getLocationOnScreen().y));
+        assertEquals(new Dimension(52,52),onEdt(plusAtFoot::getPreferredSize));
+        assertEquals("",onEdt(plusAtFoot::getText));
+        JButton site=onEdt(()->(JButton)find(list,"stampSite"));
+        assertEquals("integritas.technology",onEdt(site::getText));assertEquals(Integritas.SITE,onEdt(site::getToolTipText));
+        assertEquals(Boolean.TRUE,onEdt(()->site.getClientProperty("link")));
+        assertEquals(DesktopUi.ACCENT,onEdt(site::getForeground));
+        assertTrue("the hand over it",onEdt(()->site.getCursor().getType()==Cursor.HAND_CURSOR));
+        assertEquals("Stamped notes and files",onEdt(()->((JTextArea)find(list,"stampListHeading")).getText()));
+        assertTrue("the heading is above the lines",onEdt(()->find(list,"stampListHeading").getLocationOnScreen().y<line.getLocationOnScreen().y));
+        // Your Integritas account… opens My profile at Stamping, and the list stays open (decision 231).
+        SwingUtilities.invokeAndWait(()->((JButton)find(list,"stampAccount")).doClick());
+        await(()->onEdt(()->{for(Window w:Window.getWindows())if(w instanceof JDialog p&&p.isShowing()&&"My profile".equals(p.getTitle())
+            &&p.getRootPane().getClientProperty("focus") instanceof JComponent field&&"integritasKey".equals(field.getName()))return true;return false;}));
+        assertTrue("the list is still open",onEdt(list::isDisplayable));
+        assertNull("no box of its own for the account",onEdt(()->{for(Window w:Window.getWindows())if(w instanceof JDialog b&&b.isShowing()&&"Your Integritas account".equals(b.getTitle()))return b;return null;}));
+        SwingUtilities.invokeAndWait(()->{for(Window w:Window.getWindows())if(w instanceof JDialog p&&"My profile".equals(p.getTitle()))p.dispose();});
+        Set<String> plus=onEdt(()->{Set<String> all=new HashSet<>();for(Component c:DesktopStamp.plusMenu(pad,list).getComponents())if(c instanceof JMenuItem i)all.add(DesktopMenus.words(i));return all;});
+        assertEquals(Set.of("A note or file in Mininotes…","A file on this PC…"),plus);
+        shoot(list,"218-stamped-list");
+        SwingUtilities.invokeAndWait(line::doClick);
+        await(()->onEdt(()->dialog("stampBox")!=null&&find(dialog("stampBox"),"stampBlock")!=null));
+        assertEquals("777001",onEdt(()->((javax.swing.text.JTextComponent)find(dialog("stampBox"),"stampBlock")).getText()));
     }
 
     @Test public void theListShowsWhatMinimaSaysTheExplorerIsLinkedAndAFileWearsItsStamp() throws Exception {
@@ -211,20 +259,57 @@ public class DesktopStampTest {
         assertEquals("https://explorer.minima.global/transactions/"+txpow,Integritas.txpowLink(txpow));
         assertNull("not an id the explorer shows",Integritas.txpowLink("0xTX"));assertNull(Integritas.blockLink(0));
         assertTrue(Integritas.details(store.stampRow(found)).contains("https://explorer.minima.global/transactions/"+txpow));
+        // A file of this PC's drive, never put in Mininotes (decision 230): its fingerprint and name alone.
+        Path drive=temp.newFile("receipt.pdf").toPath();Files.writeString(drive,"%PDF-1.4 synthetic receipt");
+        long away=store.stamped("outside:"+UUID.randomUUID(),Integritas.OUTSIDE,"receipt.pdf",Integritas.hash(Files.readAllBytes(drive)),now,"r5","","",null,null);
+        assertTrue(store.stampRow(away).outside());assertFalse(store.stampRow(away).note());
         SwingUtilities.invokeAndWait(()->DesktopStamp.list(pad,pad.frame));
         await(()->onEdt(()->dialog("stampList")!=null&&find(dialog("stampList"),"stampCard"+lost)!=null));
         JDialog list=onEdt(()->dialog("stampList"));
-        Container oldCard=onEdt(()->(Container)find(list,"stampCard"+old)),lostCard=onEdt(()->(Container)find(list,"stampCard"+lost));
-        assertTrue(onEdt(()->((javax.swing.text.JTextComponent)find(oldCard,"stampState")).getText()).endsWith("On Minima, block 2374505"));
-        assertEquals("Verify again",onEdt(()->((JButton)find(oldCard,"stampVerify")).getText()));
-        assertEquals("Verify on Minima",onEdt(()->((JButton)find(lostCard,"stampVerify")).getText()));
-        assertEquals("Details…",onEdt(()->((JButton)find(oldCard,"stampDetails")).getText()));
-        assertEquals("https://explorer.minima.global/transactions/"+txpow,onEdt(()->((JComponent)find(oldCard,"listTxpow")).getClientProperty("link")));
-        assertEquals(DesktopStamp.words().getSize2D(),onEdt(()->find(oldCard,"stampState").getFont().getSize2D()),0.01f);
+        // One line each, newest first: what, when, how far; no fingerprint, transaction or button in it.
+        JButton oldLine=onEdt(()->(JButton)find(list,"stampCard"+old)),lostLine=onEdt(()->(JButton)find(list,"stampCard"+lost)),awayLine=onEdt(()->(JButton)find(list,"stampCard"+away));
+        assertTrue(onEdt(oldLine::getText),onEdt(oldLine::getText).startsWith("“Deed”   ·   Note, text only   ·   ")&&onEdt(oldLine::getText).contains("On Minima, block 2374505"));
+        assertTrue(onEdt(awayLine::getText),onEdt(awayLine::getText).startsWith("“receipt.pdf”   ·   File on this PC   ·   "));
+        assertNull(onEdt(()->find(list,"listTxpow")));assertNull(onEdt(()->find(list,"stampVerify")));
+        assertEquals(DesktopStamp.words().getSize2D(),onEdt(()->oldLine.getFont().getSize2D()),0.01f);
+        // A click opens its box: there its verification, its block and its link to the Minima Explorer.
+        SwingUtilities.invokeAndWait(oldLine::doClick);
+        await(()->onEdt(()->dialog("stampBox")!=null&&find(dialog("stampBox"),"stampAgain")!=null));
+        assertEquals("Verify again",onEdt(()->((JButton)find(dialog("stampBox"),"stampAgain")).getText()));
+        assertEquals("“Deed”   ·   Note, text only",onEdt(()->((javax.swing.text.JTextComponent)find(dialog("stampBox"),"stampName")).getText()));
+        SwingUtilities.invokeAndWait(()->dialog("stampBox").dispose());
+        SwingUtilities.invokeAndWait(()->((JButton)find(list,"stampCard"+found)).doClick());
+        await(()->onEdt(()->dialog("stampBox")!=null&&find(dialog("stampBox"),"stampTxpow")!=null));
+        assertEquals("https://explorer.minima.global/transactions/"+txpow,onEdt(()->((JComponent)find(dialog("stampBox"),"stampTxpow")).getClientProperty("link")));
+        SwingUtilities.invokeAndWait(()->dialog("stampBox").dispose());
+        SwingUtilities.invokeAndWait(lostLine::doClick);
+        await(()->onEdt(()->dialog("stampBox")!=null&&find(dialog("stampBox"),"stampAgain")!=null));
+        assertEquals("Verify on Minima",onEdt(()->((JButton)find(dialog("stampBox"),"stampAgain")).getText()));
+        SwingUtilities.invokeAndWait(()->dialog("stampBox").dispose());
+        // The file of the drive: Verify on Minima… asks for it again, and another file is said to be another before Minima is asked.
+        Path edited=temp.newFile("receipt-edited.pdf").toPath();Files.writeString(edited,"%PDF-1.4 synthetic receipt, edited");
+        java.util.function.BiFunction<Component,String,Path> was=DesktopStamp.pick;
+        try {
+            DesktopStamp.pick=(owner,title)->edited;
+            SwingUtilities.invokeAndWait(awayLine::doClick);
+            await(()->onEdt(()->dialog("stampBox")!=null&&find(dialog("stampBox"),"stampAgain")!=null));
+            assertEquals("Verify on Minima…",onEdt(()->((JButton)find(dialog("stampBox"),"stampAgain")).getText()));
+            SwingUtilities.invokeAndWait(()->((JButton)find(dialog("stampBox"),"stampAgain")).doClick());
+            await(()->DesktopStamp.said.stream().anyMatch(one->one.contains("is not the file stamped")));
+            SwingUtilities.invokeAndWait(()->dialog("stampBox").dispose());
+            // + then A file on this PC…: Windows' box, here a stand-in; its fingerprint in the stamping box, nothing sent yet.
+            DesktopStamp.pick=(owner,title)->drive;int sent=stamps.get();
+            SwingUtilities.invokeAndWait(()->DesktopStamp.outside(pad,list));
+            await(()->onEdt(()->dialog("stampBox")!=null&&find(dialog("stampBox"),"stampGo")!=null));
+            assertEquals(Integritas.hash(Files.readAllBytes(drive)),onEdt(()->((javax.swing.text.JTextComponent)find(dialog("stampBox"),"stampHash")).getText()));
+            assertEquals("“receipt.pdf”   ·   File on this PC",onEdt(()->((javax.swing.text.JTextComponent)find(dialog("stampBox"),"stampName")).getText()));
+            assertEquals(sent,stamps.get());
+            SwingUtilities.invokeAndWait(()->dialog("stampBox").dispose());
+        } finally {DesktopStamp.pick=was;}
         // Found while the list is open: it says so at once.
         store.stampLanded(lost,2374600,"0x00000019299334C6E083683292728F7F1459FCF14A16623F3CE2A77BA343E57F","",java.time.Instant.now().toString(),1,now);
         DesktopStamp.watch(pad).told(other);
-        await(()->onEdt(()->{Container c=(Container)find(dialog("stampList"),"stampCard"+lost);return c!=null&&((javax.swing.text.JTextComponent)find(c,"stampState")).getText().endsWith("block 2374600");}));
+        await(()->onEdt(()->{JButton c=(JButton)find(dialog("stampList"),"stampCard"+lost);return c!=null&&c.getText().contains("block 2374600");}));
         shoot(onEdt(()->dialog("stampList")),"224-stamped-list");
         SwingUtilities.invokeAndWait(()->dialog("stampList").dispose());
         // A file stamped: a stamp on its card, and its menu starts with its stamp, opening its box.
@@ -239,17 +324,26 @@ public class DesktopStampTest {
         assertTrue(onEdt(()->((JComponent)find(pad.fileCards,"stampMark")).getToolTipText()).endsWith("block 2374700"));
         NoteStore.Held held=store.filesOf(NoteStore.Branch.Kind.PAGE,n.id).get(0);
         JPopupMenu menu=onEdt(()->pad.fileCards.menu(held));
-        await(()->onEdt(()->find(menu,"fileStamp")!=null&&find(menu,"fileStamp").isVisible()));
-        assertTrue(onEdt(()->((JMenuItem)find(menu,"fileStamp")).getText()).startsWith("Stamped on Minima, "));
-        assertSame("its stamp first",onEdt(()->find(menu,"fileStamp")),onEdt(()->menu.getComponent(0)));
+        // One line about Minima, saying how far its stamp is (decision 253).
+        await(()->onEdt(()->find(menu,"stampOnMinima")!=null&&((JMenuItem)find(menu,"stampOnMinima")).getText().startsWith("Stamped on Minima, ")));
         Set<String> lines=onEdt(()->{Set<String> all=new HashSet<>();for(Component c:menu.getComponents())if(c instanceof JMenuItem i)all.add(DesktopMenus.words(i));return all;});
-        for(String one:List.of("Open with…","Copy","Stamp on Minima…","Verify on Minima…","Save on my computer…","Send to a device…","Move to another note…","Rename…","Replace with another file…","Move to bin"))
+        for(String one:List.of("Open with…","Copy","Save on my computer…","Send to a device…","Move to another note…","Rename…","Replace with another file…","Move to bin"))
             assertTrue(one,lines.contains(one));
+        for(String gone:List.of("Verify on Minima…","Compare with a fingerprint…"))assertFalse(gone,lines.contains(gone));
+        assertEquals(1,onEdt(()->{int many=0;for(Component c:menu.getComponents())if("stampOnMinima".equals(c.getName()))many++;return many;}).intValue());
         // This note's part of the ⋯ menu: its stamp, then Stamp and Verify on Minima.
         await(()->onEdt(()->pad.stampLine.standing()>0));
+        // Its stamps are of its text alone, made before titles were included: compared by its text alone, it is unchanged.
+        assertFalse("an old stamp still matches by its text",onEdt(pad.stampLine::changed));
+        assertEquals(found,Integritas.matching(store.stampsOf(n.id),"Deed, renamed",n.body).n());
+        assertNull(Integritas.matching(store.stampsOf(n.id),"Deed",n.body+" and more"));
+        // Stamped on Minima… is the last line of Find, no longer under Create (decision 230).
+        List<String> rows=onEdt(()->{List<String> all=new ArrayList<>();for(Component c:pad.mainMenu().getComponents())if(c instanceof JMenuItem i)all.add(DesktopMenus.words(i));return all;});
+        int stamped=rows.indexOf("Stamped on Minima…");assertTrue(String.valueOf(rows),stamped>0);
+        assertEquals(String.valueOf(rows),"Tree",rows.get(stamped-1));
         Set<String> mine=onEdt(()->{Set<String> all=new HashSet<>();for(Component c:pad.mainMenu().getComponents())if(c instanceof JMenuItem i)all.add(DesktopMenus.words(i));return all;});
-        assertTrue(mine.contains("Stamp on Minima…"));assertTrue(mine.contains("Verify on Minima…"));
-        assertTrue(onEdt(()->{for(Component c:pad.mainMenu().getComponents())if("noteStamp".equals(c.getName()))return true;return false;}));
+        assertFalse(mine.contains("Verify on Minima…"));
+        assertEquals("one line about Minima in This note",1,onEdt(()->{int many=0;for(Component c:pad.mainMenu().getComponents())if("stampOnMinima".equals(c.getName()))many++;return many;}).intValue());
     }
 
     // ---- helpers ----
@@ -260,6 +354,66 @@ public class DesktopStampTest {
     private static Component find(Container root,String name) {
         if(root==null)return null;
         for(Component c:root.getComponents()){if(name.equals(c.getName()))return c;if(c instanceof Container k){Component f=find(k,name);if(f!=null)return f;}}
+        return null;
+    }
+    @Test public void aFileIsComparedWithAFingerprintAndWearsItsStamp() throws Exception {
+        // Decisions 249 and 250: the box answers as the fingerprint is typed; a stamped file wears it on Home.
+        Path folder=temp.newFolder("compared").toPath();
+        SwingUtilities.invokeAndWait(()->{try{pad=new Desktop(folder,true);pad.show();}catch(Exception e){throw new RuntimeException(e);}});
+        await(()->pad.page.isEditable()&&pad.store.latest()!=null);
+        byte[] bytes="Synthetic contract, signed copy".getBytes(StandardCharsets.UTF_8);String hash=Integritas.hash(bytes);
+        NoteStore.Held file=pad.store.addFileExact(Things.HOME,"contract.txt","text/plain",new java.io.ByteArrayInputStream(bytes));
+        long n=pad.store.stamped(file.id,"file","contract.txt",hash,System.currentTimeMillis(),"r","Hash anchored successfully.","","","");
+        pad.store.stampLanded(n,777001,"0xT","0xX",java.time.Instant.now().toString(),1,System.currentTimeMillis());
+        SwingUtilities.invokeAndWait(pad::goHome);await(()->!pad.onPage());SwingUtilities.invokeAndWait(pad::refresh);Thread.sleep(1200);shoot(pad.frame.getContentPane(),"250-home-stamped-file");
+        SwingUtilities.invokeAndWait(()->DesktopStamp.compareFile(pad,file));
+        await(()->onEdt(()->compareBox()!=null));
+        JDialog box=onEdt(this::compareBox);
+        JTextField theirs=(JTextField)named(box,"compareTheirs");javax.swing.text.JTextComponent answer=(javax.swing.text.JTextComponent)named(box,"compareAnswer");
+        SwingUtilities.invokeAndWait(()->theirs.setText("0x"+hash.toUpperCase(java.util.Locale.ROOT)));
+        assertTrue(answer.getText(),answer.getText().startsWith("The same"));shoot(box.getContentPane(),"250-compare-same");
+        String other=Integritas.hashOfText("another");SwingUtilities.invokeAndWait(()->theirs.setText(other));
+        assertTrue(answer.getText(),answer.getText().startsWith("Not the same"));shoot(box.getContentPane(),"250-compare-not-same");
+        SwingUtilities.invokeAndWait(()->theirs.setText("abc"));
+        assertTrue(answer.getText(),answer.getText().startsWith("Not a SHA-256"));
+    }
+    @Test public void oneWindowStampsLooksAndKeepsTheReport() throws Exception {
+        // Decision 253: Stamp on Minima… opens one window; unstamped, it offers Stamp and Look for it on Minima; once on Minima,
+        // the PDF report is fetched and attached to the note, as a file sealed like any other.
+        Path folder=temp.newFolder("one-window").toPath();
+        SwingUtilities.invokeAndWait(()->{try{pad=new Desktop(folder,true);pad.show();}catch(Exception e){throw new RuntimeException(e);}});
+        await(()->pad.page.isEditable()&&pad.store.latest()!=null);
+        NoteStore store=pad.store;store.setSecret(Integritas.KEY,"synthetic-key-123");
+        NoteStore.Note n=new NoteStore.Note();n.title="Lease";n.body="Synthetic lease, signed";n.book=Things.HOME;store.save(n);
+        SwingUtilities.invokeAndWait(()->DesktopStamp.thing(pad,n.id,true));
+        await(()->onEdt(()->dialog("stampBox")!=null&&find(dialog("stampBox"),"stampGo")!=null&&find(dialog("stampBox"),"stampLook")!=null));
+        shoot(onEdt(()->dialog("stampBox").getContentPane()),"253-one-window-unstamped");
+        pending.set(0);
+        SwingUtilities.invokeAndWait(()->((JButton)find(dialog("stampBox"),"stampGo")).doClick());
+        await(()->{List<NoteStore.StampRow> r=store.stampsOf(n.id);return !r.isEmpty()&&r.get(0).confirmed();});
+        await(()->onEdt(()->find(dialog("stampBox"),"stampAttach")!=null));
+        shoot(onEdt(()->dialog("stampBox").getContentPane()),"253-one-window-stamped");
+        int before=store.filesOf(NoteStore.Branch.Kind.PAGE,n.id).size();
+        SwingUtilities.invokeAndWait(()->((JButton)find(dialog("stampBox"),"stampAttach")).doClick());
+        await(()->store.filesOf(NoteStore.Branch.Kind.PAGE,n.id).size()==before+1);
+        NoteStore.Held pdf=store.filesOf(NoteStore.Branch.Kind.PAGE,n.id).get(0);
+        for(NoteStore.Held one:store.filesOf(NoteStore.Branch.Kind.PAGE,n.id))if(one.name.endsWith("Integritas report.pdf"))pdf=one;
+        assertEquals("Lease, Integritas report.pdf",pdf.name);
+        java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();DesktopFiles.copyOut(pad.context,store.fileFor(pdf.id).toPath(),out);
+        assertTrue(out.toString(StandardCharsets.ISO_8859_1).startsWith("%PDF"));
+        await(()->DesktopStamp.said.stream().anyMatch(one->one.contains("The report is attached to the note")));
+    }
+
+    private JDialog compareBox(){for(Window w:Window.getWindows())if(w.isShowing()&&w instanceof JDialog d&&"Compare with a fingerprint…".equals(d.getTitle()))return d;return null;}
+    private static Component named(Container in,String name) {
+        for(Component c:in.getComponents()){if(name.equals(c.getName()))return c;if(c instanceof Container k){Component f=named(k,name);if(f!=null)return f;}}
+        return null;
+    }
+
+    /** A button by the words it shows, in the language the test runs in. */
+    private static JButton buttonSaying(Container root,String words) {
+        if(root==null)return null;
+        for(Component c:root.getComponents()){if(c instanceof JButton b&&words.equals(b.getText()))return b;if(c instanceof Container k){JButton f=buttonSaying(k,words);if(f!=null)return f;}}
         return null;
     }
     private static <T> T onEdt(Callable<T> read) throws Exception {Object[] out={null};Exception[] failed={null};SwingUtilities.invokeAndWait(()->{try{out[0]=read.call();}catch(Exception e){failed[0]=e;}});if(failed[0]!=null)throw failed[0];@SuppressWarnings("unchecked") T t=(T)out[0];return t;}

@@ -69,4 +69,31 @@ public class DesktopUpdateTest {
         try{System.clearProperty("jpackage.app-path");assertNull(DesktopUpdate.appFolder());}
         finally{if(was!=null)System.setProperty("jpackage.app-path",was);}
     }
+
+    /** The MSI's copy (decision 235): known by the file build.ps1 puts in its app folder alone, and updated by the MSI. */
+    @Test public void theMsisCopyIsKnownByItsMarkerAndUpdatesByTheMsi() throws Exception {
+        assertEquals("https://github.com/mininotesorg/mininotes/releases/latest/download/Mininotes-Windows-0.4.020.msi",DesktopUpdate.msi("v0.4.020"));
+        assertEquals("",DesktopUpdate.msi("<html>"));
+        Path app=temp.newFolder("Mininotes").toPath();Files.createDirectories(app.resolve("app"));
+        assertFalse("an unzipped copy",DesktopUpdate.byMsi(app));assertFalse(DesktopUpdate.byMsi(null));
+        Files.writeString(app.resolve("app").resolve(DesktopUpdate.MSI_MARKER),"Installed by Mininotes-Windows-0.4.020.msi.");
+        assertTrue(DesktopUpdate.byMsi(app));
+        // build.ps1 writes the same name the app looks for.
+        Path script=Path.of("build.ps1");
+        if(Files.exists(script))assertTrue(Files.readString(script).contains("app\\"+DesktopUpdate.MSI_MARKER));
+    }
+
+    @Test public void theInstallerIsRunOnceMininotesHasClosedThenMininotesIsStarted() {
+        Path app=Path.of("C:\\Users\\Ann O'Neil\\AppData\\Local\\Programs\\Mininotes");
+        Path msi=Path.of("C:\\Users\\Ann O'Neil\\AppData\\Local\\Temp\\mininotes-update-1\\Mininotes-Windows-0.4.020.msi");
+        assertEquals("/i \""+msi+"\" /qb /norestart",DesktopUpdate.install(msi));
+        assertEquals("/x {0A1B2C3D-4E5F-6071-8293-A4B5C6D7E8F9} /qb /norestart",DesktopUpdate.uninstall("{0A1B2C3D-4E5F-6071-8293-A4B5C6D7E8F9}"));
+        String script=DesktopUpdate.installScript(app,msi,4242,true);
+        assertTrue(script.contains("Wait-Process -Id 4242"));
+        assertTrue("still running: nothing is installed over it",script.contains("if(Get-Process -Id 4242 -ErrorAction SilentlyContinue){exit 1}"));
+        // A quote in a folder's name is written twice inside PowerShell's single quotes, the path itself kept in double ones.
+        assertTrue(script.contains("-ArgumentList '/i \"C:\\Users\\Ann O''Neil\\AppData\\Local\\Temp\\mininotes-update-1\\Mininotes-Windows-0.4.020.msi\" /qb /norestart' -Wait -PassThru"));
+        assertTrue(script.indexOf("-Wait -PassThru")<script.indexOf("Join-Path $app 'Mininotes.exe'"));
+        assertTrue(script.contains("$start=$true"));assertTrue(DesktopUpdate.installScript(app,msi,4242,false).contains("$start=$false"));
+    }
 }

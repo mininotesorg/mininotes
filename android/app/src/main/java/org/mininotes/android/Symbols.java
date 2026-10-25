@@ -27,7 +27,12 @@ final class Symbols {
         // On Minima through Integritas (decision 199).
         put("stamp on minima","stamp");
         put("verify on minima","file-badge");
+        put("compare with a fingerprint","fingerprint-pattern");
         put("stamped on minima","receipt-text");
+        // Uninstalling, from the app after offering a backup (decision 235).
+        put("uninstall mininotes","package-x");
+        // The + of Stamped on Minima (decision 230): something in the notebook, or a file from the drive or the phone.
+        put("a note or file in mininotes","notebook-text");put("a file on this","hard-drive-upload");
         // A thing's own stamp, as its line says it, and an attachment taken into another note (decision 224).
         put("stamping","receipt-text");
         put("stamped","receipt-text");
@@ -65,6 +70,9 @@ final class Symbols {
         put("note","file-plus");
         put("folder","folder-plus");
         put("move","folder-input");
+        // A tab moved along its strip (decision 239, 2026-10-24).
+        put("move left","arrow-left");
+        put("move right","arrow-right");
         put("rename","pencil");
         put("delete","circle-x");
         put("forget","unlink");
@@ -181,6 +189,9 @@ final class Symbols {
         put("why","message-circle-question-mark");
         put("take a photo","camera");
         put("share mininotes","gift");
+        // The other app, each from the other (decision 241).
+        put("mininotes on your phone","smartphone");
+        put("mininotes on your pc","monitor");
         put("people and devices","contact");
         // Notes kept as files too (docs/FILES.md, decision 162): one symbol for each doing.
         put("keep as a file","file-down");

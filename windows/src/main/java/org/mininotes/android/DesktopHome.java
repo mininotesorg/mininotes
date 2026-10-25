@@ -348,11 +348,11 @@ final class DesktopHome extends JPanel {
         turning();
 
         // The foot: the search with the overview button beside it, then the dock.
-        search.putClientProperty(com.formdev.flatlaf.FlatClientProperties.PLACEHOLDER_TEXT,"Search notes, folders and files");
+        search.putClientProperty(com.formdev.flatlaf.FlatClientProperties.PLACEHOLDER_TEXT,Say.t("Search notes, folders and files"));
         search.putClientProperty(com.formdev.flatlaf.FlatClientProperties.TEXT_FIELD_LEADING_ICON,new com.formdev.flatlaf.icons.FlatSearchIcon());
         search.putClientProperty(com.formdev.flatlaf.FlatClientProperties.TEXT_FIELD_SHOW_CLEAR_BUTTON,true);
         search.putClientProperty(com.formdev.flatlaf.FlatClientProperties.STYLE,"arc:999;margin:7,14,7,14");
-        search.setToolTipText("Search everything (Ctrl+F)");search.getAccessibleContext().setAccessibleName("Search notes, folders and files");
+        search.setToolTipText(Say.t("Search everything (Ctrl+F)"));search.getAccessibleContext().setAccessibleName("Search notes, folders and files");
         search.setColumns(34);
         looking=new javax.swing.Timer(200,e->look());looking.setRepeats(false);
         search.addFocusListener(new FocusAdapter(){public void focusLost(FocusEvent e){if(!e.isTemporary()&&search.getText().isBlank())showFoot();}});
@@ -368,7 +368,7 @@ final class DesktopHome extends JPanel {
         overviewButton=new JButton(overviewIcon());
         overviewButton.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
         overviewButton.setFocusPainted(false);overviewButton.setMargin(new Insets(7,9,7,9));
-        overviewButton.setToolTipText("What is open (Ctrl+Tab)");overviewButton.getAccessibleContext().setAccessibleName("Show the notes and folders that are open");
+        overviewButton.setToolTipText(Say.t("What is open (Ctrl+Tab)"));overviewButton.getAccessibleContext().setAccessibleName("Show the notes and folders that are open");
         overviewButton.addActionListener(e->pad.overview.up(false));
         JPanel searchRow=new JPanel(new FlowLayout(FlowLayout.CENTER,8,0));searchRow.setOpaque(false);searchRow.add(search);searchRow.add(overviewButton);
         dockRow=new JPanel(new FlowLayout(FlowLayout.CENTER,0,0));dockRow.setOpaque(false);dockRow.add(dockScroll);
@@ -468,7 +468,7 @@ final class DesktopHome extends JPanel {
     void pageShown() {
         showFoot();
         pad.status.setToolTipText(null);
-        pad.status.setText(grid.onCentre()?" ":DesktopPages.said(grid.pageX,grid.pageY)+"  ·  double-click to go back");
+        pad.status.setText(grid.onCentre()?" ":Say.t(DesktopPages.said(grid.pageX,grid.pageY))+"  ·  "+Say.t("double-click to go back"));
     }
 
     /** Something just made with + on the page in view: it stands on that page once Home has read it (decision 46). */
@@ -727,7 +727,7 @@ final class DesktopHome extends JPanel {
      */
     JButton plusButton(Supplier<String> where) {
         JButton plus=round();
-        plus.setToolTipText("New note or folder, or one from another device");plus.getAccessibleContext().setAccessibleName("New");
+        plus.setToolTipText(Say.t("New note or folder, or one from another device"));plus.getAccessibleContext().setAccessibleName("New");
         plus.addActionListener(e->{
             JPopupMenu menu=plusMenu(where.get());
             Dimension m=menu.getPreferredSize();menu.show(plus,plus.getWidth()-m.width-6,-m.height-2);
@@ -787,7 +787,7 @@ final class DesktopHome extends JPanel {
             else if(folder.isOpen()&&where.equals(folder.id()))folder.into(line,true);
             else folder.openAt(line.id,true);
             pad.refresh();
-        },e->pad.status.setText("Could not make that folder. Nothing was changed.")));
+        },e->pad.status.setText(Say.t("Could not make that folder. Nothing was changed."))));
     }
 
     // ---- files on Home and in collections ------------------------------------------------------------------------------
@@ -836,11 +836,8 @@ final class DesktopHome extends JPanel {
         pad.disk.submit(()->store().mayChangeFile(file.id),may->{rename.setVisible(may);replace.setVisible(may);if(menu.isVisible())menu.pack();},pad::failed);
         // On the clipboard without opening it (the owner, 2026-10-18; decision 198): a picture as a picture, any file as a file.
         item(menu,"Copy",()->withHeld(file,pad::copyFile));
-        // On Minima, through the person's Integritas account (decision 199): when it was, if it was, said first.
-        // Opening its stamp's box, with all the details, as an attachment's does (decision 224).
-        DesktopStamp.fileLine(pad,menu,file.id);
-        item(menu,"Stamp on Minima…",()->withHeld(file,held->DesktopStamp.files(pad,List.of(held))));
-        item(menu,"Verify on Minima…",()->withHeld(file,held->DesktopStamp.verifyFile(pad,held)));
+        // On Minima: one line, saying how far its stamp is, opening the one window for it (decisions 199, 224 and 253).
+        DesktopStamp.menuLine(pad,menu,file.id,()->withHeld(file,held->DesktopStamp.thing(pad,held.id,false)));
         item(menu,"Save on my computer…",()->withHeld(file,pad::saveCopy));
         item(menu,"Send to a device…",()->withHeld(file,held->pad.fileCards.send(held)));
         item(menu,"Put in a note…",()->intoNote(file));
@@ -879,19 +876,19 @@ final class DesktopHome extends JPanel {
         String name=DesktopUi.ask(pad.frame,"Rename file","Name",file.name);
         if(name==null||name.isBlank()||name.trim().equals(file.name))return;
         pad.disk.submit(()->{store().renameFile(file.id,name.trim());return null;},
-            done->{pad.status.setText("Renamed to "+name.trim());pad.refresh();fileChanged(file);},pad::failed);
+            done->{pad.status.setText(Say.t("Renamed to {0}",name.trim()));pad.refresh();fileChanged(file);},pad::failed);
     }
 
     /** Replace with another file…, on a file this PC may write in (decision 93): the file picked becomes its new version. */
     void replaceFile(NoteStore.Branch file) {
         java.nio.file.Path source=DesktopPick.openOne(pad.frame,Say.t("Replace {0} with","“"+file.name+"”"));if(source==null)return;
-        pad.status.setText("Replacing "+file.name+"…");
+        pad.status.setText(Say.t("Replacing {0}…",file.name));
         pad.disk.submit(()->{
             String kind;try{kind=java.nio.file.Files.probeContentType(source);}catch(java.io.IOException unsaid){kind=null;}
             try(java.io.InputStream in=java.nio.file.Files.newInputStream(source)){return store().replaceFile(file.id,kind,in);}
         },size->{
             PREVIEWS.remove(file.id);previewAsked.remove(file.id);
-            pad.status.setText("Replaced  ·  "+Attachment.size(size));pad.refresh();fileChanged(file);
+            pad.status.setText(Say.t("Replaced  ·  {0}",Attachment.size(size)));pad.refresh();fileChanged(file);
         },pad::failed);
     }
 
@@ -899,18 +896,18 @@ final class DesktopHome extends JPanel {
     private void fileChanged(NoteStore.Branch file) {
         if(pad.offline)return;
         boolean shared=file.state!=null&&file.state!=Sharing.State.HERE;
-        if(shared)pad.status.setText("Sending…");
+        if(shared)pad.status.setText(Say.t("Sending…"));
         pad.network.submit(()->Post.fileChanged(pad.context,store(),pad.keys,file.id),done->{
             pad.refresh();
-            if(shared)pad.status.setText(done.failed>0&&!done.why.isEmpty()?done.why:done.sent>0?"Sent":"Nothing to send");
-        },e->{if(shared)pad.status.setText("Could not send it. It goes when it can.");});
+            if(shared)pad.status.setText(Say.t(done.failed>0&&!done.why.isEmpty()?done.why:done.sent>0?"Sent":"Nothing to send"));
+        },e->{if(shared)pad.status.setText(Say.t("Could not send it. It goes when it can."));});
     }
 
     /** One kept file, read from the notebook, for what needs more of it than its line says. */
     private void withHeld(NoteStore.Branch file,java.util.function.Consumer<NoteStore.Held> then) {
 
         pad.disk.submit(()->store().file(file.id),held->{
-            if(held==null){pad.status.setText("That file is not here any more.");refresh();return;}
+            if(held==null){pad.status.setText(Say.t("That file is not here any more."));refresh();return;}
             then.accept(held);
         },pad::failed);
     }
@@ -932,7 +929,7 @@ final class DesktopHome extends JPanel {
                 } else if(store().onlyReads(note))throw new IllegalStateException("That note is read only. Nothing was changed.");
                 store().intoNote(file.id,note);
                 return note;
-            },note->{pad.status.setText(file.name+" is in the note now");pad.filesChanged(note);pad.refresh();pad.open(note);},pad::failed);
+            },note->{pad.status.setText(Say.t("{0} is in the note now",file.name));pad.filesChanged(note);pad.refresh();pad.open(note);},pad::failed);
         },pad::failed);
     }
 
@@ -941,7 +938,7 @@ final class DesktopHome extends JPanel {
         pad.disk.submit(()->store().places(false),places->{
             List<NoteStore.Branch> offered=new ArrayList<>();
             for(NoteStore.Branch one:places)if(!(NoteStore.home(file.parent)?NoteStore.home(one.id):one.id.equals(file.parent)))offered.add(one);
-            if(offered.isEmpty()){pad.status.setText("There is nowhere else to move it.");return;}
+            if(offered.isEmpty()){pad.status.setText(Say.t("There is nowhere else to move it."));return;}
             NoteStore.Branch into=DesktopUi.pick(pad.frame,"Move “"+file.name+"”","Where to?",offered,Desktop::placeName,"Move here");
             if(into==null)return;
             boolean top=into.kind==NoteStore.Branch.Kind.LIBRARY;
@@ -1006,11 +1003,11 @@ final class DesktopHome extends JPanel {
             if(!change.any()){doInto(moved,dest,where,destKind,reaches,after,there);return;}
             if(moved.kind==NoteStore.Branch.Kind.FILE) {
                 if(!DesktopUi.confirm(pad.frame,"This changes who can read it",changeSaid("Moving “"+named(moved)+"” into "+where+" changes who receives it.",change,names,
-                    Sharing.fileMoveSaid(alone)),"Move anyway",false)){pad.status.setText("Not moved");refresh();return;}
+                    Sharing.fileMoveSaid(alone)),"Move anyway",false)){pad.status.setText(Say.t("Not moved"));refresh();return;}
 
                 doInto(moved,dest,where,destKind,reaches,after,there);return;
             }
-            String said=NoteStore.home(dest)?"Home":"“"+destName+"”";
+            String said=NoteStore.home(dest)?Say.t("Home"):"“"+destName+"”";
             // What somebody shares stays where their sharing has it, linked as before, and is shown where it was put.
             if(theirs){placeOnly(moved,dest,said,after,there);return;}
             // One of this person's own: asked, never shared or stopped by a move alone (the owner, 2026-10-03: "we should be
@@ -1021,7 +1018,7 @@ final class DesktopHome extends JPanel {
                     starts?"Or only put it there on this PC: nobody new gets it.":"Or only put it there on this PC: it stays shared as it is."),starts?"Share it":"Stop sharing","Only put it here");
             if(answer==1)doInto(moved,dest,where,destKind,reaches,after,there);
             else if(answer==2)placeOnly(moved,dest,said,after,there);
-            else{pad.status.setText("Not moved");refresh();}
+            else{pad.status.setText(Say.t("Not moved"));refresh();}
         },pad::failed);
     }
 
@@ -1036,10 +1033,10 @@ final class DesktopHome extends JPanel {
             return was;
         },was->{
             pad.canUndo(named(moved),()->{store().showIn(moved.kind,moved.id,was);return null;});
-            pad.status.setToolTipText(null);pad.status.setText("Put in "+where+", shared as before");
+            pad.status.setToolTipText(null);pad.status.setText(Say.t("Put in {0}, shared as before",where));
             if(after!=null)after.run();
             pad.refresh();
-        },e->{pad.status.setText(e instanceof IllegalArgumentException&&e.getMessage()!=null?e.getMessage():"Could not put that there. Nothing was changed.");pad.refresh();});
+        },e->{pad.status.setText(Say.t(e instanceof IllegalArgumentException&&e.getMessage()!=null?e.getMessage():"Could not put that there. Nothing was changed."));pad.refresh();});
     }
 
     private void doInto(NoteStore.Branch moved,String dest,String where,NoteStore.Branch.Kind destKind,boolean reaches,Runnable after,Runnable there) {
@@ -1054,13 +1051,13 @@ final class DesktopHome extends JPanel {
         },was->{
             pad.canUndo(named(moved),()->{store().moveInto(moved.kind,moved.id,was);return null;});
             pad.movedNote(moved,dest);
-            pad.status.setToolTipText(null);pad.status.setText(NoteStore.home(dest)?"Moved to Home":"Moved into "+where);
+            pad.status.setToolTipText(null);pad.status.setText(NoteStore.home(dest)?Say.t("Moved to Home"):Say.t("Moved into {0}",where));
             if(after!=null)after.run();
             pad.refresh();
             // Into something somebody else reads is a disclosure: it goes now, as sharing does.
             if(moved.kind==NoteStore.Branch.Kind.FILE){if(destKind==NoteStore.Branch.Kind.PAGE)pad.filesChanged(dest);}
             else if(reaches)pad.sendChanged(moved.kind,moved.id);
-        },e->{pad.status.setText(e instanceof IllegalArgumentException&&e.getMessage()!=null?e.getMessage():"Could not move that. Nothing was changed.");pad.refresh();});
+        },e->{pad.status.setText(Say.t(e instanceof IllegalArgumentException&&e.getMessage()!=null?e.getMessage():"Could not move that. Nothing was changed."));pad.refresh();});
     }
 
     /**
@@ -1083,14 +1080,14 @@ final class DesktopHome extends JPanel {
             Sharing.Change change=(Sharing.Change)found[0];boolean reaches=(Boolean)found[2];
             @SuppressWarnings("unchecked") Map<String,String> names=(Map<String,String>)found[1];
             if(change.any()&&!DesktopUi.confirm(pad.frame,"This changes who can read them",changeSaid("Putting “"+named(dropped)+"” and “"+named(onto)+"” together changes who receives them.",change,names,
-                    "Whoever starts receiving them gets them now. What has already reached somebody stays with them."),"Put them together",false)){pad.status.setText("Not moved");refresh();return;}
+                    "Whoever starts receiving them gets them now. What has already reached somebody stays with them."),"Put them together",false)){pad.status.setText(Say.t("Not moved"));refresh();return;}
             pad.disk.submit(()->store().merge(dropped.id,onto.id),made->{
                 NoteStore.Branch line=new NoteStore.Branch(NoteStore.Branch.Kind.COLLECTION,made.id,NoteStore.home(container)?Sharing.EVERYTHING:container,made.name,"2 notes",0,0,true);
-                pad.status.setToolTipText(null);pad.status.setText("Put together in a new folder. Type its name.");
+                pad.status.setToolTipText(null);pad.status.setText(Say.t("Put together in a new folder. Type its name."));
                 if(inCard)folder.into(line,true);else folder.open(line,true);
                 pad.refresh();
                 if(reaches)pad.sendChanged(NoteStore.Branch.Kind.COLLECTION,made.id);
-            },e->{pad.status.setText(e instanceof IllegalArgumentException&&e.getMessage()!=null?e.getMessage():"Could not put those together. Nothing was changed.");pad.refresh();});
+            },e->{pad.status.setText(Say.t(e instanceof IllegalArgumentException&&e.getMessage()!=null?e.getMessage():"Could not put those together. Nothing was changed."));pad.refresh();});
         },pad::failed);
     }
 
@@ -1145,7 +1142,7 @@ final class DesktopHome extends JPanel {
         int at=order.size();
         if(before!=null)for(int i=0;i<order.size();i++)if(order.get(i).id.equals(before.id)){at=i;break;}
         order.add(at,carried);int place=at+1;
-        pad.disk.submit(()->{store().orderFavourites(order);return null;},done->{pad.status.setText("Favourite "+place);refresh();},pad::failed);
+        pad.disk.submit(()->{store().orderFavourites(order);return null;},done->{pad.status.setText(Say.t("Favourite {0}",place));refresh();},pad::failed);
     }
 
     /** Something an accepted code is bringing, clicked: who it waits for, and the one thing to do, to stop waiting. */
@@ -1223,8 +1220,8 @@ final class DesktopHome extends JPanel {
         in.rearrange();
         pad.disk.submit(()->{writeCells(lines,cells);return null;},done->{
             pad.canUndo(named(moved),()->{writeCells(lines,before);return null;});
-            pad.status.setToolTipText(null);pad.status.setText(said);pad.refresh();
-        },e->{pad.status.setText("Could not put it there. Nothing was changed.");pad.refresh();});
+            pad.status.setToolTipText(null);pad.status.setText(Say.t(said));pad.refresh();
+        },e->{pad.status.setText(Say.t("Could not put it there. Nothing was changed."));pad.refresh();});
     }
 
     /** Cells on the page in view, as Home keeps them: every icon pinned where it stands on its page, those given here on this one. */
@@ -1246,7 +1243,7 @@ final class DesktopHome extends JPanel {
     void movePage(int fx,int fy,int tx,int ty) {
         Map<String,Layout.Spot> before=grid.spots();
         boolean swapped=before.values().stream().anyMatch(at->at!=null&&at.on(tx,ty));
-        keepSpots(grid,"the page",Layout.movePage(before,fx,fy,tx,ty),swapped?"The two pages changed places":"Page moved");
+        keepSpots(grid,"the page",Layout.movePage(before,fx,fy,tx,ty),Say.t(swapped?"The two pages changed places":"Page moved"));
         if(grid.pageX==fx&&grid.pageY==fy)grid.showPage(tx,ty);
         pages.repaint();
     }
@@ -1258,8 +1255,8 @@ final class DesktopHome extends JPanel {
         in.rearrange();
         pad.disk.submit(()->{writeSpots(lines,spots);return null;},done->{
             pad.canUndo(undone,()->{writeWere(lines,cellsWere,pagesWere);return null;});
-            pad.status.setToolTipText(null);pad.status.setText(said);pad.refresh();
-        },e->{pad.status.setText("Could not put it there. Nothing was changed.");pad.refresh();});
+            pad.status.setToolTipText(null);pad.status.setText(Say.t(said));pad.refresh();
+        },e->{pad.status.setText(Say.t("Could not put it there. Nothing was changed."));pad.refresh();});
     }
 
     /**
@@ -1267,7 +1264,7 @@ final class DesktopHome extends JPanel {
      * wanted. The keyboard stays on it; what stops it is said.
      */
     private void nudge(Icons in,Tile tile,Does way) {
-        if(!places(in)||!Grid.carried(tile.thing.kind)||Grid.place(tile.thing.kind)&&in!=grid){pad.status.setToolTipText(null);pad.status.setText("This one stays where it is");return;}
+        if(!places(in)||!Grid.carried(tile.thing.kind)||Grid.place(tile.thing.kind)&&in!=grid){pad.status.setToolTipText(null);pad.status.setText(Say.t("This one stays where it is"));return;}
         Map<String,int[]> drawn=in.drawn();
         int[] to=nudged(drawn,tile.thing.id,way,in.columns());
         // On a page of Home, not past its last row.
@@ -1277,7 +1274,7 @@ final class DesktopHome extends JPanel {
             int row=here==null?-1:here[0]+(way==Does.MOVE_DOWN?1:way==Does.MOVE_UP?-1:0),column=here==null?-1:here[1]+(way==Does.MOVE_RIGHT?1:way==Does.MOVE_LEFT?-1:0);
             String there=row<0||column<0?null:Layout.at(drawn,row,column);
             Tile other=null;if(there!=null)for(Tile one:in.tiles)if(one.thing.id.equals(there))other=one;
-            pad.status.setToolTipText(null);pad.status.setText(other!=null?"“"+named(other.thing)+"” is in the way":"It is at the edge of the grid");
+            pad.status.setToolTipText(null);pad.status.setText(other!=null?Say.t("“{0}” is in the way",named(other.thing)):Say.t("It is at the edge of the grid"));
             return;
         }
         keepCells(in,tile.thing,Layout.moveTo(drawn,tile.thing.id,to[0],to[1]),"“"+named(tile.thing)+"” is in row "+(to[0]+1)+", column "+(to[1]+1)+" now");
@@ -1287,8 +1284,8 @@ final class DesktopHome extends JPanel {
     /** A note or a folder at a place in the dock, the rest moved along; a favourite or not as it was (decision 190). */
     private void toDock(NoteStore.Branch thing,int slot) {
         pad.disk.submit(()->{store().toDock(thing.kind,thing.id,slot);return null;},
-            done->{pad.status.setToolTipText(null);pad.status.setText("“"+named(thing)+"” is in the dock");pad.refresh();},
-            e->{pad.status.setText("Could not put that in the dock. Nothing was changed.");pad.refresh();});
+            done->{pad.status.setToolTipText(null);pad.status.setText(Say.t("“{0}” is in the dock",named(thing)));pad.refresh();},
+            e->{pad.status.setText(Say.t("Could not put that in the dock. Nothing was changed."));pad.refresh();});
     }
 
     static String named(NoteStore.Branch b){return b.name==null||b.name.isBlank()?Say.t("Untitled"):place(b.kind)?Say.t(b.name):b.name;}
@@ -1420,7 +1417,7 @@ final class DesktopHome extends JPanel {
         // In Recent, the thing's whole menu and, at its end, taking it out of Recent (decision 154).
         if(menu!=null&&where==Where.FAVOURITES&&folder.inRecent()&&(thing.kind==NoteStore.Branch.Kind.PAGE||DesktopMoving.shelf(thing.kind))) {
             menu.addSeparator();
-            item(menu,"Remove from Recent",()->pad.disk.submit(()->{pad.store.outOfRecent(thing.id);return null;},done->{refresh();pad.status.setText("Removed from Recent");},pad::failed));
+            item(menu,"Remove from Recent",()->pad.disk.submit(()->{pad.store.outOfRecent(thing.id);return null;},done->{refresh();pad.status.setText(Say.t("Removed from Recent"));},pad::failed));
         }
         return menu;
     }
@@ -1441,10 +1438,10 @@ final class DesktopHome extends JPanel {
     JPopupMenu awayMenu(NoteStore.Branch thing,boolean bin) {
         JPopupMenu menu=new JPopupMenu();
         item(menu,"Put back",()->pad.disk.submit(()->{store().restore(thing.kind,thing.id);return null;},
-            done->{pad.status.setToolTipText(null);pad.status.setText("“"+named(thing)+"” is back where it was");pad.refresh();},pad::failed));
+            done->{pad.status.setToolTipText(null);pad.status.setText(Say.t("“{0}” is back where it was",named(thing)));pad.refresh();},pad::failed));
         if(bin)item(menu,"Delete for good…",()->pad.eraseForGood(thing));
         else item(menu,"Move to the bin",()->pad.disk.submit(()->{store().putAway(thing.kind,thing.id,false,false);store().putAway(thing.kind,thing.id,true,true);return null;},
-            done->{pad.status.setToolTipText(null);pad.status.setText("Moved to the bin");pad.refresh();},pad::failed));
+            done->{pad.status.setToolTipText(null);pad.status.setText(Say.t("Moved to the bin"));pad.refresh();},pad::failed));
         return menu;
     }
 
@@ -2102,17 +2099,27 @@ final class DesktopHome extends JPanel {
             if(many>0)pill(g,many>99?"99+":String.valueOf(many),DesktopUi.INK,DesktopUi.PAPER,tempMarked?new Rectangle(f.x,f.y,f.width-badge,f.height):f,getWidth(),false);
             // New: a file that came, or a note somebody else changed, or a folder with one in it, not opened since (the owner,
             // 2026-10-14: "the same everywhere a change hasn't been viewed"). Over the middle of the top edge, clear of the mark.
-            if(thing.fresh)pill(g,"new",DesktopUi.ACCENT,Color.WHITE,f,getWidth(),true);
+            if(thing.fresh)pill(g,Say.onNote("new"),DesktopUi.ACCENT,Color.WHITE,f,getWidth(),true);
             // Updated on another of my own devices and not opened here since: a check mark in the same place (decision 220).
             else if(thing.updated)pill(g,"✓",DesktopUi.ACCENT,Color.WHITE,f,getWidth(),true);
             // Shared on its own and still going up: said on its face, until its bytes are up and its sleeve has gone
             // (decision 94). Quiet, as a count is: it is busy, not wrong.
             if(thing.kind==NoteStore.Branch.Kind.FILE&&thing.uploading) {
                 g.setFont(DesktopUi.BODY.deriveFont(11f));FontMetrics m=g.getFontMetrics();
-                int w=m.stringWidth("uploading")+12,h=17,nx=f.x+(f.width-w)/2,ny=f.y+f.height-h+7;
+                int w=m.stringWidth(Say.t("uploading"))+12,h=17,nx=f.x+(f.width-w)/2,ny=f.y+f.height-h+7;
                 g.setColor(DesktopUi.PAPER);g.fillRoundRect(nx,ny,w,h,h,h);
                 g.setColor(DesktopUi.LINE.darker());g.setStroke(new BasicStroke(1f));g.drawRoundRect(nx,ny,w-1,h-1,h,h);
-                g.setColor(DesktopUi.INK);g.drawString("uploading",nx+6,ny+(h-m.getHeight())/2+m.getAscent());
+                g.setColor(DesktopUi.INK);g.drawString(Say.t("uploading"),nx+6,ny+(h-m.getHeight())/2+m.getAscent());
+            }
+            // Stamped on Minima (decision 249): a stamp on its lower right corner, on a paper disc, in the accent once Minima
+            // has it and quiet while it is on its way; its menu's first line says which.
+            if(thing.kind==NoteStore.Branch.Kind.FILE&&thing.stamped!=NoteStore.Branch.STAMP_NONE) {
+                int d=22,sx=f.x+f.width-d+6,sy=f.y+f.height-d+6;
+                g.setColor(DesktopUi.PAPER);g.fillOval(sx,sy,d,d);
+                g.setColor(DesktopUi.LINE.darker());g.setStroke(new BasicStroke(1f));g.drawOval(sx,sy,d-1,d-1);
+                Graphics2D t=(Graphics2D)g.create();
+                DesktopIcons.draw(t,"stamp",sx+4,sy+4,14,thing.stamped==NoteStore.Branch.STAMP_ON_MINIMA?DesktopUi.ACCENT:DesktopUi.QUIET);
+                t.dispose();
             }
             if(!docked()) {
                 g.setFont(DesktopUi.BODY);g.setColor(DesktopUi.INK);FontMetrics m=g.getFontMetrics();
@@ -2148,12 +2155,12 @@ final class DesktopHome extends JPanel {
     final class Dock extends JPanel {
         final List<Tile> tiles=new ArrayList<>();
         boolean lit;
-        private final JLabel empty=new JLabel("Favourites");
+        private final JLabel empty=new JLabel(Say.t("Favourites"));
         Dock() {
             super(new FlowLayout(FlowLayout.CENTER,0,0));setOpaque(false);setBorder(BorderFactory.createEmptyBorder(4,DOCK_ENDS,4,DOCK_ENDS));
             empty.setFont(DesktopUi.BODY.deriveFont(13f));empty.setForeground(DesktopUi.QUIET);empty.setBorder(BorderFactory.createEmptyBorder(0,40,0,40));
             empty.setPreferredSize(new Dimension(empty.getPreferredSize().width+80,DOCKED));
-            empty.setToolTipText("Favourites go here: carry a note or a folder here, or choose Add to favourites from its menu");
+            empty.setToolTipText(Say.t("Favourites go here: carry a note or a folder here, or choose Add to favourites from its menu"));
             getAccessibleContext().setAccessibleName("The dock: your favourites");
         }
         void fill(List<NoteStore.Branch> shown) {
@@ -2310,7 +2317,7 @@ final class DesktopHome extends JPanel {
                 if(target!=null){target.target=false;target.repaint();target=null;}
                 if(markedIn!=null){markedIn.landing=null;markedIn.repaint();markedIn=null;}
                 cell=null;zone=Grid.Zone.NONE;dock.lit(false);
-                pad.status.setToolTipText(null);pad.status.setText((which<0?"Let go on one of these":"Let go to "+strip.doing(which))+"  ·  Esc cancels");
+                pad.status.setToolTipText(null);pad.status.setText((which<0?Say.t("Let go on one of these"):Say.t("Let go to {0}",Say.t(strip.doing(which))))+"  ·  "+Say.t("Esc cancels"));
                 return;
             }
             if(strip!=null)strip.light(null);
@@ -2347,15 +2354,15 @@ final class DesktopHome extends JPanel {
             if(!((zone==Grid.Zone.HOME||up)&&homeSeen)&&!outOfRows){motion.stop();turnedAt=false;}
             String name=named(carried.thing);
             if(edgeSaid!=null){say(edgeSaid);return;}
-            say(dockNow?"Let go to put “"+name+"” in the dock"
+            say(dockNow?Say.t("Let go to put “{0}” in the dock",name)
                 :zone==Grid.Zone.DOCK?"Only a note or a folder goes in the dock"
                 :target!=null?onto(carried.thing,target.thing)
-                :springKey!=null&&springKey.startsWith("up:")?"Hold here to go up to “"+folder.parentName()+"”"
-                :cell!=null&&!java.util.Objects.equals(markedIn==grid?Things.HOME:folder.id(),outOf)?"Let go to move it into "+(markedIn==grid?"Home":"“"+folder.name()+"”")+", here"
+                :springKey!=null&&springKey.startsWith("up:")?Say.t("Hold here to go up to “{0}”",folder.parentName())
+                :cell!=null&&!java.util.Objects.equals(markedIn==grid?Things.HOME:folder.id(),outOf)?(markedIn==grid?Say.t("Let go to move it into Home, here"):Say.t("Let go to move it into “{0}”, here",folder.name()))
                 :up?"Let go to move it onto Home"
                 :stays?"Let go to leave it where it was"
                 :cell!=null?"Let go to put it here"
-                :inTheWay!=null?"“"+named(inTheWay.thing)+"” is already there"
+                :inTheWay!=null?Say.t("“{0}” is already there",named(inTheWay.thing))
                 :"It cannot go here");
         }
         /**
@@ -2383,7 +2390,7 @@ final class DesktopHome extends JPanel {
                 case AWAY:
                     if(there.kind==NoteStore.Branch.Kind.ARCHIVE)return "Let go to archive it";
                     return carried.kind==NoteStore.Branch.Kind.FILE?"Let go to delete it":"Let go to put it in the bin";
-                default: return "Let go to move it into “"+named(there)+"”";
+                default: return Say.t("Let go to move it into “{0}”",named(there));
             }
         }
         /**
@@ -2401,8 +2408,8 @@ final class DesktopHome extends JPanel {
             int dx=dy!=0?0:p.x<reach?-1:p.x>scroll.getWidth()-reach?1:0;
             if(dx==0&&dy==0){motion.stop();turnedAt=false;return;}
             // One page for each time it goes out: back into the room, or off the edge and back, for the next.
-            if(turnedAt&&dx==edgeX&&dy==edgeY){edgeSaid=DesktopPages.said(grid.pageX,grid.pageY)+" now. Bring it onto the page to put it there";return;}
-            edgeSaid="Hold here for the page "+(dx<0?"to the left":dx>0?"to the right":dy<0?"above":"below");
+            if(turnedAt&&dx==edgeX&&dy==edgeY){edgeSaid=Say.t("{0} now. Bring it onto the page to put it there",Say.t(DesktopPages.said(grid.pageX,grid.pageY)));return;}
+            edgeSaid=Say.t(dx<0?"Hold here for the page to the left":dx>0?"Hold here for the page to the right":dy<0?"Hold here for the page above":"Hold here for the page below");
             if(motion.edging()&&dx==edgeX&&dy==edgeY)return;
             edgeX=dx;edgeY=dy;edgeFractionX=edgeFractionY=0;
             motion.edge(wait,this::overTheEdge);
@@ -2419,7 +2426,7 @@ final class DesktopHome extends JPanel {
             if(!grid.scrollBy(stepX,stepY)) {
                 if(!grid.openBeyond(edgeX,edgeY)||!grid.scrollBy(stepX,stepY)) {
                     motion.stop();turnedAt=true;
-                    edgeSaid=DesktopPages.said(grid.pageX,grid.pageY)+" now. Bring it onto the page to put it there";
+                    edgeSaid=Say.t("{0} now. Bring it onto the page to put it there",Say.t(DesktopPages.said(grid.pageX,grid.pageY)));
                     say(edgeSaid);
                     return;
                 }
@@ -2428,7 +2435,7 @@ final class DesktopHome extends JPanel {
             // Continue to the end of the one extra page; page detection changes halfway through it.
             if(last!=null)at(last);
         }
-        private void say(String words){String all=words+"  ·  Esc cancels";if(!all.equals(said)){said=all;pad.status.setToolTipText(null);pad.status.setText(all);}}
+        private void say(String words){String all=Say.t(words)+"  ·  "+Say.t("Esc cancels");if(!all.equals(said)){said=all;pad.status.setToolTipText(null);pad.status.setText(all);}}
 
         /**
          * Over a grid, by the cell under the pointer (decision 39): one that holds a thing it can go onto or into, that thing;
@@ -2470,7 +2477,7 @@ final class DesktopHome extends JPanel {
             if(onStrip<0&&onto==null&&at!=null&&in==from&&places(from)&&outOf!=null&&t.where!=Where.DOCK&&t.where!=Where.FAVOURITES) {
                 if(from.paged()){
                     Layout.Spot to=new Layout.Spot(from.landX,from.landY,at[0],at[1]);Map<String,Layout.Spot> spots=Layout.moveTo(from.spots(),thing.id,to);
-                    if(spots!=null&&!to.equals(from.spots().get(thing.id))){keepSpots(from,thing,spots,to.x()!=0||to.y()!=0?"Moved to "+DesktopPages.said(to.x(),to.y()).toLowerCase(java.util.Locale.ROOT):"Moved");end();return;}
+                    if(spots!=null&&!to.equals(from.spots().get(thing.id))){keepSpots(from,thing,spots,to.x()!=0||to.y()!=0?Say.t("Moved to {0}",Say.t(DesktopPages.said(to.x(),to.y()).toLowerCase(java.util.Locale.ROOT))):Say.t("Moved"));end();return;}
                 }else{
                     Map<String,Integer> cells=Layout.moveTo(from.drawn(),thing.id,at[0],at[1]);
                     if(cells!=null){keepCells(from,thing,cells,"Moved");end();return;}
@@ -2479,13 +2486,13 @@ final class DesktopHome extends JPanel {
             end();
             if(onStrip>=0){fromStrip(thing,onStrip);return;}
             if(z==Grid.Zone.DOCK) {
-                if(!Grid.docks(thing.kind)){pad.status.setText("Only a note or a folder goes in the dock");refreshIfStale();return;}
+                if(!Grid.docks(thing.kind)){pad.status.setText(Say.t("Only a note or a folder goes in the dock"));refreshIfStale();return;}
                 toDock(thing,dockSlot);return;
             }
             // Among the favourites, let go on another: before it in their one order; in the room after them, last (decision 74).
             if(t.where==Where.FAVOURITES&&z==Grid.Zone.CARD&&folder.amongFavourites()){reorderFavourites(thing,onto==null?null:onto.thing);return;}
             // From the dock or among the favourites a thing is only listed: it goes to the dock from there, and nowhere else.
-            if(t.where==Where.DOCK||t.where==Where.FAVOURITES||t.where==Where.AWAY||from==null||came==null){pad.status.setText("Not moved");refreshIfStale();return;}
+            if(t.where==Where.DOCK||t.where==Where.FAVOURITES||t.where==Where.AWAY||from==null||came==null){pad.status.setText(Say.t("Not moved"));refreshIfStale();return;}
             boolean inCard=z==Grid.Zone.CARD,onHome=z==Grid.Zone.HOME||z==Grid.Zone.UP;
             // Let go on Home round the card, stepped aside or not: the card goes once the thing is there.
             Runnable leftCard=onHome&&folder.isOpen()?folder::close:null;
@@ -2507,7 +2514,7 @@ final class DesktopHome extends JPanel {
                 else into(thing,onto.thing.id,named(onto.thing),onto.thing.kind,leftCard);
                 return;
             }
-            if(!inCard&&!onHome){pad.status.setText("Not moved");refreshIfStale();return;}
+            if(!inCard&&!onHome){pad.status.setText(Say.t("Not moved"));refreshIfStale();return;}
             String dest=inCard?folder.id():Things.HOME;
             if(!dest.equals(came)) {
                 // Into another collection than it came out of, or onto Home, at any depth: in the empty cell it was let go in,
@@ -2531,17 +2538,17 @@ final class DesktopHome extends JPanel {
                 Layout.Spot to=new Layout.Spot(from.landX,from.landY,at[0],at[1]);
                 Map<String,Layout.Spot> spots=Layout.moveTo(from.spots(),thing.id,to);
                 boolean there=to.x()!=0||to.y()!=0;
-                if(spots!=null&&!to.equals(from.spots().get(thing.id))){keepSpots(from,thing,spots,there?"Moved to "+DesktopPages.said(to.x(),to.y()).toLowerCase(java.util.Locale.ROOT):"Moved");return;}
+                if(spots!=null&&!to.equals(from.spots().get(thing.id))){keepSpots(from,thing,spots,there?Say.t("Moved to {0}",Say.t(DesktopPages.said(to.x(),to.y()).toLowerCase(java.util.Locale.ROOT))):Say.t("Moved"));return;}
             }
             else if(at!=null&&in==from&&places(from)) {
                 Map<String,Integer> cells=Layout.moveTo(from.drawn(),thing.id,at[0],at[1]);
                 int[] was=from.drawn().get(thing.id);
                 if(cells!=null&&(was==null||was[0]!=at[0]||was[1]!=at[1])){keepCells(from,thing,cells,"Moved");return;}
             }
-            pad.status.setText("Not moved");refreshIfStale();
+            pad.status.setText(Say.t("Not moved"));refreshIfStale();
         }
         /** Esc: put back where it was, and said. */
-        void cancel(){if(carried==null)return;end();pressed=null;pad.status.setText("Not moved");refreshIfStale();}
+        void cancel(){if(carried==null)return;end();pressed=null;pad.status.setText(Say.t("Not moved"));refreshIfStale();}
 
         private void end() {
             motion.stop();last=null;turnedAt=false;grid.clearPast();
@@ -2565,7 +2572,7 @@ final class DesktopHome extends JPanel {
             boolean file=thing.kind==NoteStore.Branch.Kind.FILE;
             switch(which) {
                 case 0 -> {
-                    if(file)pad.disk.submit(()->{store().keepToHand(NoteStore.Branch.Kind.FILE,thing.id,true);return null;},done->{pad.status.setText("A favourite");pad.refresh();},pad::failed);
+                    if(file)pad.disk.submit(()->{store().keepToHand(NoteStore.Branch.Kind.FILE,thing.id,true);return null;},done->{pad.status.setText(Say.t("A favourite"));pad.refresh();},pad::failed);
                     else pad.favourite(thing,true);
                 }
                 case 1 -> pad.intoTemp(thing);

@@ -78,6 +78,53 @@ public class DesktopTabsTest {
         assertEquals("second",pad.page.getText());assertEquals(2,pad.tab);
     }
 
+    // Tabs reordered (the owner, 2026-10-24: "We have to be able to drag and reorder the tabs in a note", decision 239).
+    @Test public void aTabMovesByItsMenuAndByBeingCarriedAndTheNoteIsWrittenInTheNewOrder() throws Exception {
+        NoteStore.Note note=new NoteStore.Note();note.book=Things.HOME;note.title="Ordered";
+        note.body="=== A ===\na\n=== B ===\nb\n=== C ===\nc";pad.store.save(note);
+        SwingUtilities.invokeAndWait(()->pad.open(note.id));await(()->pad.page.getText().equals("a"));settle();
+        // Move right, from the menu, on the open tab: it goes one place on and stays open.
+        SwingUtilities.invokeAndWait(()->pad.moveTabForTest(0,1));
+        await(()->pad.store.get(note.id).body.equals("=== B ===\nb\n=== A ===\na\n=== C ===\nc"));settle();
+        assertEquals(1,pad.tab);assertEquals("a",pad.page.getText());
+        // Move left on a tab that is not open: the open one stays open where its words went.
+        SwingUtilities.invokeAndWait(()->pad.moveTabForTest(2,1));
+        await(()->pad.store.get(note.id).body.equals("=== B ===\nb\n=== C ===\nc\n=== A ===\na"));settle();
+        assertEquals(2,pad.tab);assertEquals("a",pad.page.getText());
+        // Carried: the first card pressed, pulled past the last, let go. It is last, and open.
+        SwingUtilities.invokeAndWait(()->{
+            java.util.List<JLabel> cards=cards();JLabel first=cards.get(0),last=cards.get(cards.size()-1);
+            java.awt.Point over=SwingUtilities.convertPoint(last,last.getWidth()-2,last.getHeight()/2,first);
+            int y=first.getHeight()/2;long now=System.currentTimeMillis();
+            first.dispatchEvent(new java.awt.event.MouseEvent(first,java.awt.event.MouseEvent.MOUSE_PRESSED,now,java.awt.event.InputEvent.BUTTON1_DOWN_MASK,5,y,1,false,java.awt.event.MouseEvent.BUTTON1));
+            first.dispatchEvent(new java.awt.event.MouseEvent(first,java.awt.event.MouseEvent.MOUSE_DRAGGED,now+20,java.awt.event.InputEvent.BUTTON1_DOWN_MASK,30,y,0,false,java.awt.event.MouseEvent.NOBUTTON));
+            first.dispatchEvent(new java.awt.event.MouseEvent(first,java.awt.event.MouseEvent.MOUSE_DRAGGED,now+40,java.awt.event.InputEvent.BUTTON1_DOWN_MASK,over.x,y,0,false,java.awt.event.MouseEvent.NOBUTTON));
+            first.dispatchEvent(new java.awt.event.MouseEvent(first,java.awt.event.MouseEvent.MOUSE_RELEASED,now+60,0,over.x,y,1,false,java.awt.event.MouseEvent.BUTTON1));
+        });
+        await(()->pad.store.get(note.id).body.equals("=== C ===\nc\n=== A ===\na\n=== B ===\nb"));settle();
+        assertEquals(2,pad.tab);assertEquals("b",pad.page.getText());
+        // Carried and put back with Esc: nothing changes, and letting go after is not a click.
+        long revision=pad.store.get(note.id).revision;
+        SwingUtilities.invokeAndWait(()->{
+            JLabel first=cards().get(0);int y=first.getHeight()/2;long now=System.currentTimeMillis();
+            first.dispatchEvent(new java.awt.event.MouseEvent(first,java.awt.event.MouseEvent.MOUSE_PRESSED,now,java.awt.event.InputEvent.BUTTON1_DOWN_MASK,5,y,1,false,java.awt.event.MouseEvent.BUTTON1));
+            first.dispatchEvent(new java.awt.event.MouseEvent(first,java.awt.event.MouseEvent.MOUSE_DRAGGED,now+20,java.awt.event.InputEvent.BUTTON1_DOWN_MASK,first.getWidth()+80,y,0,false,java.awt.event.MouseEvent.NOBUTTON));
+            // Through the focus manager, where Esc is caught while a tab is carried.
+            pad.page.dispatchEvent(new java.awt.event.KeyEvent(pad.page,java.awt.event.KeyEvent.KEY_PRESSED,now+40,0,java.awt.event.KeyEvent.VK_ESCAPE,java.awt.event.KeyEvent.CHAR_UNDEFINED));
+            first.dispatchEvent(new java.awt.event.MouseEvent(first,java.awt.event.MouseEvent.MOUSE_RELEASED,now+60,0,first.getWidth()+80,y,1,false,java.awt.event.MouseEvent.BUTTON1));
+        });
+        settle();
+        assertEquals(revision,pad.store.get(note.id).revision);assertEquals(2,pad.tab);
+        assertEquals("=== C ===\nc\n=== A ===\na\n=== B ===\nb",pad.noteNow());
+        shoot("tabs-moved");
+    }
+
+    private java.util.List<JLabel> cards() {
+        java.util.List<JLabel> out=new java.util.ArrayList<>();
+        for(Component c:pad.tabStrip.getComponents())if(c instanceof JLabel l)out.add(l);
+        return out;
+    }
+
     private void shoot(String name) throws Exception {
         Thread.sleep(300);
         SwingUtilities.invokeAndWait(()->{try{

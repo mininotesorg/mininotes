@@ -91,7 +91,7 @@ final class DesktopIconPicker {
             else if(DEFAULT.equals(icon)||icon==null||icon.isEmpty())pad.store.dropOwnLook(kind,thing.id);
             else pad.store.setOwnIcon(kind,thing.id,icon);
             return null;},done->{
-            pad.status.setToolTipText(null);pad.status.setText(mine?(DEFAULT.equals(icon)?"Back to the icon everybody sees":"Icon changed, only on this PC"):DEFAULT.equals(icon)?"Back to its own icon":"Icon changed");
+            pad.status.setToolTipText(null);pad.status.setText(Say.t(mine?(DEFAULT.equals(icon)?"Back to the icon everybody sees":"Icon changed, only on this PC"):DEFAULT.equals(icon)?"Back to its own icon":"Icon changed"));
             pad.lookChanged(kind,thing.id);
         },e->failed(pad,e,"Could not change the icon. Nothing was changed."));
     }
@@ -102,7 +102,7 @@ final class DesktopIconPicker {
         // This PC's own picture where it has one, else the one everybody sees.
         pad.disk.submit(()->{String[] own=pad.store.ownLook(kind,thing.id);
             if(own!=null&&!own[1].isEmpty())pad.store.setOwnImage(kind,thing.id,null);else pad.store.setImage(kind,thing.id,null);return null;},done->{
-            pad.status.setToolTipText(null);pad.status.setText("Picture removed");
+            pad.status.setToolTipText(null);pad.status.setText(Say.t("Picture removed"));
             pad.lookChanged(kind,thing.id);
         },e->failed(pad,e,"Could not remove the picture. Nothing was changed."));
     }
@@ -115,21 +115,21 @@ final class DesktopIconPicker {
      */
     static void picture(Desktop pad,NoteStore.Branch thing,NoteStore.Branch.Kind kind,String from,Background.Work<DesktopIcons.Chosen> read){picture(pad,thing,kind,from,read,false);}
     static void picture(Desktop pad,NoteStore.Branch thing,NoteStore.Branch.Kind kind,String from,Background.Work<DesktopIcons.Chosen> read,boolean mine) {
-        pad.status.setToolTipText(null);pad.status.setText(from==null?"Making the picture…":"Making the picture from “"+from+"”…");
+        pad.status.setToolTipText(null);pad.status.setText(from==null?Say.t("Making the picture…"):Say.t("Making the picture from “{0}”…",from));
         pad.disk.submit(()->{
             DesktopIcons.Chosen chosen=read.run();
             byte[] thumb=DesktopIcons.thumb(chosen.picture(),chosen.turn());
             if(thumb==null)throw new IllegalArgumentException("That picture could not be made small enough to keep.");
             if(mine)pad.store.setOwnImage(kind,thing.id,thumb);else pad.store.setImage(kind,thing.id,thumb);
             return thumb.length;
-        },size->{pad.status.setText("Picture set");pad.lookChanged(kind,thing.id);},
+        },size->{pad.status.setText(Say.t("Picture set"));pad.lookChanged(kind,thing.id);},
           e->failed(pad,e,"Mininotes could not read that picture. Nothing was changed."));
     }
 
     /** What went wrong, said: the notebook's and the reading's own words where they were meant for a person. */
     private static void failed(Desktop pad,Exception e,String otherwise) {
         boolean said=(e instanceof IllegalArgumentException||e instanceof IllegalStateException)&&e.getMessage()!=null;
-        pad.status.setText(said?e.getMessage():otherwise);pad.status.setToolTipText(pad.status.getText());
+        pad.status.setText(Say.t(said?e.getMessage():otherwise));pad.status.setToolTipText(pad.status.getText());
     }
 
     /** A picture offered by a paste or a drop: which file it was, if it was one, and how to read it. */
@@ -204,7 +204,7 @@ final class DesktopIconPicker {
                 CELL*ACROSS,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f)));
         }
         DesktopUi.gap(top,12);
-        search.putClientProperty(com.formdev.flatlaf.FlatClientProperties.PLACEHOLDER_TEXT,"Search icons");
+        search.putClientProperty(com.formdev.flatlaf.FlatClientProperties.PLACEHOLDER_TEXT,Say.t("Search icons"));
         search.putClientProperty(com.formdev.flatlaf.FlatClientProperties.TEXT_FIELD_LEADING_ICON,new com.formdev.flatlaf.icons.FlatSearchIcon());
         search.putClientProperty(com.formdev.flatlaf.FlatClientProperties.TEXT_FIELD_SHOW_CLEAR_BUTTON,true);
         search.getAccessibleContext().setAccessibleName("Search icons");search.setEnabled(!readOnly);
@@ -259,7 +259,7 @@ final class DesktopIconPicker {
 
     /** Choose a picture…: a row at the end, as the phone has it, rather than a second button - tapping an icon is the choice. */
     private JComponent pictureRow() {
-        JButton choose=new JButton("Choose a picture…",DesktopIcons.glyph("image-plus",20));
+        JButton choose=new JButton(Say.t("Choose a picture…"),DesktopIcons.glyph("image-plus",20));
         choose.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
         choose.setHorizontalAlignment(SwingConstants.LEFT);choose.setIconTextGap(12);choose.setMargin(new Insets(8,10,8,14));
         choose.setFont(DesktopUi.BODY);choose.setForeground(DesktopUi.INK);choose.setFocusPainted(false);choose.setEnabled(!readOnly);
@@ -268,7 +268,7 @@ final class DesktopIconPicker {
         JPanel row=new JPanel(new BorderLayout(12,0));row.setOpaque(false);
         row.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(1,0,0,0,DesktopUi.LINE),BorderFactory.createEmptyBorder(8,0,0,0)));
         row.add(choose,BorderLayout.WEST);
-        if(!readOnly){JLabel also=new JLabel("or paste or drop one here");also.setFont(DesktopUi.BODY.deriveFont(13f));also.setForeground(DesktopUi.QUIET);row.add(also);}
+        if(!readOnly){JLabel also=new JLabel(Say.t("or paste or drop one here"));also.setFont(DesktopUi.BODY.deriveFont(13f));also.setForeground(DesktopUi.QUIET);row.add(also);}
         return row;
     }
 
@@ -402,7 +402,7 @@ final class DesktopIconPicker {
             Object hints=Toolkit.getDefaultToolkit().getDesktopProperty("awt.font.desktophints");if(hints instanceof java.util.Map<?,?> map)g.addRenderingHints(map);
             if(names.isEmpty()) {
                 g.setFont(DesktopUi.BODY.deriveFont(13f));g.setColor(DesktopUi.QUIET);
-                g.drawString("No icon is called that. Try another word.",left()+10,24+g.getFontMetrics().getAscent());g.dispose();return;
+                g.drawString(Say.t("No icon is called that. Try another word."),left()+10,24+g.getFontMetrics().getAscent());g.dispose();return;
             }
             Rectangle clip=g.getClipBounds();if(clip==null)clip=new Rectangle(getSize());
             int cols=columns(),x0=left();

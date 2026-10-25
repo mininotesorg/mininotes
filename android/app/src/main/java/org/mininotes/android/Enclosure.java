@@ -107,6 +107,18 @@ final class Enclosure {
      * an hour; then hourly from the tenth try, because a file nobody can reach for an afternoon is waiting on
      * something the sender has to do, and asking every quarter of an hour would only spend the battery.
      */
+    /**
+     * Whether a file being fetched is tried again now: as {@link #due}, but a quarter minute after the first try that failed,
+     * not a minute. A first fetch most often fails for being a moment early: its pieces not up yet, or this device's node only
+     * just started (decision 227: a picture on the Pro's Temp, fetched by Graphene 25 seconds after it opened, came a minute
+     * and a half later).
+     */
+    static boolean fetchDue(long tried,int tries,long now) {
+        if(tries==1&&now>=tried)return now-tried>=FIRST_AGAIN;
+        return due(tried,tries,now);
+    }
+    static final long FIRST_AGAIN=15_000L;
+
     static boolean due(long tried,int tries,long now) {
         if(tries<=0)return true;
         if(now<tried)return true;   // a clock put back: better once too often than never again

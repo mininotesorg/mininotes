@@ -111,6 +111,16 @@ final class Say {
     }
 
     /** A template's words with what goes in them: {0}, {1}… in the order given. */
+    /**
+     * A word worn on a note's icon, where a language has a shorter way of saying it than the same word elsewhere (the
+     * owner, 2026-10-25: "since nouveau could we write nouv. at the note level"): its own line, "<word> (on a note)",
+     * and the word itself where a language has none.
+     */
+    static String onNote(String english) {
+        String said=words.get(english+" (on a note)");
+        return said!=null&&!said.isEmpty()?said:t(english);
+    }
+
     static String t(String english,Object... fill) {
         String said=t(english);
         for(int at=0;at<fill.length;at++)said=said.replace("{"+at+"}",String.valueOf(fill[at]));

@@ -202,6 +202,9 @@ final class SyncStatus {
             java.util.Set<String> old=store.beforeLoose();
             for(String file:files)for(var wait:store.sleevesOwed(file,false))
                 sum.merge(wait.address,old.contains(wait.address)?Waits.needsUpdate():new Waits.Where(1,0,0,false,false),Waits.Where::and);
+            // And, once it went, each device that has not said it has its bytes: "Waiting for … to confirm 1 file", as the mark
+            // waits for (NoteStore.fileOwed), rather than the words about writing a file never has.
+            for(String file:files)for(String address:store.toConfirm(file))sum.merge(address,new Waits.Where(0,1,1,false,false),Waits.Where::and);
         }
         java.util.List<Waits.Device> devices=new java.util.ArrayList<>();
         for(var one:sum.entrySet())devices.add(new Waits.Device(store.nameFor(one.getKey()),one.getValue(),kept(one.getKey())));
@@ -230,6 +233,12 @@ final class SyncStatus {
         for(String file:files)for(var wait:store.sleevesOwed(file,false)) {
             if(out.containsKey(wait.page))continue;
             var held=store.file(wait.page);
+            if(held!=null)out.put(held.id,new NoteStore.Branch(NoteStore.Branch.Kind.FILE,held.id,held.note,held.name,"",0,0,false));
+        }
+        // And each that went and waits for a device to say it has it, as the line "Waiting for … to confirm 1 file" says.
+        for(String file:files) {
+            if(file==null||out.containsKey(file)||store.toConfirm(file).isEmpty())continue;
+            var held=store.file(file);
             if(held!=null)out.put(held.id,new NoteStore.Branch(NoteStore.Branch.Kind.FILE,held.id,held.note,held.name,"",0,0,false));
         }
         return new java.util.ArrayList<>(out.values());

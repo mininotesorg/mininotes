@@ -16,7 +16,7 @@ final class DesktopScanner {
     static void open(JFrame owner,Consumer<Code> accepted) {
         // The camera's picture in a dark frame of its own, what to do under it, and the other two ways in -
         // a picture of the code, or a link - as buttons beside the camera's own.
-        JLabel preview=new JLabel("Show the other device's Mininotes code to your camera",SwingConstants.CENTER);
+        JLabel preview=new JLabel(Say.t("Show the other device's Mininotes code to your camera"),SwingConstants.CENTER);
         preview.setPreferredSize(new Dimension(560,315));preview.setForeground(new Color(214,218,210));preview.setFont(DesktopUi.BODY);
         JPanel screen=new JPanel(new BorderLayout()){
             @Override protected void paintComponent(Graphics g0){Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);g.setColor(new Color(32,36,33));g.fillRoundRect(0,0,getWidth(),getHeight(),14,14);g.dispose();}
@@ -34,8 +34,8 @@ final class DesktopScanner {
         Consumer<Code> found=text->{if(closed.compareAndSet(false,true)){dialog.dispose();worker.shutdown();SwingUtilities.invokeLater(()->accepted.accept(text));}};
         dialog.addWindowListener(new WindowAdapter(){public void windowClosed(WindowEvent e){closed.set(true);scanning.set(false);worker.shutdown();}});
         camera.addActionListener(e->{
-            if(scanning.get()){scanning.set(false);camera.setText("Stopping…");camera.setEnabled(false);return;}
-            int choice=cameras.getSelectedIndex();scanning.set(true);camera.setText("Stop camera");progress.setText("Opening camera…");
+            if(scanning.get()){scanning.set(false);camera.setText(Say.t("Stopping…"));camera.setEnabled(false);return;}
+            int choice=cameras.getSelectedIndex();scanning.set(true);camera.setText(Say.t("Stop camera"));progress.setText(Say.t("Opening camera…"));
             worker.submit(()->{
                 Webcam opened=null;
                 try {
@@ -45,7 +45,7 @@ final class DesktopScanner {
                     if(closed.get()||!scanning.get())return;
                     opened=devices.get(Math.max(0,Math.min(choice,devices.size()-1)));sharpest(opened);
                     Dimension size=opened.getViewSize();
-                    SwingUtilities.invokeLater(()->progress.setText("Hold the whole QR code steady inside the camera view. Camera at "+size.width+"×"+size.height+"."));
+                    SwingUtilities.invokeLater(()->progress.setText(Say.t("Hold the whole QR code steady inside the camera view. Camera at {0}×{1}.",size.width,size.height)));
                     while(!closed.get()&&scanning.get()) {
                         BufferedImage frame=opened.getImage();
                         if(frame!=null) {
@@ -54,13 +54,13 @@ final class DesktopScanner {
                         }
                         Thread.sleep(150);
                     }
-                }catch(Exception|LinkageError failure){SwingUtilities.invokeLater(()->progress.setText("Camera unavailable. Check Windows camera permissions, or open a QR image."));}
-                finally{try{if(opened!=null)opened.close();}finally{scanning.set(false);SwingUtilities.invokeLater(()->{camera.setEnabled(true);camera.setText("Start camera");preview.setIcon(null);preview.setText("Camera stopped");});}}
+                }catch(Exception|LinkageError failure){SwingUtilities.invokeLater(()->progress.setText(Say.t("Camera unavailable. Check Windows camera permissions, or open a QR image.")));}
+                finally{try{if(opened!=null)opened.close();}finally{scanning.set(false);SwingUtilities.invokeLater(()->{camera.setEnabled(true);camera.setText(Say.t("Start camera"));preview.setIcon(null);preview.setText(Say.t("Camera stopped"));});}}
             });
         });
         image.addActionListener(e->{
             java.nio.file.Path chosenImage=DesktopPick.openOne(dialog,"Open QR image");if(chosenImage==null)return;
-            scanning.set(false);progress.setText("Reading QR image…");worker.submit(()->{try{String text=DesktopQr.read(chosenImage);SwingUtilities.invokeLater(()->found.accept(new Code(text,false)));}catch(Exception failure){SwingUtilities.invokeLater(()->progress.setText(failure.getMessage()));}});
+            scanning.set(false);progress.setText(Say.t("Reading QR image…"));worker.submit(()->{try{String text=DesktopQr.read(chosenImage);SwingUtilities.invokeLater(()->found.accept(new Code(text,false)));}catch(Exception failure){SwingUtilities.invokeLater(()->progress.setText(Say.t(failure.getMessage())));}});
         });
         paste.addActionListener(e->{
             try {
@@ -69,13 +69,13 @@ final class DesktopScanner {
                     Image raw=(Image)board.getData(DataFlavor.imageFlavor);int w=raw.getWidth(null),h=raw.getHeight(null);
                     if(w<=0||h<=0||(long)w*h>16_000_000)throw new IllegalArgumentException("Clipboard image is too large");
                     BufferedImage copy=new BufferedImage(w,h,BufferedImage.TYPE_INT_RGB);var g=copy.createGraphics();g.drawImage(raw,0,0,null);g.dispose();
-                    scanning.set(false);progress.setText("Reading clipboard image…");worker.submit(()->{try{String text=DesktopQr.read(copy);SwingUtilities.invokeLater(()->found.accept(new Code(text,false)));}catch(Exception failure){SwingUtilities.invokeLater(()->progress.setText(failure.getMessage()));}});
+                    scanning.set(false);progress.setText(Say.t("Reading clipboard image…"));worker.submit(()->{try{String text=DesktopQr.read(copy);SwingUtilities.invokeLater(()->found.accept(new Code(text,false)));}catch(Exception failure){SwingUtilities.invokeLater(()->progress.setText(Say.t(failure.getMessage())));}});
                 }else {
                     String current=board.isDataFlavorAvailable(DataFlavor.stringFlavor)?(String)board.getData(DataFlavor.stringFlavor):"";
                     JTextArea input=new JTextArea(current,5,42);input.setLineWrap(true);input.setWrapStyleWord(true);
-                    if(JOptionPane.showConfirmDialog(dialog,new JScrollPane(input),"Paste sharing link",JOptionPane.OK_CANCEL_OPTION)==JOptionPane.OK_OPTION)found.accept(new Code(input.getText().trim(),false));
+                    if(JOptionPane.showConfirmDialog(dialog,new JScrollPane(input),Say.t("Paste sharing link"),JOptionPane.OK_CANCEL_OPTION)==JOptionPane.OK_OPTION)found.accept(new Code(input.getText().trim(),false));
                 }
-            }catch(Exception failure){progress.setText("Could not read clipboard: "+failure.getMessage());}
+            }catch(Exception failure){progress.setText(Say.t("Could not read clipboard: {0}",failure.getMessage()));}
         });
         DesktopUi.show(dialog,700,720);
     }

@@ -114,24 +114,24 @@ final class DesktopSettings {
         // What this PC holds for the owner's phones until they collect it (see Home): one line, only while sharing runs.
         DesktopUi.Text homeSaid=DesktopUi.note(" ",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f));
         DesktopUi.gap(directCard,DesktopUi.S);DesktopUi.add(directCard,homeSaid);
-        if(!app.offline)app.connectivity.submit(Node::home,line->homeSaid.setText(line.isEmpty()?" ":line),e->{});
+        if(!app.offline)app.connectivity.submit(Node::home,line->homeSaid.setText(line.isEmpty()?" ":Say.t(line)),e->{});
         DesktopUi.add(body,DesktopUi.card(null,directCard));
         DesktopUi.gap(body,DesktopUi.L);
         boolean[] quiet={false};
         java.util.function.Consumer<DesktopFirewall.State> shown=state->{
             quiet[0]=true;direct.setSelected(state.allowed());quiet[0]=false;direct.setEnabled(true);
-            directSaid.setText(!state.allowed()
+            directSaid.setText(Say.t(!state.allowed()
                 ?"Off: Windows keeps other devices out, so yours cannot reach this PC directly. On, your devices at home (and, when your router allows it, from anywhere) send to this PC straight. Windows asks your permission."
                 :state.publicHere()
                     ?"On, but Windows calls this network public, so it stays closed here. It opens on networks set as private, like your home."
-                    :"On: your devices reach this PC without a relay at home, and from outside when your router opens a port. Only messages sealed to this PC are accepted.");
+                    :"On: your devices reach this PC without a relay at home, and from outside when your router opens a port. Only messages sealed to this PC are accepted."));
         };
-        app.connectivity.submit(DesktopFirewall::read,shown::accept,e->directSaid.setText("Windows did not say whether it lets devices in."));
+        app.connectivity.submit(DesktopFirewall::read,shown::accept,e->directSaid.setText(Say.t("Windows did not say whether it lets devices in.")));
         direct.addActionListener(e->{
             if(quiet[0])return;boolean want=direct.isSelected();
-            direct.setEnabled(false);directSaid.setText(want?"Waiting for your answer in Windows' permission box…":"Closing it again. Windows asks your permission…");
+            direct.setEnabled(false);directSaid.setText(Say.t(want?"Waiting for your answer in Windows' permission box…":"Closing it again. Windows asks your permission…"));
             app.connectivity.submit(()->DesktopFirewall.set(want),shown::accept,failure->{
-                directSaid.setText(failure.getMessage()==null?"Nothing was changed.":failure.getMessage());
+                directSaid.setText(Say.t(failure.getMessage()==null?"Nothing was changed.":failure.getMessage()));
                 app.connectivity.submit(DesktopFirewall::read,shown::accept,none->direct.setEnabled(true));
             });
         });
@@ -285,10 +285,10 @@ final class DesktopSettings {
             if(on==was[0])return;
             was[0]=on;through.setVisible(!on);card.revalidate();card.repaint();
             only.setEnabled(false);helpers.setEnabled(false);said.setVisible(true);
-            said.setText(on?"Letting go of every relay…":"Connecting to your relays…");
+            said.setText(Say.t(on?"Letting go of every relay…":"Connecting to your relays…"));
             app.connectivity.submit(()->{Node.onlyMine(app.context,on);return null;},
-                done->{only.setEnabled(true);helpers.setEnabled(true);said.setText(on?"Notes go only between your devices now.":"Helpers carry notes when needed now.");},
-                failure->{was[0]=!on;(on?helpers:only).setSelected(true);through.setVisible(on);only.setEnabled(true);helpers.setEnabled(true);said.setText("That could not be changed.");});
+                done->{only.setEnabled(true);helpers.setEnabled(true);said.setText(Say.t(on?"Notes go only between your devices now.":"Helpers carry notes when needed now."));},
+                failure->{was[0]=!on;(on?helpers:only).setSelected(true);through.setVisible(on);only.setEnabled(true);helpers.setEnabled(true);said.setText(Say.t("That could not be changed."));});
         };
         only.addActionListener(e->choose.accept(true));
         helpers.addActionListener(e->choose.accept(false));
@@ -333,10 +333,10 @@ final class DesktopSettings {
                 String state=stateOf.apply(one);
                 JButton[] remove={null};
                 remove[0]=DesktopUi.button("Remove",()->{
-                    remove[0].setEnabled(false);said.setText("Letting go of "+one+"…");
+                    remove[0].setEnabled(false);said.setText(Say.t("Letting go of {0}…",one));
                     app.connectivity.submit(()->{Node.removeRelay(app.context,one);return null;},
-                        done->{said.setText("Removed "+one+".");draw[0].run();},
-                        failure->{said.setText(one+" could not be removed.");remove[0].setEnabled(true);});
+                        done->{said.setText(Say.t("Removed {0}.",one));draw[0].run();},
+                        failure->{said.setText(Say.t("{0} could not be removed.",one));remove[0].setEnabled(true);});
                 });
                 remove[0].getAccessibleContext().setAccessibleName("Remove "+one);
                 // The address, its state quietly under it, and its button on the right, the edge under Add's.
@@ -344,40 +344,40 @@ final class DesktopSettings {
                 if(!state.isEmpty())DesktopUi.add(named,DesktopUi.quiet(state));
                 mine.add(DesktopUi.row(named,remove[0]));
             }
-            means.setText(Node.relaysLine(app.context));
+            means.setText(Say.t(Node.relaysLine(app.context)));
             mine.revalidate();mine.repaint();
         };
         draw[0].run();
         boolean[] quiet={false};
         publicOn.addActionListener(e->{
             if(quiet[0])return;boolean on=publicOn.isSelected();
-            publicOn.setEnabled(false);said.setText(on?"Connecting to the public relays…":"Letting go of the public relays…");
+            publicOn.setEnabled(false);said.setText(Say.t(on?"Connecting to the public relays…":"Letting go of the public relays…"));
             app.connectivity.submit(()->{Node.publicRelays(app.context,on);return null;},
-                done->{publicOn.setEnabled(true);said.setText(on?"The public relays are on.":"Only your relays are used now.");draw[0].run();},
-                failure->{quiet[0]=true;publicOn.setSelected(!on);quiet[0]=false;publicOn.setEnabled(true);said.setText("That could not be changed.");});
+                done->{publicOn.setEnabled(true);said.setText(Say.t(on?"The public relays are on.":"Only your relays are used now."));draw[0].run();},
+                failure->{quiet[0]=true;publicOn.setSelected(!on);quiet[0]=false;publicOn.setEnabled(true);said.setText(Say.t("That could not be changed."));});
         });
         JButton[] adds={null};
         Runnable adding=()->{
             JButton add=adds[0];
             String problem=Relays.problem(typed.getText());
-            if(problem!=null){said.setText(problem);return;}
+            if(problem!=null){said.setText(Say.t(problem));return;}
             String one=Relays.parse(typed.getText());
             java.util.List<String> kept=Node.ownRelays(app.context);
-            if(kept.contains(one)){said.setText(one+" is already one of your relays.");return;}
-            if(kept.size()>=Relays.MOST){said.setText("Eight relays is the most. Remove one first.");return;}
-            add.setEnabled(false);typed.setEnabled(false);said.setText("Checking "+one+"…");
+            if(kept.contains(one)){said.setText(Say.t("{0} is already one of your relays.",one));return;}
+            if(kept.size()>=Relays.MOST){said.setText(Say.t("Eight relays is the most. Remove one first."));return;}
+            add.setEnabled(false);typed.setEnabled(false);said.setText(Say.t("Checking {0}…",one));
             app.connectivity.submit(()->{
                 if(!Node.relayAnswers(one))return one+" did not answer, so it was not added. Check the address, and that the relay is running.";
-                SwingUtilities.invokeLater(()->said.setText("Connecting to "+one+"…"));
+                SwingUtilities.invokeLater(()->said.setText(Say.t("Connecting to {0}…",one)));
                 boolean connected=Node.addRelay(app.context,one);
                 return connected?"Added. Connected to "+one+"."
                     :Node.running()?"Added. "+one+" answered but did not take this PC yet; it is tried again every few minutes."
                     :"Added. It is used once sharing starts.";
             },outcome->{
-                add.setEnabled(true);typed.setEnabled(true);said.setText(outcome);
+                add.setEnabled(true);typed.setEnabled(true);said.setText(Say.t(outcome));
                 if(outcome.startsWith("Added"))typed.setText("");
                 draw[0].run();
-            },failure->{add.setEnabled(true);typed.setEnabled(true);said.setText("It could not be checked.");});
+            },failure->{add.setEnabled(true);typed.setEnabled(true);said.setText(Say.t("It could not be checked."));});
         };
         adds[0]=DesktopUi.button("Add",adding);typed.addActionListener(e->adding.run());
         card.add(DesktopUi.row(typed,adds[0]));

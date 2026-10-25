@@ -66,6 +66,90 @@ public class WordsEverywhereTest {
         assertTrue(missing.size()+" phrases on a screen are not on the English list:\n"+all,missing.isEmpty());
     }
 
+    /**
+     * The PC's own Swing calls: words handed straight to a label, a button, a tip, a title or a box are shown as they are, so
+     * English handed to one without Say.t stayed English in every language (found running the PC in French, 2026-10-24). A
+     * third rule: every such call on the PC is given Say.t, or a helper that translates, never bare words.
+     */
+    static final Pattern SWING=Pattern.compile("(?:\\.(setText|setToolTipText|setTitle|drawString|displayMessage|showConfirmDialog|showMessageDialog|showOptionDialog|showInputDialog|createTitledBorder)\\s*\\("
+        +"|\\bnew\\s+(JLabel|JButton|JMenuItem|JMenu|JCheckBox|JCheckBoxMenuItem|JRadioButton|JRadioButtonMenuItem|JToggleButton|MenuItem|TrayIcon|JFrame|JDialog|TitledBorder)\\s*\\("
+        +"|(PLACEHOLDER_TEXT|\"JTextField\\.placeholderText\")\\s*,)");
+    /** Components that translate their own words, and so must be given English: the connection's dot, which picks its colour from it. */
+    static final Set<String> TRANSLATE_THEMSELVES=Set.of("Desktop.java connection","DesktopProfile.java state");
+    /** Words that are no language's: the name, keys and their shortcuts. */
+    static final Set<String> NOT_WORDS=Set.of("Mininotes","  ·  Mininotes"," (Esc)"," (Ctrl+K)","host:port");
+
+    @Test public void pcScreenCallsAreGivenTranslatedWords() throws Exception {
+        List<String> bare=new ArrayList<>();
+        try(var all=Files.list(ROOT.resolve("windows/src/main/java/org/mininotes/android"))) {
+            for(Path source:all.filter(p->p.toString().endsWith(".java")).sorted().toList()) {
+                String text=Files.readString(source,StandardCharsets.UTF_8),file=source.getFileName().toString();
+                Matcher m=SWING.matcher(text);
+                while(m.find()) {
+                    int open=m.end();
+                    String receiver=receiver(text,m.start());
+                    if(receiver!=null&&TRANSLATE_THEMSELVES.contains(file+" "+receiver))continue;
+                    String argument=m.group(3)!=null?text.substring(open,Math.max(open,until(text,open,','))):text.substring(open,closing(text,open));
+                    for(String words:bareWords(argument))
+                        bare.add(file+":"+(text.substring(0,m.start()).split("\n",-1).length)+"  "+m.group().trim()+" "+words);
+                }
+            }
+        }
+        assertTrue(bare.size()+" places hand English to the screen without Say.t:\n"+String.join("\n",bare),bare.isEmpty());
+    }
+    @Test public void theGuardFindsBareWords() {
+        assertEquals(List.of("\"Saved\""),bareWords("\"Saved\""));
+        assertEquals(List.of("\"Saved\"","\"Not saved\""),bareWords("ok?\"Saved\":\"Not saved\""));
+        assertEquals(List.of("\" is in the dock\""),bareWords("Say.t(\"Home\")+\" is in the dock\""));
+        assertTrue(bareWords("Say.t(ok?\"Saved\":\"Not saved\")").isEmpty());
+        assertTrue(bareWords("Say.t(\"Moved into {0}\",name)+\"  ·  \"").isEmpty());
+        assertTrue(bareWords("starting(\"Share a note…\")").isEmpty());
+        assertTrue(bareWords("\"<html><div style='width:150px'>\"+Say.t(\"Your code\")+\"</div></html>\"").isEmpty());
+        assertTrue(bareWords("\"v\"+VERSION").isEmpty());
+    }
+
+    /** The words in quotes an argument hands on as they are: not inside Say.t or any other call, nor in a class body. */
+    static List<String> bareWords(String argument) {
+        List<String> found=new ArrayList<>();
+        for(int i=0;i<argument.length();i++) {
+            char c=argument.charAt(i);
+            if(c=='"'){int end=literalEnd(argument,i);String said=argument.substring(i,end);if(words(said.substring(1,said.length()-1)))found.add(said);i=end-1;continue;}
+            if(c=='\''){i=literalEnd(argument,i)-1;continue;}
+            // A call's own brackets - Say.t( or any other - and a class body: what is inside is that call's to say.
+            if(c=='('&&i>0&&(Character.isJavaIdentifierPart(argument.charAt(i-1))||argument.charAt(i-1)=='>')){i=closing(argument,i+1)-1;continue;}
+            if(c=='{'){int depth=1,j=i+1;for(;j<argument.length()&&depth>0;j++){char k=argument.charAt(j);if(k=='"'||k=='\''){j=literalEnd(argument,j)-1;continue;}if(k=='{')depth++;else if(k=='}')depth--;}i=j-1;}
+        }
+        return found;
+    }
+    private static boolean words(String said) {
+        if(NOT_WORDS.contains(said)||said.matches("\\s*\\(?(Ctrl|Shift|Alt)\\+.*"))return false;
+        return said.replaceAll("<[^>]*>","").replaceAll("\\\\u[0-9a-fA-F]{4}","").matches("(?s).*\\p{L}{2}.*");
+    }
+    /** Where the literal starting at {@code at} ends, its closing quote included. */
+    private static int literalEnd(String s,int at) {
+        char quote=s.charAt(at);int i=at+1;
+        while(i<s.length()&&s.charAt(i)!=quote){if(s.charAt(i)=='\\')i++;i++;}
+        return Math.min(s.length(),i+1);
+    }
+    /** Where the bracket opened just before {@code from} closes. */
+    private static int closing(String s,int from) {
+        int depth=1,i=from;
+        for(;i<s.length();i++){char c=s.charAt(i);if(c=='"'||c=='\''){i=literalEnd(s,i)-1;continue;}if(c=='(')depth++;else if(c==')'&&--depth==0)return i;}
+        return i;
+    }
+    /** The next {@code stop} at this level, or the bracket that closes it. */
+    private static int until(String s,int from,char stop) {
+        int depth=0,i=from;
+        for(;i<s.length();i++){char c=s.charAt(i);if(c=='"'||c=='\''){i=literalEnd(s,i)-1;continue;}if(c=='(')depth++;else if(c==')'){if(depth==0)return i;depth--;}else if(c==stop&&depth==0)return i;}
+        return i;
+    }
+    /** The name before ".setText(" and the like, if there is a plain one. */
+    private static String receiver(String text,int dot) {
+        if(dot>=text.length()||text.charAt(dot)!='.')return null;
+        int start=dot;while(start>0&&Character.isJavaIdentifierPart(text.charAt(start-1)))start--;
+        return start<dot?text.substring(start,dot):null;
+    }
+
     private static boolean listed(Set<String> english,String said) {
         if(english.contains(said))return true;
         // The dots of a box, and an arrow, are added to a listed phrase by Say.t.

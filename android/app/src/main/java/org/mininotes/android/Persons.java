@@ -43,7 +43,10 @@ import java.util.Set;
  * <p>Holds no Android types: the format, its bounds and every decision are unit tested.
  */
 final class Persons {
-    /** The format, and the first four bytes. Not a {@link Parcel}, {@link Hello}, {@link Drop} or {@link Courier}. */
+    /**
+     * The format, and the first four bytes. Not a {@link Parcel}, {@link Hello}, {@link Drop} or {@link Courier}; but an
+     * {@link AboutMe} card starts with them too, and is told apart by reading it whole first (decision 252).
+     */
     static final byte[] MAGIC={'M','N','A','1'};
     /** One byte after the magic, so a later build can say more without being read as this one. */
     static final int FORMAT=1;

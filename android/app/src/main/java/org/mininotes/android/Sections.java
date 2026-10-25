@@ -130,4 +130,35 @@ final class Sections {
         if(index==all.size()-1&&from>0)from--;
         return text.substring(0,from)+text.substring(to);
     }
+
+    /**
+     * One tab moved to another place among them, its line and its words going together (the owner, 2026-10-24: "We have
+     * to be able to drag and reorder the tabs in a note", decision 239). Every tab keeps its name and its words letter for
+     * letter; only line ends that belong to no tab, a blank one before a tab line or the note's last, may differ. A first
+     * tab with no name of its own cannot stand after a tab line, so where it moves, or another moves in front of it, it is
+     * given the name the strip already calls it, Page 1, as Rename does. Out of range, or to the same place: as it was.
+     */
+    static String move(String body,int from,int to) {
+        String text=body==null?"":body;List<Section> all=of(text);int n=all.size();
+        if(from<0||to<0||from>=n||to>=n||from==to)return text;
+        if(all.get(0).name==null&&(from==0||to==0)){text=rename(text,0,FIRST);all=of(text);}
+        StringBuilder out=new StringBuilder();List<String> tabs=new ArrayList<>();int first=0;
+        // A first tab with no name stays where it is, first, its line end before the first tab line with it.
+        if(all.get(0).name==null){out.append(text,0,all.get(0).end).append('\n');first=1;}
+        for(int i=first;i<n;i++) {
+            Section s=all.get(i);int lineEnd=text.indexOf('\n',s.line);if(lineEnd<0)lineEnd=text.length();
+            String words=text.substring(s.start,s.end);
+            tabs.add(text.substring(s.line,lineEnd)+(words.isEmpty()?"":"\n"+words));
+        }
+        tabs.add(to-first,tabs.remove(from-first));
+        return out.append(String.join("\n",tabs)).toString();
+    }
+
+    /** Where the open tab is after one is moved from one place to another: the moved one where it went, the others shifted. */
+    static int follow(int open,int from,int to) {
+        if(open==from)return to;
+        if(from<open&&open<=to)return open-1;
+        if(to<=open&&open<from)return open+1;
+        return open;
+    }
 }

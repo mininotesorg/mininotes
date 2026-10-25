@@ -217,7 +217,7 @@ final class DesktopMoving {
         carried=one;moved=true;landing=null;source=from;
         sourceCursor=from==null?null:from.getCursor();
         lifted=from instanceof JComponent c?(JComponent)cardOf(c):null;
-        ghost=new JLabel(one.name==null||one.name.isBlank()?"Untitled":one.name);
+        ghost=new JLabel(one.name==null||one.name.isBlank()?Say.t("Untitled"):one.name);
         ghost.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,13f));ghost.setForeground(DesktopUi.INK);ghost.setOpaque(true);ghost.setBackground(DesktopUi.CARD);
         ghost.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(DesktopUi.ACCENT),BorderFactory.createEmptyBorder(4,10,4,10)));
         ghost.setSize(ghost.getPreferredSize());ghost.setVisible(false);
@@ -259,9 +259,9 @@ final class DesktopMoving {
         landing=now;markedOn=on;line=between;round=onto;
         if(changed){if(was!=null)was.repaint();if(on!=null)on.repaint();}
         if(source!=null)source.setCursor(now!=null?DragSource.DefaultMoveDrop:DragSource.DefaultMoveNoDrop);
-        say(now==null?"It cannot go here  ·  Esc cancels"
-            :now.into!=null?"Let go to move it into "+named(now.into)+"  ·  Esc cancels"
-            :"Let go to put it here  ·  Esc cancels");
+        say((now==null?Say.t("It cannot go here")
+            :now.into!=null?Say.t("Let go to move it into {0}",named(now.into))
+            :Say.t("Let go to put it here"))+"  ·  "+Say.t("Esc cancels"));
     }
     private void say(String words){if(!words.equals(said)){said=words;pad.status.setToolTipText(null);pad.status.setText(words);}}
     private static String named(NoteStore.Branch b){return DesktopHome.named(b);}
@@ -334,12 +334,12 @@ final class DesktopMoving {
     void letGo() {
         NoteStore.Branch thing=carried;Landing l=landing;
         end();
-        if(l==null){pad.status.setText("Not moved");return;}
+        if(l==null){pad.status.setText(Say.t("Not moved"));return;}
         pad.status.setText(" ");
         if(l.into==null)pad.reorder(thing,l.order,l.before);else pad.moveInto(thing,l.into,l.order);
     }
     /** Esc: put back where it was, and said. */
-    void cancel(){if(carried==null)return;end();pressed=null;pad.status.setText("Not moved");}
+    void cancel(){if(carried==null)return;end();pressed=null;pad.status.setText(Say.t("Not moved"));}
 
     private void end() {
         carried=null;landing=null;said="";

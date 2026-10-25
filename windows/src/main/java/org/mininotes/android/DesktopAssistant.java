@@ -319,7 +319,7 @@ final class DesktopAssistant {
     Runnable way(Assistant.Place place) {
         return switch(place) {
             case PROFILE -> ()->DesktopProfile.open(d);
-            case INTEGRITAS -> ()->DesktopProfile.open(d,"Integritas");
+            case INTEGRITAS -> ()->DesktopProfile.open(d,DesktopProfile.STAMPING);
             case PARLONS -> ()->DesktopProfile.open(d,"Your Parlons! address");
             case TEXT_SIZE -> ()->DesktopProfile.open(d,"Text size");
             case DESCRIBE -> ()->DesktopProfile.open(d,"Describe what each thing does");

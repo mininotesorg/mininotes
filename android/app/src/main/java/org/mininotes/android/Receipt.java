@@ -339,6 +339,14 @@ final class Receipt {
      */
     static final int ABOUT_ME=38;
 
+    /**
+     * "This build reads stamps on Minima" (decision 252; see {@link StampCard}). Said to the owner's own devices, as
+     * {@link #GROUPS} is; the card ({@code MNQ1}) is never sealed for a device that has not said it. It also says the build
+     * reads a key card ({@link KeyCard}, {@code MNK1}, since 0.4.006), which is now never sealed for a device that has not said
+     * this either: no number said before it came from a build that knows that card.
+     */
+    static final int STAMPS=39;
+
     private Receipt(){}
 
     /** The inside of an answer. */

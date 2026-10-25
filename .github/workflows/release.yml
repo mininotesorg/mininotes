@@ -108,15 +108,19 @@ jobs:
             The pad works on its own, and nothing else has to be installed to
             share between phones: it is its own Maxima node. See the README.
 
-            Windows: download `Mininotes-Windows-….zip`, check it with the
-            `.sha256` beside it, extract it and open `Mininotes\Mininotes.exe`.
-            A PC already running Mininotes offers the update itself.
+            Windows: download `Mininotes-Windows-….msi`, check it with the
+            `.sha256` beside it, and open it. No administrator rights are
+            needed, and Mininotes is then in Settings, Apps; uninstalling it
+            there keeps your notes. Or the `.zip`: extract it and open
+            `Mininotes\Mininotes.exe`. A PC already running Mininotes offers
+            the update itself.
 
-  # Every file names its version (Mininotes-0.1.001.apk, Mininotes-Windows-0.1.001.zip), and each has a copy
-  # under a name that never changes (Mininotes.apk, Mininotes-Windows.zip) for a permanent latest link. The
+  # Every file names its version (Mininotes-0.1.001.apk, Mininotes-Windows-0.1.001.zip and .msi), and each has a copy
+  # under a name that never changes (Mininotes.apk, Mininotes-Windows.zip, Mininotes-Windows.msi) for a permanent latest link. The
   # website's mininotes.org/android and /windows find the newest versioned one through GitHub's API and start it.
   # The Windows build of the same commit, added to the same release once the phone's is published. Every
-  # PC reads dist/latest-windows.txt and then fetches releases/latest/download/Mininotes-Windows-<that>.zip,
+  # PC reads dist/latest-windows.txt and then fetches releases/latest/download/Mininotes-Windows-<that>.zip (.msi where
+  # the MSI installed it),
   # so each release has to carry it, and the file and the build have to agree on its version.
   windows:
     needs: release
@@ -141,6 +145,19 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # WiX 3.14, which jpackage makes the MSI with (decision 235), from its own release and kept only if it is the file
+      # whose checksum is written here: a build tool that changed under the same name is not used.
+      - name: WiX 3.14
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'wix314-binaries.zip'
+          Invoke-WebRequest 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip' -OutFile $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31') { Write-Error "wix314-binaries.zip is not the expected file (SHA-256 $hash)"; exit 1 }
+          $wix = Join-Path $env:RUNNER_TEMP 'wix314'
+          Expand-Archive $zip -DestinationPath $wix
+          "WIX=$wix" >> $env:GITHUB_ENV
+
       - name: Test and package
         shell: pwsh
         run: ./windows/build.ps1 -Package
@@ -156,6 +173,14 @@ jobs:
           Copy-Item "dist/latest/$name" out/Mininotes-Windows.zip
           $hash = (Get-FileHash out/Mininotes-Windows.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  Mininotes-Windows.zip" | Set-Content -Encoding ascii out/Mininotes-Windows.zip.sha256
+          # The installer the same way (decision 235): Mininotes-Windows-<version>.msi, which an installed PC's own update
+          # fetches, and releases/latest/download/Mininotes-Windows.msi for a permanent link.
+          $msi = "Mininotes-Windows-${{ steps.name.outputs.version }}.msi"
+          Copy-Item "dist/latest/$msi" out/
+          Copy-Item "dist/latest/$msi.sha256" out/
+          Copy-Item "dist/latest/$msi" out/Mininotes-Windows.msi
+          $hash = (Get-FileHash out/Mininotes-Windows.msi -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Mininotes-Windows.msi" | Set-Content -Encoding ascii out/Mininotes-Windows.msi.sha256
           Get-ChildItem out
 
       - name: Publish

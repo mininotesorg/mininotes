@@ -48,13 +48,44 @@ final class ReadMe {
         return text;
     }
 
+    /**
+     * The note's text in a language, from that language's README kept inside the app (help/README.fr.md, a copy of the root
+     * README.fr.md, translated from README.md: the owner, 2026-10-21, "the user gets everything in the language of its
+     * choice, including the README right away"; decision 232); English where there is none, or for "en".
+     */
+    static synchronized String text(String language) {
+        if(language==null||language.isEmpty()||"en".equals(language))return text();
+        if(!TEXTS.containsKey(language)){String md=read(translated(language));TEXTS.put(language,md==null?null:note(md));}
+        String said=TEXTS.get(language);
+        return said!=null?said:text();
+    }
+    private static final java.util.Map<String,String> TEXTS=new java.util.HashMap<>();
+    /** Where a language's README is kept inside the app. */
+    static String translated(String language){return "/org/mininotes/android/help/README."+language+".md";}
+
+    /**
+     * The language a README note is in, where it is one a build wrote: today's text in a language, else the line it is
+     * listed on in help/README.sha256 ("fr " before the hash; nothing for English). Null for one somebody wrote in.
+     */
+    static String language(String body) {
+        if(body==null)return null;
+        String en=text();if(body.equals(en))return "en";
+        for(String code:Say.LANGUAGES.keySet())if(!"en".equals(code)&&body.equals(text(code)))return code;
+        shipped("");
+        synchronized(ReadMe.class){return LANGUAGE_OF.get(sha256(body));}
+    }
+    private static final java.util.Map<String,String> LANGUAGE_OF=new java.util.HashMap<>();
+
     /** Whether a note's body is exactly a text some build wrote as the README. */
     static boolean shipped(String body) {
         if(body==null)return false;
         synchronized(ReadMe.class) {
             if(shipped==null) {
                 Set<String> all=new HashSet<>();String list=read(SHIPPED);
-                if(list!=null)for(String line:list.split("\n")){String t=line.trim();if(!t.isEmpty()&&!t.startsWith("#"))all.add(t.toLowerCase(java.util.Locale.ROOT));}
+                // "hash" for English, "fr hash" for a translation (decision 232).
+                if(list!=null)for(String line:list.split("\n")){String t=line.trim();if(t.isEmpty()||t.startsWith("#"))continue;
+                    String[] two=t.split("\\s+");String hash=two[two.length-1].toLowerCase(java.util.Locale.ROOT);
+                    all.add(hash);LANGUAGE_OF.put(hash,two.length>1?two[0]:"en");}
                 shipped=Collections.unmodifiableSet(all);
             }
         }

@@ -14,7 +14,7 @@ final class DesktopProfile {
     /**
      * My profile scrolled to one of its parts, its field ready to type in where it has one: what the Agent's Take me there
      * opens (the owner, 2026-10-19: "for example in setting Integritas it will open directly the section in the profile
-     * page"; decision 213). A part is named by its heading, "Integritas", "Text size", "Backup", or by what it holds, "Your
+     * page"; decision 213). A part is named by its heading, "Stamping", "Text size", "Backup", or by what it holds, "Your
      * Parlons! address", "Describe what each thing does"; a name it does not have opens it at its top.
      */
     static void open(Desktop app,String section){open(app,null,null,section);}
@@ -29,7 +29,7 @@ final class DesktopProfile {
         JTextField name=new JTextField(24);name.setName("profileName");
         DesktopUi.Text outcome=DesktopUi.quiet(" "),counts=DesktopUi.quiet(" "),direct=DesktopUi.quiet(" "),door=DesktopUi.quiet(" "),travel=DesktopUi.quiet(" ");direct.setName("directState");door.setName("doorState");JLabel state=new Desktop.Dot(app.offline?"Offline session":"Connecting…");
         state.setFont(DesktopUi.BODY);state.setIconTextGap(8);
-        JLabel qr=new JLabel("<html><div style='width:150px'>Your code appears here once this PC is connected.</div></html>");qr.setFont(DesktopUi.BODY.deriveFont(13f));qr.setForeground(DesktopUi.QUIET);qr.setName("profileQr");qr.setHorizontalAlignment(SwingConstants.CENTER);
+        JLabel qr=new JLabel("<html><div style='width:150px'>"+Say.t("Your code appears here once this PC is connected.")+"</div></html>");qr.setFont(DesktopUi.BODY.deriveFont(13f));qr.setForeground(DesktopUi.QUIET);qr.setName("profileQr");qr.setHorizontalAlignment(SwingConstants.CENTER);
         qr.setPreferredSize(new Dimension(220,220));qr.setMinimumSize(new Dimension(220,220));
         JTextArea address=readonly(3),permanent=readonly(2);address.setName("maximaAddress");permanent.setName("permanentAddress");state.setName("connectionState");
         Connection[] current={null};
@@ -40,16 +40,16 @@ final class DesktopProfile {
         DesktopUi.Text nameHelp=DesktopUi.quiet(Node.nameChosen(app.context)?"What other people see.":"Choose the name other people see.");
         DesktopUi.Text deviceHelp=DesktopUi.quiet("What your own devices call this one.");
         Runnable saveName=()->{
-            String value=name.getText().trim();if(value.isEmpty()||value.length()>80){nameHelp.setForeground(DesktopUi.WARN);nameHelp.setText("Use a name between 1 and 80 characters.");return;}
-            nameHelp.setForeground(DesktopUi.QUIET);nameHelp.setText("Saving…");app.disk.submit(()->{
+            String value=name.getText().trim();if(value.isEmpty()||value.length()>80){nameHelp.setForeground(DesktopUi.WARN);nameHelp.setText(Say.t("Use a name between 1 and 80 characters."));return;}
+            nameHelp.setForeground(DesktopUi.QUIET);nameHelp.setText(Say.t("Saving…"));app.disk.submit(()->{
                 // When it was chosen goes with it: your other devices take whichever name was chosen last.
                 Node.chooseName(app.context,value);app.store.myName=value;return null;
-            },done->{if(value.equals(name.getText().trim()))nameHelp.setText("Saved. What other people see.");app.connectivity.submit(()->{Node.called(app.context,value);return null;},v->{},app::failed);},error->{nameHelp.setForeground(DesktopUi.WARN);nameHelp.setText("Name could not be saved. Edit it to try again.");app.failed(error);});
+            },done->{if(value.equals(name.getText().trim()))nameHelp.setText(Say.t("Saved. What other people see."));app.connectivity.submit(()->{Node.called(app.context,value);return null;},v->{},app::failed);},error->{nameHelp.setForeground(DesktopUi.WARN);nameHelp.setText(Say.t("Name could not be saved. Edit it to try again."));app.failed(error);});
         };
         Runnable saveDevice=()->{
-            String value=device.getText().trim();if(value.isEmpty()||value.length()>80){deviceHelp.setForeground(DesktopUi.WARN);deviceHelp.setText("Use a name between 1 and 80 characters.");return;}
-            deviceHelp.setForeground(DesktopUi.QUIET);deviceHelp.setText("Saving…");app.disk.submit(()->{Node.chooseDevice(app.context,value);return null;},
-                done->{if(value.equals(device.getText().trim()))deviceHelp.setText("Saved. What your own devices call this one.");},error->{deviceHelp.setForeground(DesktopUi.WARN);deviceHelp.setText("Name could not be saved. Edit it to try again.");app.failed(error);});
+            String value=device.getText().trim();if(value.isEmpty()||value.length()>80){deviceHelp.setForeground(DesktopUi.WARN);deviceHelp.setText(Say.t("Use a name between 1 and 80 characters."));return;}
+            deviceHelp.setForeground(DesktopUi.QUIET);deviceHelp.setText(Say.t("Saving…"));app.disk.submit(()->{Node.chooseDevice(app.context,value);return null;},
+                done->{if(value.equals(device.getText().trim()))deviceHelp.setText(Say.t("Saved. What your own devices call this one."));},error->{deviceHelp.setForeground(DesktopUi.WARN);deviceHelp.setText(Say.t("Name could not be saved. Edit it to try again."));app.failed(error);});
         };
         JPanel you=DesktopUi.column();
         DesktopUi.add(you,DesktopUi.body("Your name"));DesktopUi.gap(you,4);DesktopUi.add(you,name);DesktopUi.gap(you,6);DesktopUi.add(you,nameHelp);
@@ -83,24 +83,24 @@ final class DesktopProfile {
         DesktopUi.Text parlonsHelp=DesktopUi.quiet("Your contacts get it by themselves, so they can chat with you in one tap.");
         JButton keepParlons=app.button("Save",()->{
             String typed=parlons.getText();
-            String kept;try{kept=Parlons.address(typed);}catch(IllegalArgumentException wrong){parlonsHelp.setForeground(DesktopUi.WARN);parlonsHelp.setText(wrong.getMessage());return;}
-            parlonsHelp.setForeground(DesktopUi.QUIET);parlonsHelp.setText(kept.isEmpty()?"Removing\u2026":"Saving\u2026");
+            String kept;try{kept=Parlons.address(typed);}catch(IllegalArgumentException wrong){parlonsHelp.setForeground(DesktopUi.WARN);parlonsHelp.setText(Say.t(wrong.getMessage()));return;}
+            parlonsHelp.setForeground(DesktopUi.QUIET);parlonsHelp.setText(Say.t(kept.isEmpty()?"Removing\u2026":"Saving\u2026"));
             app.disk.submit(()->app.store.setMyParlons(kept),done->app.network.submit(()->Post.sendMyParlons(app.context,app.store,app.keys,true),
-                sent->parlonsHelp.setText((kept.isEmpty()?"Removed":"Saved")+(sent>0?", and sent to "+sent+(sent==1?" device.":" devices."):". It goes to your contacts as they come online.")),
-                e->parlonsHelp.setText("Saved here. It goes to your contacts as they come online.")),
-                e->{parlonsHelp.setForeground(DesktopUi.WARN);parlonsHelp.setText(e.getMessage()==null?"That address could not be kept.":e.getMessage());});
+                sent->parlonsHelp.setText(sent==1?Say.t(kept.isEmpty()?"Removed, and sent to 1 device.":"Saved, and sent to 1 device."):sent>0?Say.t(kept.isEmpty()?"Removed, and sent to {0} devices.":"Saved, and sent to {0} devices.",sent):Say.t(kept.isEmpty()?"Removed. It goes to your contacts as they come online.":"Saved. It goes to your contacts as they come online.")),
+                e->parlonsHelp.setText(Say.t("Saved here. It goes to your contacts as they come online."))),
+                e->{parlonsHelp.setForeground(DesktopUi.WARN);parlonsHelp.setText(Say.t(e.getMessage()==null?"That address could not be kept.":e.getMessage()));});
         });
         JPanel parlonsRow=new JPanel(new BorderLayout(8,0));parlonsRow.setOpaque(false);parlonsRow.add(parlons);parlonsRow.add(keepParlons,BorderLayout.EAST);
         DesktopUi.add(you,DesktopUi.body("Your Parlons! address"));DesktopUi.gap(you,4);DesktopUi.add(you,parlonsRow);DesktopUi.gap(you,6);DesktopUi.add(you,parlonsHelp);
         app.disk.submit(()->app.store.myParlons(),mine->{
             parlons.setText(mine);
             // Copied from Parlons! a moment ago, and none set yet: already in the field, saying so.
-            if(mine.isEmpty()){String copied=Desktop.copiedParlons();if(!copied.isEmpty()){parlons.setText(copied);parlonsHelp.setText("Filled in from what you copied. Save to send it to your contacts.");}}
+            if(mine.isEmpty()){String copied=Desktop.copiedParlons();if(!copied.isEmpty()){parlons.setText(copied);parlonsHelp.setText(Say.t("Filled in from what you copied. Save to send it to your contacts."));}}
         },app::failed);
 
         // Your code: the picture another device scans, and the same thing as text for when it cannot.
-        JButton link=app.button("Copy my link",()->{if(current[0]!=null&&!current[0].pairing.isEmpty()){clipboard(Pairing.invite(current[0].name,Pairing.link(current[0].pairing),Desktop.DOWNLOAD));outcome.setText("Your link is copied, with a few words. Paste it in a message, a mail or a post.");}});link.setEnabled(false);
-        JButton copy=app.button("Copy address",()->{if(current[0]!=null&&!current[0].address.isEmpty()){clipboard(current[0].address);outcome.setText("Address copied");}});copy.setEnabled(false);
+        JButton link=app.button("Copy my link",()->{if(current[0]!=null&&!current[0].pairing.isEmpty()){clipboard(Pairing.invite(current[0].name,Pairing.link(current[0].pairing),Desktop.DOWNLOAD));outcome.setText(Say.t("Your link is copied, with a few words. Paste it in a message, a mail or a post."));}});link.setEnabled(false);
+        JButton copy=app.button("Copy address",()->{if(current[0]!=null&&!current[0].address.isEmpty()){clipboard(current[0].address);outcome.setText(Say.t("Address copied"));}});copy.setEnabled(false);
         JButton raw=app.button("Address QR…",()->{if(current[0]!=null&&!current[0].address.isEmpty())try{JLabel big=new JLabel(new ImageIcon(DesktopQr.draw(current[0].address,320)));DesktopUi.tell(SwingUtilities.getWindowAncestor(qr),"Maxima address",big);}catch(Exception e){app.failed(e);}});raw.setEnabled(false);
         JPanel side=DesktopUi.column();
         DesktopUi.add(side,DesktopUi.note("Scan this with Mininotes on another device to pair with this PC.",200,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f)));DesktopUi.gap(side,12);
@@ -112,10 +112,10 @@ final class DesktopProfile {
 
         // Connection: whether it is, and the one thing to do if it is not.
         JButton reconnect=app.button("Reconnect",()->{
-            if(app.offline){outcome.setText("Restart without --offline to connect.");return;}
-            outcome.setText("Finding relays and refreshing contacts…");app.connectivity.submit(()->{
+            if(app.offline){outcome.setText(Say.t("Restart without --offline to connect."));return;}
+            outcome.setText(Say.t("Finding relays and refreshing contacts…"));app.connectivity.submit(()->{
                 Node.retryStart();return Node.reconnect(app.context);
-            },n->{outcome.setText(n>0?"Connected":"No relay answered. Check your internet connection and Windows firewall.");app.startNode();},app::failed);
+            },n->{outcome.setText(Say.t(n>0?"Connected":"No relay answered. Check your internet connection and Windows firewall."));app.startNode();},app::failed);
         });reconnect.setEnabled(!app.offline&&!Node.onlyMine(app.context));
         JPanel stateRow=new JPanel(new BorderLayout(DesktopUi.M,0));stateRow.setOpaque(false);JPanel stateWords=DesktopUi.column();DesktopUi.add(stateWords,state);DesktopUi.gap(stateWords,2);DesktopUi.add(stateWords,counts);
         // Whether devices away from home can reach this PC straight, or only through a relay: docs/DIRECT.md.
@@ -127,19 +127,20 @@ final class DesktopProfile {
         // Listening while the window is closed is a switch, and every switch is in Settings.
         JPanel connection=DesktopUi.column();DesktopUi.add(connection,stateRow);
         DesktopUi.gap(connection,12);DesktopUi.add(connection,DesktopUi.quiet("Permanent address"));DesktopUi.gap(connection,4);DesktopUi.add(connection,permanent);DesktopUi.gap(connection,DesktopUi.S);
-        DesktopUi.add(connection,DesktopUi.actions(app.button("Copy permanent address",()->{if(current[0]!=null&&!current[0].permanent.isEmpty()){clipboard(current[0].permanent);outcome.setText("Permanent address copied");}})));
+        DesktopUi.add(connection,DesktopUi.actions(app.button("Copy permanent address",()->{if(current[0]!=null&&!current[0].permanent.isEmpty()){clipboard(current[0].permanent);outcome.setText(Say.t("Permanent address copied"));}})));
 
         // One way in: everything about people and devices is managed in their own window (the owner, 2026-10-18; decision 202).
+        // What it holds is said under its heading (decision 231), so here only the way there.
         JPanel people=DesktopUi.column();
-        DesktopUi.add(people,DesktopUi.row(DesktopUi.quiet(Say.t("The people and devices you share with, and your groups.")),app.button("Manage…",()->{if(backTo!=null)box[0].dispose();else app.people(null);})));
-        // Integritas, all of it in one place (decision 203): the account and everything stamped.
+        DesktopUi.add(people,DesktopUi.actions(app.button("Manage…",()->{if(backTo!=null)box[0].dispose();else app.people(null);})));
+        // Stamping, all of the Integritas account in one place (decisions 203 and 231): its key, and the devices it goes to.
         JPanel integritas=DesktopUi.column();
         DesktopUi.add(integritas,DesktopUi.note(Say.t("Stamp files and notes on the Minima blockchain through your own Integritas account, to prove later that they existed then, unchanged.")));
         DesktopUi.gap(integritas,12);
         // The API key typed here, as the Parlons! address is, and sent to the owner's own devices chosen, one switch each (the
         // owner, 2026-10-19: "in the profile we should just have the account API setting ... let's do that on the profile page
         // directly as we do for the Parlons address"; "we should have the option to share it on all our devices, choosing by
-        // device"; decision 210). What was stamped is listed from the menu, Stamped on Minima….
+        // device"; decision 210). What was stamped is listed from the menu, Stamped on Minima…, last in Find (decision 230).
         JPasswordField apiKey=new JPasswordField(24);apiKey.setName("integritasKey");apiKey.getAccessibleContext().setAccessibleName(Say.t("Integritas API key"));
         apiKey.putClientProperty("JTextField.placeholderText",Say.t("Integritas API key"));
         DesktopUi.Text keyHelp=DesktopUi.note(Say.t("Paste the API key from your profile at integritas.technology. It is kept in your notebook on this PC, locked with it, and sent only to Integritas and to the devices you choose below."));
@@ -154,13 +155,13 @@ final class DesktopProfile {
                 keyHelp.setForeground(DesktopUi.QUIET);
                 if(to.isEmpty())return;
                 app.status.setText(Say.t("Sending to my devices…"));
-                app.network.submit(()->Post.sendKey(app.context,app.store,app.keys,DesktopStamp.KEY,to),said->app.status.setText(said),app::failed);
+                app.network.submit(()->Post.sendKey(app.context,app.store,app.keys,DesktopStamp.KEY,to),said->app.status.setText(Say.t(said)),app::failed);
             },app::failed);
         });
         JPanel keyRow=new JPanel(new BorderLayout(8,0));keyRow.setOpaque(false);keyRow.add(apiKey);keyRow.add(keepKey,BorderLayout.EAST);
         DesktopUi.add(integritas,DesktopUi.body("Integritas API key"));DesktopUi.gap(integritas,4);DesktopUi.add(integritas,keyRow);DesktopUi.gap(integritas,6);
         DesktopUi.add(integritas,keyHelp);DesktopUi.gap(integritas,4);
-        DesktopUi.add(integritas,DesktopUi.actions(DesktopUi.quietButton("integritas.technology  ›",()->{try{Desktop.browse(Integritas.SITE);}catch(Exception noBrowser){app.status.setText(Integritas.SITE);}})));
+        DesktopUi.add(integritas,DesktopUi.actions(DesktopUi.link("integritas.technology",()->{try{Desktop.browse(Integritas.SITE);}catch(Exception noBrowser){app.status.setText(Integritas.SITE);}})));
         DesktopUi.add(integritas,devices);
         app.disk.submit(()->{java.util.List<NoteStore.Contact> own=new java.util.ArrayList<>();for(NoteStore.Contact one:app.store.addresses())if(one.mine&&one.paired())own.add(one);
             return new Object[]{app.store.secret(DesktopStamp.KEY),own};},got->{
@@ -175,7 +176,7 @@ final class DesktopProfile {
                     Post.keyGoesTo(app.context,DesktopStamp.KEY,chosenDevices);
                     // Switched on with a key already saved: it goes now, to that device.
                     if(on.isSelected()&&apiKey.getPassword().length>0){app.status.setText(Say.t("Sending to my devices…"));
-                        app.network.submit(()->Post.sendKey(app.context,app.store,app.keys,DesktopStamp.KEY,java.util.Set.of(one.address)),said->app.status.setText(said),app::failed);}
+                        app.network.submit(()->Post.sendKey(app.context,app.store,app.keys,DesktopStamp.KEY,java.util.Set.of(one.address)),said->app.status.setText(Say.t(said)),app::failed);}
                 });
                 DesktopUi.add(devices,DesktopUi.switchRow(one.name,on));
             }
@@ -188,7 +189,10 @@ final class DesktopProfile {
         JLabel lockState=new JLabel(Say.t(isLocked?"Encrypted with a password":"Not encrypted"),DesktopLock.padlock(isLocked,16),SwingConstants.LEFT);lockState.setIconTextGap(8);lockState.setFont(DesktopUi.BODY);
         lock.add(DesktopUi.row(lockState,app.button("Security…",()->DesktopLock.settings(app))));
         JPanel backup=DesktopUi.column();
-        DesktopUi.add(backup,DesktopUi.note("One file holding every folder, note and attachment on this PC."));DesktopUi.gap(backup,12);
+        // What it holds is said under its heading (decision 231), and what it never holds here, plainly (the owner,
+        // 2026-10-22: "It should be clear that any private element can't be backed up"; decision 235).
+        DesktopUi.add(backup,DesktopUi.note(Say.t("A backup holds every folder, note and file in Mininotes on this PC, except private spaces, which are never backed up.")));
+        DesktopUi.gap(backup,8);
         DesktopUi.add(backup,DesktopUi.actions(app.button("Export…",()->app.save(app::backup)),app.button("Add from a backup…",()->app.save(app::importBackup))));
 
         // The help request is no longer here, in plain sight: it is set inside a private space alone (decision 201).
@@ -221,25 +225,30 @@ final class DesktopProfile {
         DesktopUi.add(size,DesktopUi.note(Say.t("A line saying what it does, when the pointer rests on a menu entry or a button.")));
         JPanel body=DesktopUi.column();
         // Each part by its heading, for opening at one of them (decision 213): what to show at the top, and what to type in.
-        String[] headings={"You","Your code","Connection","People and devices","Integritas","Text size","Security","Backup"};
         JPanel[] parts={you,codeCard,connection,people,integritas,size,lock,backup};
         java.util.Map<String,JComponent[]> sections=new java.util.HashMap<>();
         for(int i=0;i<parts.length;i++) {
-            JPanel card=DesktopUi.card(headings[i],parts[i]);DesktopUi.add(body,card);DesktopUi.gap(body,12);
-            sections.put(headings[i],new JComponent[]{card,null});
+            JPanel card=part(PARTS[i],ICONS[i],ABOUT[i],parts[i]);DesktopUi.add(body,card);DesktopUi.gap(body,DesktopUi.L);
+            sections.put(PARTS[i],new JComponent[]{card,null});
         }
-        sections.put("Integritas",new JComponent[]{sections.get("Integritas")[0],apiKey});
+        sections.put(STAMPING,new JComponent[]{sections.get(STAMPING)[0],apiKey});
         sections.put("Your Parlons! address",new JComponent[]{parlonsRow,parlons});
         sections.put("Describe what each thing does",new JComponent[]{describeRow,describe});
         JPanel foot=new JPanel(new BorderLayout(DesktopUi.M,0));foot.setOpaque(false);foot.add(outcome);
         JScrollPane scroll=DesktopUi.scrolling(body);scroll.setName("profileScroll");
+        // At the top, every part by its name, a link taking the page to it (the owner, 2026-10-21: "for now it is difficult to
+        // find what we are looking for"; decision 231).
+        JButton[] jumps=new JButton[PARTS.length];
+        for(int i=0;i<PARTS.length;i++){JComponent card=sections.get(PARTS[i])[0];jumps[i]=DesktopUi.link(PARTS[i],()->showAt(scroll,body,card,null));jumps[i].setName("profileJump "+PARTS[i]);}
+        JPanel jump=DesktopUi.actions(jumps);jump.setName("profileParts");jump.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(jump,0);body.add(Box.createVerticalStrut(DesktopUi.M),1);
         JDialog dialog=DesktopUi.sheet(over!=null?over:app.frame,"My profile",scroll,foot,false);box[0]=dialog;
         if(backTo!=null)DesktopUi.head(dialog,backTo,dialog::dispose,"My profile",null);
         AtomicBoolean busy=new AtomicBoolean();
         Runnable refresh=()->{
-            app.disk.submit(()->new int[]{app.store.addresses().size(),app.store.owed(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING).size()},values->counts.setText((values[0]==1?"1 paired device":values[0]+" paired devices")+"  ·  "+(values[1]==0?"nothing waiting to send":values[1]==1?"1 delivery waiting":values[1]+" deliveries waiting")),app::failed);
-            if(!app.offline)app.connectivity.submit(Node::reachability,line->{if(dialog.isDisplayable())direct.setText(line.isEmpty()?" ":line);},e->{});
-            app.connectivity.submit(()->Node.hereLines(app.context),lines->{if(!dialog.isDisplayable())return;door.setText(lines.isEmpty()?" ":lines.get(0));travel.setText(lines.size()<2?" ":lines.get(1));},e->{});
+            app.disk.submit(()->new int[]{app.store.addresses().size(),app.store.owed(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING).size()},values->counts.setText((values[0]==1?Say.t("1 paired device"):Say.t("{0} paired devices",values[0]))+"  ·  "+(values[1]==0?Say.t("nothing waiting to send"):values[1]==1?Say.t("1 delivery waiting"):Say.t("{0} deliveries waiting",values[1]))),app::failed);
+            if(!app.offline)app.connectivity.submit(Node::reachability,line->{if(dialog.isDisplayable())direct.setText(line.isEmpty()?" ":Say.t(line));},e->{});
+            app.connectivity.submit(()->Node.hereLines(app.context),lines->{if(!dialog.isDisplayable())return;door.setText(lines.isEmpty()?" ":Say.t(lines.get(0)));travel.setText(lines.size()<2?" ":Say.t(lines.get(1)));},e->{});
             if(app.offline||!busy.compareAndSet(false,true))return;
             app.connectivity.submit(()->{
                 String called=Node.nameHere(app.context);var addresses=Node.addresses(app.context);String live=addresses.isEmpty()?"":addresses.get(0);
@@ -260,6 +269,52 @@ final class DesktopProfile {
         if(at!=null)SwingUtilities.invokeLater(()->showAt(scroll,body,at[0],at[1]));
     }
 
+    /** The part that holds the Integritas account: what Your Integritas account… and stamping with no key yet open. */
+    static final String STAMPING="Stamping";
+    /**
+     * My profile's parts in their order, each with its symbol and a line saying what it holds (the owner, 2026-10-21: "In the
+     * profile page, the sections need to be better delimited and labelled"; decision 231). The phone's are the same words.
+     */
+    static final String[] PARTS={"You","Your code","Connection","People and devices",STAMPING,"Text size","Security","Backup"};
+    static final String[] ICONS={"user","qr-code","wifi","users","stamp","type","lock","database-backup"};
+    static final String[] ABOUT={
+        "Your name, colour, picture and Parlons! address.",
+        "What another device scans to pair with this PC.",
+        "Whether this PC is connected, and its addresses.",
+        "The people and devices you share with, and your groups.",
+        "Your Integritas account, which stamps notes and files on Minima.",
+        "The size of everything in Mininotes, and what the pointer describes.",
+        "Whether your notebook on this PC is locked with a password.",
+        "One file holding every folder, note and attachment on this PC."};
+
+    /**
+     * A part on a card that stands out from the page: its symbol and name in the title role, the quiet line saying what it
+     * holds, a rule under them, then its own things.
+     */
+    static JPanel part(String heading,String icon,String about,JComponent inside) {
+        JPanel all=DesktopUi.column();
+        JLabel named=new JLabel(Say.t(heading),DesktopIcons.glyph(icon,22),SwingConstants.LEFT);named.setIconTextGap(10);
+        // The title role (DesktopUi.title), as a window's own name is.
+        named.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,20f));named.setForeground(DesktopUi.INK);named.setName("profilePart "+heading);
+        DesktopUi.add(all,named);DesktopUi.gap(all,4);
+        DesktopUi.Text said=DesktopUi.spread(about);said.setName("profileAbout "+heading);DesktopUi.add(all,said);DesktopUi.gap(all,DesktopUi.S+4);
+        JPanel rule=new JPanel(){@Override public Dimension getMaximumSize(){return new Dimension(Integer.MAX_VALUE,1);}};
+        rule.setBackground(DesktopUi.LINE);rule.setPreferredSize(new Dimension(1,1));DesktopUi.add(all,rule);DesktopUi.gap(all,DesktopUi.M);
+        DesktopUi.add(all,inside);
+        Color edge=DesktopUi.mix(DesktopUi.LINE,DesktopUi.INK,0.25f);
+        JPanel card=new JPanel(new BorderLayout()){
+            @Override protected void paintComponent(Graphics g0) {
+                Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setColor(DesktopUi.CARD);g.fillRoundRect(0,0,getWidth()-1,getHeight()-1,16,16);
+                g.setColor(edge);g.setStroke(new BasicStroke(1.2f));g.drawRoundRect(0,0,getWidth()-1,getHeight()-1,16,16);g.dispose();
+            }
+            @Override public Dimension getMaximumSize(){return new Dimension(Integer.MAX_VALUE,getPreferredSize().height);}
+        };
+        card.setOpaque(false);card.putClientProperty("ground",DesktopUi.CARD);card.putClientProperty("part",heading);card.setName("profileCard "+heading);
+        card.setBorder(BorderFactory.createEmptyBorder(DesktopUi.M+2,DesktopUi.L,DesktopUi.L,DesktopUi.L));card.add(all);card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return card;
+    }
+
     /** The part shown at the top of the page, as far as the page goes, and its field given the keyboard. */
     static void showAt(JScrollPane scroll,JComponent body,JComponent part,JComponent field) {
         scroll.validate();
@@ -275,8 +330,8 @@ final class DesktopProfile {
         state.setText(value.onlyMine?(value.address.isEmpty()?"Only between your devices · not on a network":"Only between your devices · no relay")
             :value.relays>0?"Connected · "+value.relays+(value.relays==1?" relay":" relays"):"Not connected: no relay has answered");
         if(!value.pairing.equals(qr.getClientProperty("pairing"))) {
-            if(value.pairing.isEmpty()){qr.setIcon(null);qr.setText("<html><div style='width:150px'>"+(value.onlyMine?"Your code appears here once this PC is on your home network.":"Your code appears here once this PC is connected.")+"</div></html>");}
-            else try{qr.setText("");qr.setIcon(new ImageIcon(DesktopQr.draw(Pairing.link(value.pairing),216)));}catch(Exception e){qr.setText("Could not draw QR code");return;}
+            if(value.pairing.isEmpty()){qr.setIcon(null);qr.setText("<html><div style='width:150px'>"+Say.t(value.onlyMine?"Your code appears here once this PC is on your home network.":"Your code appears here once this PC is connected.")+"</div></html>");}
+            else try{qr.setText("");qr.setIcon(new ImageIcon(DesktopQr.draw(Pairing.link(value.pairing),216)));}catch(Exception e){qr.setText(Say.t("Could not draw QR code"));return;}
             qr.putClientProperty("pairing",value.pairing);
         }
     }

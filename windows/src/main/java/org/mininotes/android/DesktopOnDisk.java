@@ -1225,7 +1225,7 @@ final class DesktopOnDisk {
                 @SuppressWarnings("unchecked") List<String> refused=(List<String>)got[1];
                 d.refresh();d.onDisk.soon();
                 for(NoteStore.Note n:made)d.sendSoon(n.id);
-                if(!refused.isEmpty()){d.status.setText(refused.get(0));return;}
+                if(!refused.isEmpty()){d.status.setText(Say.t(refused.get(0)));return;}
                 if(made.size()==1){d.open(made.get(0).id);d.status.setText(Say.t("{0} opened as a note",files.get(0).getFileName().toString()));}
                 else d.status.setText(Say.t("{0} Markdown files opened as notes",made.size()));
             },e->failed(d,e));

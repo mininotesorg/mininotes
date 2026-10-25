@@ -177,6 +177,11 @@ public class EnclosureTest {
         assertFalse(Enclosure.due(now,7,now+15*minute-1));assertTrue(Enclosure.due(now,7,now+15*minute));
         assertFalse(Enclosure.due(now,12,now+60*minute-1));assertTrue(Enclosure.due(now,12,now+60*minute));
         assertTrue("a clock put back",Enclosure.due(now,12,now-1));
+        // A fetch: a quarter minute after its first failure (decision 227), then as any file.
+        assertFalse(Enclosure.fetchDue(now,1,now+Enclosure.FIRST_AGAIN-1));assertTrue(Enclosure.fetchDue(now,1,now+Enclosure.FIRST_AGAIN));
+        assertTrue(Enclosure.fetchDue(0,0,now));
+        assertFalse(Enclosure.fetchDue(now,2,now+2*minute-1));assertTrue(Enclosure.fetchDue(now,2,now+2*minute));
+        assertTrue("a clock put back",Enclosure.fetchDue(now,1,now-1));
     }
 
     @Test public void theListIsSaidAgainOnlyAFewTimes() {

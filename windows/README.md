@@ -16,14 +16,22 @@ Windows x64, JDK 17, and internet access for the first dependency download:
 ```
 
 The script runs the shared and Windows tests and makes
-`dist/latest/Mininotes-Windows-0.4.015.zip` plus its SHA-256 checksum. Extract the whole
+`dist/latest/Mininotes-Windows-0.4.027.zip` plus its SHA-256 checksum. Extract the whole
 ZIP and run `Mininotes/Mininotes.exe`. Keep the runtime and app folders beside
 the executable. No Java installation is required to run this bundle.
 
-Android and Windows use the same version number, currently 0.4.015. Installation
+It also makes the installer, `dist/latest/Mininotes-Windows-<version>.msi` and its checksum
+(decision 235): per user, with no administrator rights, under `%LOCALAPPDATA%\Mininotes App`,
+and in Settings, Apps afterwards, where uninstalling keeps the notebook. It needs WiX Toolset 3.14:
+`WIX` set to its folder, or `tools\wix314` in your user folder. `-NoMsi` leaves it out.
+Its pages come from `windows/installer` (decision 237): the logo in place of WiX's artwork
+(`make-images.ps1` makes the two BMPs), no licence page, and Launch Mininotes, ticked, on the last
+page. `main.wxs` there is jpackage's own with those pages in it; its comments say what changed.
+
+Android and Windows use the same version number, currently 0.4.027. Installation
 and verification are recorded separately for each platform.
 
-This is an unsigned portable preview, not an installer or a published release.
+This is an unsigned preview, not a published release.
 The bundled runtime makes it substantially larger than the Android APK.
 
 In 0.3.029 the scrollbar handle remains visible without hover, on light or dark
@@ -100,7 +108,7 @@ switch a currently blocked older session safely:
 3. Exit the old app normally through **⋯ → Exit Mininotes** (or the tray's Exit).
    Closing its window may keep it running. Do not kill it or launch the new build
    to force a handover while writing is unpreserved.
-4. Open `dist/latest/Mininotes-Windows-0.4.015/Mininotes.exe` or the local
+4. Open `dist/latest/Mininotes-Windows-0.4.027/Mininotes.exe` or the local
    `dist/latest/Mininotes.lnk`. Paste a preserved oversized edit back into its
    intended note if needed. Wait for **Writing kept on this PC**, then use Recovery
    writing to reopen, export or shorten it. Retain the verified external copy.

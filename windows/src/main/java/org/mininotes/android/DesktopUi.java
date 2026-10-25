@@ -499,7 +499,7 @@ final class DesktopUi {
      */
     static void head(JDialog dialog,String backTo,Runnable back,String title,JComponent more) {
         JPanel top=(JPanel)dialog.getRootPane().getClientProperty("top");
-        top.removeAll();dialog.setTitle(title);
+        top.removeAll();dialog.setTitle(Say.t(title));
         if(backTo!=null) {
             // As a note's way back to Home is (the owner, 2026-10-18: "make sure we don't have these boxes cut on the left side,
             // don't put these back elements in a box, align this with what we have at the note level"): the arrow and the name,
@@ -528,6 +528,25 @@ final class DesktopUi {
         JButton b=button(text,action);b.putClientProperty(FlatClientProperties.BUTTON_TYPE,FlatClientProperties.BUTTON_TYPE_BORDERLESS);
         b.setForeground(QUIET);b.setFont(BODY.deriveFont(14f));b.setMargin(new Insets(2,6,2,6));b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         return b;
+    }
+    /**
+     * A link: words in the accent, the hand over them and underlined while it is there, opening a page or a place (the owner,
+     * 2026-10-21: "Make know more a clickable link and use the integritas.technology label"; decision 231). No frame and no
+     * ›, which says going into something of the app's own.
+     */
+    static JButton link(String text,Runnable open) {
+        JButton b=button(text,open);b.putClientProperty(FlatClientProperties.BUTTON_TYPE,FlatClientProperties.BUTTON_TYPE_BORDERLESS);
+        b.setContentAreaFilled(false);b.setForeground(ACCENT);b.setFont(BODY.deriveFont(14f));b.setMargin(new Insets(2,0,2,0));
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));b.putClientProperty("link",Boolean.TRUE);
+        b.addMouseListener(new MouseAdapter(){
+            @Override public void mouseEntered(MouseEvent e){b.setFont(underlined(b.getFont(),true));}
+            @Override public void mouseExited(MouseEvent e){b.setFont(underlined(b.getFont(),false));}
+        });
+        return b;
+    }
+    /** The same letters, underlined or not. */
+    static Font underlined(Font font,boolean on) {
+        return font.deriveFont(Map.of(java.awt.font.TextAttribute.UNDERLINE,on?java.awt.font.TextAttribute.UNDERLINE_ON:Integer.valueOf(-1)));
     }
     /**
      * Two views of one box, switched at its top, the one in view marked under its name (the owner, 2026-10-05: "it should
@@ -657,7 +676,7 @@ final class DesktopUi {
         JPanel body=column();add(body,note(message,360,INK,BODY));gap(body,12);
         ButtonGroup group=new ButtonGroup();java.util.List<JRadioButton> buttons=new java.util.ArrayList<>();
         for(Sharing.Level level:levels) {
-            JRadioButton one=new JRadioButton(level.words(),level==initial||initial==null&&buttons.isEmpty());one.setOpaque(false);
+            JRadioButton one=new JRadioButton(Say.t(level.words()),level==initial||initial==null&&buttons.isEmpty());one.setOpaque(false);
             one.setFont(BODY.deriveFont(Font.BOLD));one.setForeground(INK);one.setName(level.name());
             one.getAccessibleContext().setAccessibleName(level.words()+". "+level.does());
             group.add(one);buttons.add(one);add(body,one);

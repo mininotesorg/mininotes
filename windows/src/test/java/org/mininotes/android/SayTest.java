@@ -8,6 +8,12 @@ import java.util.*;
 public class SayTest {
     @After public void english(){Say.use("en");}
 
+    @Test public void aNoteWearsTheShortWordWhereALanguageHasOne() {
+        Say.use("fr");assertEquals("nouv.",Say.onNote("new"));assertEquals("nouveau",Say.t("new"));
+        Say.use("de");assertEquals("neu",Say.onNote("new"));
+        Say.use("en");assertEquals("new",Say.onNote("new"));
+    }
+
     @Test public void frenchIsReadFromTheAppsOwnListAndEnglishIsTheFallback() {
         Say.use("fr");
         assertEquals("fr",Say.language());

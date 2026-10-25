@@ -111,10 +111,12 @@ final class DesktopOpenList extends JPanel {
         JLabel name=new JLabel(DesktopHome.named(look));name.setFont(DesktopUi.BODY.deriveFont(front?Font.BOLD:Font.PLAIN,13f));name.setForeground(DesktopUi.INK);
         row.add(face,BorderLayout.WEST);row.add(name);
         row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        row.setToolTipText((one.kind==Overview.Kind.NOTE?"The note ":"The folder ")+DesktopHome.named(look));
+        row.setToolTipText(look.kind==NoteStore.Branch.Kind.TEMP?Say.t("Open Temp"):Say.t(one.kind==Overview.Kind.NOTE?"The note {0}":"The folder {0}",DesktopHome.named(look)));
         MouseAdapter hand=new MouseAdapter(){
             public void mouseClicked(MouseEvent e){if(SwingUtilities.isLeftMouseButton(e))pad.save(()->{
-                if(one.kind==Overview.Kind.COLLECTION){pad.showHome();pad.home.folder.openPlace(DesktopHome.recentPlace());pad.home.folder.into(look);}
+                // Temp, used lately (decision 229): the place itself.
+                if(look.kind==NoteStore.Branch.Kind.TEMP){pad.showHome();pad.home.folder.openPlace(DesktopHome.tempPlace(0));}
+                else if(one.kind==Overview.Kind.COLLECTION){pad.showHome();pad.home.folder.openPlace(DesktopHome.recentPlace());pad.home.folder.into(look);}
                 else pad.goTo(one);
             });}
             public void mouseEntered(MouseEvent e){row.putClientProperty("over",true);row.repaint();}

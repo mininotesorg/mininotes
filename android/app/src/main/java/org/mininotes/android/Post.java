@@ -107,6 +107,13 @@ final class Post {
          */
         final boolean contacts;
         static Landed contacts(){return new Landed(null,null,"",true,true,false,null,false,false,true);}
+        /**
+         * Stamps on Minima came from another device of yours, or learned more (decision 252): every line, box and icon showing
+         * them is drawn again, and those still waiting are looked for here too where this device has an Integritas key.
+         * {@code stamped} holds their fingerprints.
+         */
+        boolean stamps; java.util.Set<String> stamped=java.util.Collections.emptySet();
+        static Landed stamps(java.util.Set<String> hashes){Landed l=new Landed(null,null,"",true);l.stamps=true;l.stamped=java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(hashes));return l;}
         /** A note that arrived saying what it said already: nothing to tell, and the marks and the box to ask again. */
         static Landed people(String note){return new Landed(null,null,note,true,true);}
         /** Somebody left. That is worth saying, and whoever is looking at the list is looking at an old one. */
@@ -140,6 +147,16 @@ final class Post {
          */
         boolean message; String messageFrom="",messageSaid="",messageAddress="";
         static Landed message(String from,String said,String address){Landed l=new Landed(null,null);l.message=true;l.messageFrom=from==null?"":from;l.messageSaid=said==null?"":said;l.messageAddress=address==null?"":address;return l;}
+        /**
+         * Who it came from, by the name they go by here, and how many files came or are asked about: what the phone's one
+         * notification of what arrived counts by (decision 236), so it can say "3 notes updated, 1 file" in the person's
+         * language rather than repeat the last English line. Empty and 0 where nobody is known or no file came.
+         */
+        String from=""; int many;
+        Landed by(String who,int count){from=who==null?"":who;many=count;return this;}
+        /** A note shared with me for the first time, rather than one written in: counted as such. */
+        boolean newly;
+        Landed newly(){newly=true;return this;}
     }
 
     /**
@@ -1380,6 +1397,10 @@ final class Post {
             tellGroups(where,store,keys);
             sent(where,store,keys,store.applyGroups(),"given by a group, or taken away");
             sendGroups(where,store,keys);
+            // That it reads stamps on Minima, to the owner's own devices; and the card, where it changed (decision 252). See
+            // StampCard.
+            tellStamps(where,store,keys);
+            sendStamps(where,store,keys);
             // That it reads Parlons! addresses, to the owner's own devices, which are sent one only when the owner says so.
             // See Parlons.
             tellParlons(where,store,keys);
@@ -1720,22 +1741,38 @@ final class Post {
     private static void sayWeHave(final Context where,final NoteStore store,final Keys keys,final NoteStore.Contact them,
                                   final List<String> files) {
         if(where==null||them==null||files==null||files.isEmpty()||them.agreement.length==0)return;
-        final List<String> due=new ArrayList<>();
         final String who=fingerprint(them);
         if(who.isEmpty())return;
-        for(String id:files)if(!SAID_HAVE.contains(who+" "+id))due.add(id);
         // Never the reason a node is started, as with the rest of file work.
-        if(due.isEmpty()||!doesSpeak(where,them)||!Node.running())return;
+        if(!doesSpeak(where,them)||!Node.running())return;
+        // Taken before they go, not once they went: each costs a proof of work, and a list arriving every two seconds
+        // found the last ones still on their way and said them all again, without end (the owner, 2026-10-24, the PC's
+        // Home empty while a thousand "they have a file" came in from the Pro; decision 243).
+        final List<String> due=reserve(SAID_HAVE,who,files);
+        if(due.isEmpty())return;
         ANSWERS.execute(()->{
             int went=0;
-            for(String id:due) {
-                try{if(saidAboutFile(where,store,keys,them,id,Receipt.FILE_HERE)){SAID_HAVE.add(who+" "+id);went++;}}
-                catch(Exception notNow){break;}   // out of reach: the rest would only wait out the same door
+            for(int at=0;at<due.size();at++) {
+                boolean said=false;
+                try{said=saidAboutFile(where,store,keys,them,due.get(at),Receipt.FILE_HERE);}
+                catch(Exception notNow){release(SAID_HAVE,who,due.subList(at,due.size()));break;}   // out of reach: the rest would only wait out the same door; said again at their next list
+                if(said)went++;else release(SAID_HAVE,who,due.subList(at,at+1));
             }
             // Every one of them is here: what the count says is how many of those it was told of. Read the other way
             // round, "0 of 12" looked like a device that had none of the files it held.
             android.util.Log.i("Mininotes/Post",filesHere(due.size(),went));
         });
+    }
+
+    /** The files of a list not yet said or being said to this device, each marked as said as it is taken (see sayWeHave). */
+    static List<String> reserve(java.util.Set<String> said,String who,List<String> files) {
+        List<String> due=new ArrayList<>();
+        for(String id:files)if(id!=null&&said.add(who+" "+id))due.add(id);
+        return due;
+    }
+    /** Files that did not go after all: said again at the device's next list. */
+    static void release(java.util.Set<String> said,String who,List<String> files) {
+        for(String id:files)said.remove(who+" "+id);
     }
 
     /** The log line for {@link #sayWeHave}: how many of the files a list named are here, and how many of those were said. */
@@ -2245,7 +2282,7 @@ final class Post {
         if(carton.answer){speaks(where,from);answer(where,store,keys,from,opened.page,opened.revision,here!=null);}
         // A folder somebody else shared with me for the first time, or more of one that still waits: a question (decision 109).
         Object[] waits=here==null?null:store.waitsUnder(NoteStore.Branch.Kind.COLLECTION,here);
-        if(waits!=null)return Landed.waiting(waitingSaid(store,from,waits),(String)waits[1]);
+        if(waits!=null)return Landed.waiting(waitingSaid(store,from,waits),(String)waits[1]).by(from.name,0);
         return Landed.people(here==null?"":here);
     }
 
@@ -2346,12 +2383,12 @@ final class Post {
         // And that it waits here to be accepted, so their tick does not say "everybody has it" yet (see Asking).
         if(sleeve.answer&&did!=NoteStore.SLEEVE_NOT&&did!=NoteStore.SLEEVE_GONE&&store.waits(NoteStore.Branch.Kind.FILE,sleeve.id))
             sayWaits(where,store,keys,from,opened.page,opened.revision,NoteStore.Branch.Kind.FILE,sleeve.id);
-        if(did==NoteStore.SLEEVE_GONE)return Landed.left(from.name+" deleted a file they shared with you.","");
+        if(did==NoteStore.SLEEVE_GONE)return Landed.left(from.name+" deleted a file they shared with you.","").by(from.name,0);
         // A file somebody else shared with me on its own, for the first time: it waits, coming and once here (decision 109).
         if(did==NoteStore.SLEEVE_FETCH&&store.waits(NoteStore.Branch.Kind.FILE,sleeve.id))
-            return Landed.waiting(FirstShare.title(List.of(from.name),1,sleeve.name),sleeve.id);
+            return Landed.waiting(FirstShare.title(List.of(from.name),1,sleeve.name),sleeve.id).by(from.name,0);
         // New here and not waiting, from another device of mine: said all the same, once.
-        if(did==NoteStore.SLEEVE_FETCH)return Landed.shared(Say.t("{0} shared “{1}” with you",from.name,sleeve.name),sleeve.id);
+        if(did==NoteStore.SLEEVE_FETCH)return Landed.shared(Say.t("{0} shared “{1}” with you",from.name,sleeve.name),sleeve.id).by(from.name,0);
         return Landed.people("");
     }
 
@@ -2510,7 +2547,7 @@ final class Post {
         android.util.Log.i("Mininotes/Post","they refused a "+said.scope.name().toLowerCase(java.util.Locale.ROOT)
             +(name==null?" - which is not here, so it changes nothing":off?", and are off it":", and were off it already"));
         if(name==null)return new Landed(null,null);
-        return Landed.left(FirstShare.notice(from.name,name,said.words),id);
+        return Landed.left(FirstShare.notice(from.name,name,said.words),id).by(from.name,0);
     }
 
     /** Devices whose build has said it reads a refusal, by the fingerprint of their key: kept, across restarts. */
@@ -2905,6 +2942,140 @@ final class Post {
         groups("a groups card taken in"+(took?"":", nothing new")+(moved.isEmpty()?"":", "+moved.size()+" thing(s) given or taken away"));
         return took||!moved.isEmpty()?Landed.groups():new Landed(null,null);
     }
+
+    // ---- stamps on Minima, the same on every device of the owner's: see StampCard (decision 252) -------------------------
+
+    /** When each device was last told this run that this build reads stamps, by fingerprint, and whether it went. */
+    private static final java.util.Map<String,long[]> TOLD_STAMPS=new java.util.concurrent.ConcurrentHashMap<>();
+    /** The last stamps card each device was sent this run, by fingerprint, as a hash: sent again only when it changes. */
+    private static final java.util.Map<String,String> STAMP_CARDS=new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** A device whose build has said it reads stamps, kept across restarts. Whether it is the first time. */
+    private static boolean stampsHeard(Context where,String fingerprint) {
+        if(where==null||fingerprint==null||fingerprint.isEmpty())return false;
+        android.content.SharedPreferences kept=where.getSharedPreferences("post",Context.MODE_PRIVATE);
+        java.util.Set<String> all=new java.util.HashSet<>(kept.getStringSet("stamps",new java.util.HashSet<String>()));
+        if(!all.add(fingerprint))return false;
+        kept.edit().putStringSet("stamps",all).apply();
+        return true;
+    }
+
+    /**
+     * Whether a device's build has said it reads stamps ({@link Receipt#STAMPS}), and with them a key card: neither is ever
+     * sealed for one that has not.
+     */
+    static boolean readsStamps(Context where,NoteStore.Contact them) {
+        if(where==null||them==null)return false;
+        String who=fingerprint(them);
+        return !who.isEmpty()&&where.getSharedPreferences("post",Context.MODE_PRIVATE)
+            .getStringSet("stamps",new java.util.HashSet<String>()).contains(who);
+    }
+
+    /**
+     * Who a stamps card goes to: every device paired here and marked yours, whose build has said it reads stamps and that
+     * counts this one as its owner's too (see {@link StampCard#goesTo}). A build from before, and anybody else's device, never.
+     */
+    static List<NoteStore.Contact> stampsGoTo(Context where,NoteStore store) {
+        List<NoteStore.Contact> own=new ArrayList<>();
+        for(NoteStore.Contact them:store.addresses())
+            if(them.paired()&&them.agreement.length>0&&sendsTo(store,them)&&StampCard.goesTo(them.mine,readsStamps(where,them),mineThere(where,fingerprint(them))))own.add(them);
+        return own;
+    }
+
+    /** "This build reads stamps", said to each of the owner's own devices, as {@link #tellGroups} says its own. */
+    private static void tellStamps(Context where,NoteStore store,Keys keys) {
+        long now=System.currentTimeMillis();
+        for(NoteStore.Contact them:store.addresses()) {
+            String who=fingerprint(them);
+            if(who.isEmpty()||!them.mine||!them.paired()||!sendsTo(store,them)||!(doesSpeak(where,them)||readsStamps(where,them)))continue;
+            long[] told=told(where,TOLD_STAMPS,"stamps",who);
+            if(told!=null&&(told[1]==1||now>=told[0]&&now-told[0]<TELL_AGAIN))continue;
+            if(resting(who))continue;
+            tellStamps(where,store,keys,them);
+        }
+    }
+
+    private static void tellStamps(Context where,NoteStore store,Keys keys,NoteStore.Contact them) {
+        String who=fingerprint(them);
+        // Never the reason a node is started: this is said when the node is up for everything else.
+        if(who.isEmpty()||!Node.running())return;
+        long[] told={System.currentTimeMillis(),0};
+        TOLD_STAMPS.put(who,told);
+        try {
+            MaximaNode node=Node.node(where);
+            if(node==null)return;
+            byte[] sealed=Envelope.seal(new byte[16],0,System.currentTimeMillis(),Receipt.wrap(Receipt.STAMPS),
+                keys.signing(),Keys.publicKey(them.agreement));
+            if(handSaying(where,store,keys,node,them,sealed)){told[1]=1;said(where,"stamps",who,"1");}
+            stamps("said this build reads stamps"+(told[1]==1?"":": not taken"));
+        } catch(Exception notNow){/* tried again in a while */}
+    }
+
+    /** The stamps card as it is here now: every stamp kept, the newest first, as many as one envelope takes. */
+    static byte[] stampsCard(NoteStore store){return StampCard.wrap(store.stampsCard());}
+
+    /**
+     * The stamps card, sent to every device of the owner's that reads one, where it changed since it last went: a stamp made
+     * or found on Minima here, or one that came from another device. Blocking.
+     */
+    static void sendStamps(Context where,NoteStore store,Keys keys) {
+        List<NoteStore.Contact> own=stampsGoTo(where,store);
+        if(own.isEmpty()||!Node.running())return;
+        try {
+            List<StampCard.Row> rows=store.stampsCard();
+            // Nothing stamped here: nothing to say, and a device with none has nothing to hear.
+            if(rows.isEmpty())return;
+            byte[] plain=StampCard.wrap(rows);
+            String hash=Courier.hex(java.security.MessageDigest.getInstance("SHA-256").digest(plain));
+            MaximaNode node=Node.node(where);
+            if(node==null)return;
+            int went=0,missed=0;
+            for(NoteStore.Contact them:own) {
+                String who=fingerprint(them);
+                if(hash.equals(STAMP_CARDS.get(who))||resting(who))continue;
+                byte[] sealed=Envelope.seal(new byte[16],StampCard.newest(rows),System.currentTimeMillis(),plain,keys.signing(),Keys.publicKey(them.agreement));
+                boolean handed;
+                // One device out of reach is not a card kept from the rest: it goes again at the next round.
+                try{handed=handSaying(where,store,keys,node,them,sealed);}catch(Exception noWay){missed++;continue;}
+                if(handed){STAMP_CARDS.put(who,hash);went++;}else missed++;
+            }
+            if(went+missed>0)stamps("stamps card: "+StampCard.count(plain)+" of "+rows.size()+" row(s) sent to "+went+" device(s)"
+                +(missed>0?", "+missed+" out of reach":""));
+        } catch(Exception notNow) {
+            stamps("could not send a stamps card: "+Unsent.reason(notNow));
+        }
+    }
+
+    /**
+     * A stamp was made here, or found on Minima, or learned more (decision 252): the card goes to the owner's other devices
+     * now, off the caller's thread, and not only at the next round. Never the reason a node is started. Each app calls it
+     * after it keeps a stamp and when its watch hears one landed.
+     */
+    static void stampsChanged(Context where,NoteStore store,Keys keys) {
+        if(where==null||store==null||keys==null)return;
+        ANSWERS.execute(()->{if(Node.running())sendStamps(where,store,keys);});
+    }
+
+    /**
+     * A stamps card from another device of the owner's, taken in (see NoteStore#stampsArrived): what is new kept, what is
+     * known learning only what it lacks. From a device not marked as yours and paired here, nothing changes. Where anything
+     * did, the card goes on to the owner's other devices, and the screens draw the stamps again.
+     */
+    private static Landed stampsArrived(Context where,NoteStore store,Keys keys,NoteStore.Contact from,Envelope.Opened opened) {
+        if(from==null||!from.mine||!from.paired()){stamps("a stamps card from a device that is not the owner's: nothing changes");return new Landed(null,null);}
+        List<StampCard.Row> rows=StampCard.open(opened.text);
+        if(rows==null){stamps("a stamps card that could not be read");return new Landed(null,null);}
+        // It sent one, so it reads them.
+        stampsHeard(where,fingerprint(from));
+        NoteStore.StampsTaken took=store.stampsArrived(rows);
+        stamps("stamps card from one of mine: "+rows.size()+" row(s), "+took.added()+" new, "+took.updated()+" updated");
+        if(!took.changed())return new Landed(null,null);
+        stampsChanged(where,store,keys);
+        return Landed.stamps(took.hashes());
+    }
+
+    /** One line for the log about stamps: counts, never a name, a fingerprint or a key. */
+    private static void stamps(String said){android.util.Log.i("Mininotes/Post",said);}
 
     // ---- a person's Parlons! address, to the devices of the owner's they choose: see Parlons (decision 101) -----------
 
@@ -3423,17 +3594,31 @@ final class Post {
         byte[] plain=KeyCard.wrap(new KeyCard.Card(name,value,decided));
         List<String> sent=new ArrayList<>(),notReached=new ArrayList<>();
         MaximaNode node;try{node=Node.node(where);}catch(Exception notNow){node=null;}
+        int later=0;
         for(NoteStore.Contact them:store.addresses()) {
             if(!chosen.contains(them.address)||!them.mine||!them.paired()||them.agreement.length==0)continue;
+            // A build that has not said it reads a key card would keep these bytes as a note (decision 252): not sealed for
+            // it, and said as not reached; it is sent the key once it says so (see Receipt#STAMPS).
+            if(!takesKey(where,them)){notReached.add(them.name);later++;continue;}
             boolean went=false;
             if(node!=null)try{went=hand(where,store,keys,node,them,Envelope.seal(new byte[16],decided,System.currentTimeMillis(),plain,keys.signing(),Keys.publicKey(them.agreement)));}
                 catch(Exception noWay){went=false;}
             (went?sent:notReached).add(them.name);
         }
-        contacts("a key handed to "+sent.size()+" of the owner's devices, "+notReached.size()+" out of reach");
+        contacts("a key handed to "+sent.size()+" of the owner's devices, "+(notReached.size()-later)+" out of reach"
+            +(later>0?", "+later+" waiting for a build that reads it":""));
         String said=sent.isEmpty()?"":Say.t("Sent to {0}",String.join(", ",sent));
         if(!notReached.isEmpty())said=(said.isEmpty()?"":said+". ")+Say.t("Not reached: {0}. Send it again when it is open.",String.join(", ",notReached));
         return said;
+    }
+
+    /**
+     * Whether a key card may be sealed for this device: one of the owner's, paired, whose build has said it reads stamps
+     * ({@link Receipt#STAMPS}), the first number said only by a build that also reads a key card (decision 252). Before, a
+     * key card went to any device of the owner's chosen, and a build older than 0.4.006 kept it as a note.
+     */
+    static boolean takesKey(Context where,NoteStore.Contact them) {
+        return them!=null&&them.mine&&them.paired()&&them.agreement.length>0&&readsStamps(where,them);
     }
 
     /** When a key was set here, kept beside it, so an older one arriving changes nothing. */
@@ -3760,7 +3945,7 @@ final class Post {
         if(now==null)return new Landed(null,null);
         drop(state==Drop.FETCHING?"offer taken at once, from one of your devices: fetching":"offer put to you: waiting for Accept or Refuse");
         if(state==Drop.FETCHING){travelSoon(where,store,keys);return Landed.transfer(null,null);}
-        return Landed.transfer(Drop.asking(from.name,files.size(),now.bytes())+".",now.id);
+        return Landed.transfer(Drop.asking(from.name,files.size(),now.bytes())+".",now.id).by(from.name,files.size());
     }
 
     /** What the device a sending went to says about it: all here, refused, or its files cannot be had from where they are. */
@@ -3783,7 +3968,7 @@ final class Post {
         store.settle(one.id,next);
         // Finished with, either way: the copies kept to send it, and its pieces, go.
         for(String pieces:store.sentAndDone(one.id))Node.forget(where,pieces);
-        return Landed.transfer(Drop.answered(from.name,one.files.size(),next)+".",null);
+        return Landed.transfer(Drop.answered(from.name,one.files.size(),next)+".",null).by(from.name,0);
     }
 
     /** An answer about a sending, to the device at the other end of it. The envelope names it where it names a note. */
@@ -3901,7 +4086,7 @@ final class Post {
         store.settle(now2.id,Drop.HERE);
         drop("every file is here: "+Drop.files(now2.files.size())+", "+now2.bytes()+" bytes");
         try{sayAboutSending(where,store,keys,them,one.wire,now2.revision,Receipt.DROP_HAVE);}catch(Exception notNow){/* said again when they offer again */}
-        tell(Landed.transfer(Drop.arrived(now2.name,now2.files.size())+".",null));
+        tell(Landed.transfer(Drop.arrived(now2.name,now2.files.size())+".",null).by(now2.name,now2.files.size()));
     }
 
     /**
@@ -4147,7 +4332,7 @@ final class Post {
                 android.util.Log.i("Mininotes/Post","they have left a "+leftAt.name().toLowerCase(java.util.Locale.ROOT)
                     +(any?"":" - which they were not on here, so it changes nothing"));
                 if(!any)return new Landed(null,null);
-                return Landed.left(from.name+" unfollowed a "+(leftAt==Sharing.Scope.PAGE?"note":leftAt==Sharing.Scope.FILE?"file":"folder")+".",id);
+                return Landed.left(from.name+" unfollowed a "+(leftAt==Sharing.Scope.PAGE?"note":leftAt==Sharing.Scope.FILE?"file":"folder")+".",id).by(from.name,0);
             }
             Sharing.Scope offAt=Receipt.removedScope(about);
             if(offAt!=null) {
@@ -4158,7 +4343,7 @@ final class Post {
                     +(any?"":" - which changes nothing here"));
                 if(!any)return new Landed(null,null);
                 return Landed.left(from.name+" removed you from a "+(offAt==Sharing.Scope.PAGE?"note":offAt==Sharing.Scope.FILE?"file":"folder")
-                    +". Your copy stays on "+here()+".",id);
+                    +". Your copy stays on "+here()+".",id).by(from.name,0);
             }
             if((about==Receipt.COLLECTED||about==Receipt.COLLECTED_ANSWER)&&!brought) {
                 // They have what was being carried for them: that note, or that answer, up to that revision.
@@ -4339,6 +4524,22 @@ final class Post {
                 groups("heard their build reads groups"+(first?"":", as it said before")+(back?"; said it back":""));
                 return new Landed(null,null);
             }
+            if(about==Receipt.STAMPS) {
+                // A build that reads stamps, and says so: heard as groups are, and said back to one of the owner's devices.
+                // Said back means it is just started, so the card goes again; and the first time, the Integritas key too
+                // where the owner chose this device for it, since no key card went to it before it said this (decision 252).
+                String who=fingerprint(from);
+                boolean first=stampsHeard(where,who);
+                long[] told=TOLD_STAMPS.get(who);
+                boolean back=from.mine&&Drop.sayBack(told==null?0:told[0],System.currentTimeMillis());
+                final NoteStore.Contact them=from;
+                if(back)ANSWERS.execute(()->tellStamps(where,store,keys,them));
+                if(first||back){STAMP_CARDS.remove(who);ANSWERS.execute(()->sendStamps(where,store,keys));}
+                if(first&&from.mine&&keyGoesTo(where,Integritas.KEY).contains(from.address)&&!store.secret(Integritas.KEY).isEmpty())
+                    ANSWERS.execute(()->{if(Node.running())sendKey(where,store,keys,Integritas.KEY,java.util.Collections.singleton(them.address));});
+                stamps("heard their build reads stamps"+(first?"":", as it said before")+(back?"; said it back":""));
+                return new Landed(null,null);
+            }
             if(about==Receipt.PARLONS) {
                 // A build that reads Parlons! addresses, and says so: heard as groups are, and said back to one of the
                 // owner's devices. Nothing waits for it: an address goes only when the owner saves one.
@@ -4404,17 +4605,22 @@ final class Post {
                     +(believed?"":" - which this phone never sent, so it changes nothing"));
                 return new Landed(null,null,id,believed);
             }
+            // Who a device belongs to, from that device (decision 163): see AboutMe. It starts with the same four bytes as a
+            // card of persons, which was read first and took every one of these for a broken one; so it is known by reading it
+            // whole, before (decision 252). Read before a note is too, never carried.
+            if(AboutMe.isCard(opened.text)&&AboutMe.open(opened.text)!=null)return brought?new Landed(null,null):aboutArrived(where,store,from,opened);
             // A card from another device of the owner's: see Persons. Known by its first four bytes and read before
             // a note is, which it would otherwise be taken for; never something carried, which is only notes and answers.
             if(Persons.isCard(opened.text))return brought?new Landed(null,null):cardArrived(where,store,keys,from,opened);
             // A groups card from another device of the owner's: see Groups. Read before a note is too, and never carried.
             if(Groups.isCard(opened.text))return brought?new Landed(null,null):groupsArrived(where,store,keys,from,opened);
+            // The stamps on Minima from another device of the owner's (decision 252): see StampCard. Read before a note is too,
+            // never carried.
+            if(StampCard.isCard(opened.text))return brought?new Landed(null,null):stampsArrived(where,store,keys,from,opened);
             // A person's Parlons! address from another device of the owner's: see Parlons. Read before a note is too, never carried.
             if(Parlons.isCard(opened.text))return brought?new Landed(null,null):parlonsArrived(where,store,from,opened);
             // A person's own picture, from them (decision 158): see Face. Read before a note is too, never carried.
             if(Face.isCard(opened.text))return brought?new Landed(null,null):faceArrived(where,store,from,opened);
-            // Who a device belongs to, from that device (decision 163): see AboutMe. Read before a note is too, never carried.
-            if(AboutMe.isCard(opened.text))return brought?new Landed(null,null):aboutArrived(where,store,from,opened);
             // A key for a service, from another device of the owner's (decision 210): see KeyCard. Read before a note is too, never carried.
             if(KeyCard.isCard(opened.text))return brought?new Landed(null,null):keyArrived(store,from,opened);
             // The name we pick for a person, from another device of the owner's: see Called. Read before a note is too.
@@ -4529,15 +4735,16 @@ final class Post {
             Object[] waits=store.waitsUnder(NoteStore.Branch.Kind.PAGE,id);
             // And that it waits here to be accepted, so their tick does not say "everybody has it" yet (see Asking).
             if(waits!=null&&parcel.answer)sayWaits(where,store,keys,from,opened.page,opened.revision,NoteStore.Branch.Kind.PAGE,id);
-            if(waits!=null)return Landed.waiting(said.what==Arriving.What.NEW?waitingSaid(store,from,waits):null,(String)waits[1]);
+            if(waits!=null)return Landed.waiting(said.what==Arriving.What.NEW?waitingSaid(store,from,waits):null,(String)waits[1]).by(from.name,0);
             // Nothing in it changed. The marks and the box are asked again, because who may do what can have.
             if(same&&said.what!=Arriving.What.MERGED)return Landed.people(id);
             switch(said.what) {
-                case NEW: return new Landed(from.name+" shared a note with you.",null,id);
-                case NEWER: return new Landed(from.name+" updated a note.",null,id);
+                // In the person's language (decision 236): the line is said on the phone as it is.
+                case NEW: return new Landed(Say.t("{0} shared a note with you.",from.name),null,id).by(from.name,0).newly();
+                case NEWER: return new Landed(Say.t("{0} updated a note.",from.name),null,id).by(from.name,0);
                 case MERGED: return new Landed(said.keepTheirs
-                    ? from.name+" wrote in the same place you did. Both are in the note."
-                    : from.name+" wrote in a note you had also written in. Both are in it.",null,id);
+                    ? Say.t("{0} wrote in the same place you did. Both are in the note.",from.name)
+                    : Say.t("{0} wrote in a note you had also written in. Both are in it.",from.name),null,id).by(from.name,0);
                 default: return new Landed(null,null);
             }
         } catch(Exception e) {

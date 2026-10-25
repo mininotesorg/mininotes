@@ -78,7 +78,7 @@ final class Node {
     static void roundNow(){lookAfter();}
 
     private static MaximaNode node;
-    private static boolean tried;
+    private static volatile boolean tried;
     private static java.util.concurrent.ScheduledExecutorService keeper;
     /** How many rounds of upkeep there have been. Only the upkeep thread touches it. */
     private static int beats;
@@ -173,10 +173,15 @@ final class Node {
      * nothing written in it went anywhere. The node is made to be used from several threads at once; only
      * the making of it has to happen one at a time.
      */
-    private static synchronized MaximaNode started(Context where) throws Exception {
-        start(where);
-        return node;
+    private static MaximaNode started(Context where) throws Exception {
+        // Its own lock, not the class's: making it waits on relays for seconds, and the screen reads the class's
+        // fields as it comes back (near, the status line). Held through that, the screen froze and Android said
+        // Mininotes was not responding, on the Pro on 2026-10-25, right after the screen was drawn again.
+        synchronized(MAKING){start(where);}
+        synchronized(Node.class){return node;}
     }
+    /** Held only while the node is being made (see {@link #started}). */
+    private static final Object MAKING=new Object();
 
     /**
      * Who to tell when something arrives for this app. Set once, before anything is sent, so a reply to
@@ -419,21 +424,26 @@ final class Node {
      * lets things go when its shelf is full, and this is the copy it can be put back from. The shelf is as big
      * as everything a pad may hold in files, since that is the most that could ever be sent up.
      */
-    static synchronized com.eurobuddha.maxima.core.media.MediaService media(Context where) {
-        if(media!=null)return media;
+    static com.eurobuddha.maxima.core.media.MediaService media(Context where) {
+        synchronized(Node.class){if(media!=null)return media;}
+        // Started outside the class's lock, which the screen needs (see started).
         MaximaNode up=node(where);
         if(up==null)return null;
-        if(blobs==null){blobs=shelf(where);up.setLocalBlobs(blobs);}
-        media=new com.eurobuddha.maxima.core.media.MediaService(up,blobs);
-        return media;
+        synchronized(Node.class) {
+            if(media!=null)return media;
+            if(blobs==null){blobs=shelf(where);up.setLocalBlobs(blobs);}
+            media=new com.eurobuddha.maxima.core.media.MediaService(up,blobs);
+            return media;
+        }
     }
 
     /**
      * This device's own shelf of pieces, which its door hands out: where a file offered only from here is kept,
      * with nothing sent up (see {@link Drop}). Null only where the node could not be started.
      */
-    static synchronized com.eurobuddha.maxima.core.store.BlobStore blobs(Context where) {
-        return media(where)==null?null:blobs;
+    static com.eurobuddha.maxima.core.store.BlobStore blobs(Context where) {
+        if(media(where)==null)return null;
+        synchronized(Node.class){return blobs;}
     }
 
     private static com.eurobuddha.maxima.core.store.BlobStore shelf(Context where) {
@@ -694,8 +704,9 @@ final class Node {
         made.setStore(new FileStore(new File(where.getFilesDir(),"node")));
         made.setName(nameHere(where));
         // The shelf before the door, because the door is handed it as it opens and cannot be given it after.
-        blobs=shelf(where);
-        made.setLocalBlobs(blobs);
+        com.eurobuddha.maxima.core.store.BlobStore shelf=shelf(where);
+        synchronized(Node.class){blobs=shelf;}
+        made.setLocalBlobs(shelf);
         door=open(where,made);
         // The owner's relays first, then - where the public ones are on - the shipped list as the ground
         // discovery starts from, never the whole of it: a relay that answers gossips its own, and the pool keeps
@@ -708,27 +719,30 @@ final class Node {
         android.util.Log.i("Mininotes/Node","attached to "+attached+" relays ("+chosen.own().size()+" of the owner's kept, public relays "
             +(chosen.publicOn()?"on":"off")+(onlyMine?", only between the owner's devices":"")+"), holding "+made.myAddresses().size()+" address(es)");
         choice=chosen;
-        node=made;
-        // Which road things last went by to each device, kept for People and devices as it was last run; and who is on this
-        // network now, which a file's list or sleeve asks before saying a door that only this house can reach (decision 96).
-        SharedPreferences routes=where.getSharedPreferences("node",Context.MODE_PRIVATE);
-        Routes.keptWas(routes.getString("routes",""));
-        Routes.keep=said->routes.edit().putString("routes",said).apply();
-        Routes.nearNow=them->them!=null&&them.contact!=null&&!them.contact.trim().isEmpty()&&made.lanAddressFor(them.contact.trim())!=null;
-        Nearby local=new Nearby(made,made::directPort,"0.0.0.0",Direct.PORT);
-        local.onMet(key->metHere(made,key));
-        boolean hears=door>0&&local.open();
-        nearby=local;
-        if(hears)local.announce();
-        android.util.Log.i("Mininotes/Node","door "+(door>0?"open":"could not open")
-            +(hears?", hearing the local network":", not hearing the local network"));
-        if(A_PC&&door>0) {
-            reachable(made);
-            // The PC keeps what comes for its owner's phones, and they collect it on the same door.
-            Home.Host here=new Home.Host(made.publicKeyHex());here.open();host=here;
+        // What the others read under the class's lock is given them under it, once the relays are behind us.
+        synchronized(Node.class) {
+            node=made;
+            // Which road things last went by to each device, kept for People and devices as it was last run; and who is on this
+            // network now, which a file's list or sleeve asks before saying a door that only this house can reach (decision 96).
+            SharedPreferences routes=where.getSharedPreferences("node",Context.MODE_PRIVATE);
+            Routes.keptWas(routes.getString("routes",""));
+            Routes.keep=said->routes.edit().putString("routes",said).apply();
+            Routes.nearNow=them->them!=null&&them.contact!=null&&!them.contact.trim().isEmpty()&&made.lanAddressFor(them.contact.trim())!=null;
+            Nearby local=new Nearby(made,made::directPort,"0.0.0.0",Direct.PORT);
+            local.onMet(key->metHere(made,key));
+            boolean hears=door>0&&local.open();
+            nearby=local;
+            if(hears)local.announce();
+            android.util.Log.i("Mininotes/Node","door "+(door>0?"open":"could not open")
+                +(hears?", hearing the local network":", not hearing the local network"));
+            if(A_PC&&door>0) {
+                reachable(made);
+                // The PC keeps what comes for its owner's phones, and they collect it on the same door.
+                Home.Host here=new Home.Host(made.publicKeyHex());here.open();host=here;
+            }
+            keeper=java.util.concurrent.Executors.newSingleThreadScheduledExecutor(work->{
+                Thread one=new Thread(work,"mininotes-node-upkeep");one.setDaemon(true);return one;});
         }
-        keeper=java.util.concurrent.Executors.newSingleThreadScheduledExecutor(work->{
-            Thread one=new Thread(work,"mininotes-node-upkeep");one.setDaemon(true);return one;});
         next();
     }
 

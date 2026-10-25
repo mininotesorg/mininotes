@@ -307,7 +307,7 @@
 ? ou mettre ma cle api integritas
 ? ce que j'ai horodate
 ! Horodater sur Minima, dans le menu d'un fichier ou d'une note, enregistre l'empreinte du fichier (jamais le fichier) sur la blockchain Minima avec la date, par votre propre compte Integritas. Plus tard, Vérifier sur Minima retrouve cet enregistrement et donne un rapport PDF, qui prouve que le fichier existait alors, sans changement : une seule lettre changée donne une autre empreinte.
-! Reliez votre compte une fois dans Mon profil, sous Integritas : collez la clé API de votre profil sur integritas.technology. Elle est gardée dans votre carnet sur l'appareil, verrouillée avec lui, et envoyée seulement à Integritas. Dans le menu des pièces jointes, vous pouvez horodater plusieurs fichiers à la fois.
+! Reliez votre compte une fois dans Mon profil, sous Horodatage : collez la clé API de votre profil sur integritas.technology. Elle est gardée dans votre carnet sur l'appareil, verrouillée avec lui, et envoyée seulement à Integritas. Dans le menu des pièces jointes, vous pouvez horodater plusieurs fichiers à la fois.
 @ INTEGRITAS
 @ STAMPED
 

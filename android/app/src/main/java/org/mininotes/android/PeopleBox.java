@@ -244,7 +244,7 @@ final class PeopleBox {
     }
 
     /** Small things in a row that goes on to the next line when it runs out of width, as words do. */
-    private static final class Flow extends ViewGroup {
+    static final class Flow extends ViewGroup {
         private final int gap;
         Flow(android.content.Context where,int gap){super(where);this.gap=gap;}
         @Override protected void onMeasure(int wide,int high) {

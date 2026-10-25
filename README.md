@@ -8,6 +8,10 @@ travels sealed end to end over the Minima network, or straight from device to de
 
 <!-- not in the app -->
 
+[中文](README.zh.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) ·
+[Português](README.pt.md) · [Italiano](README.it.md) · [日本語](README.ja.md) · [Русский](README.ru.md) ·
+[हिन्दी](README.hi.md) · [فارسی](README.fa.md)
+
 ## Contents
 
 1. [What's new](#1-whats-new)
@@ -39,12 +43,64 @@ travels sealed end to end over the Minima network, or straight from device to de
 
 Newest first. Each version is the same on the phone and the PC unless it says otherwise.
 
-### 0.4.010 (coming)
+### 0.4.024 to 0.4.027
+
+- **Stamp on Minima…** is one line in a note's or a file's menu, saying how far its stamp is, and opens one window
+  with everything: stamping, looking for it on Minima, verifying again, the versions stamped before, and comparing a
+  file with a fingerprint. The Integritas PDF report can be attached to the note, or kept beside the file.
+- Stamps go to your other devices: something stamped on the phone is listed on the PC, and the other way round.
+- A stamped file wears a small stamp on its icon.
+- *Compare with a fingerprint…*: paste the SHA-256 you were given for a file and see at once whether it is the same
+  file. Nothing leaves the device and no account is needed.
+- What Integritas answers is said in your language, and when it does not answer at once it is asked again.
+- On the PC, the words of every screen, button and tip are in your language; a new notebook's first folders are named
+  in it too. In French, a note that is new wears *nouv.*
+- The phone no longer stops responding when its screen is drawn again while it is still reaching the relays.
+
+### 0.4.021 to 0.4.023
+
+- A note's tabs are put in another order by dragging them on the PC, or holding and carrying them on the phone; their
+  menu also has *Move left* and *Move right*.
+- The language is asked at each start until one is confirmed; on the phone a tap on a language is enough.
+- Each app presents the other: *Mininotes on your phone…* on the PC, *Mininotes on your PC…* on the phone, with a
+  code to scan.
+- The Windows installer shows the Mininotes logo and can start Mininotes when it finishes.
+- A note started in Temp stays in Temp even if the screen is drawn again before its first word.
+- Devices no longer tell each other again and again that they have a file, which kept them busy.
+
+### 0.4.019 to 0.4.020
+
+- A new install asks its language first, and its README and first note are written in it. README is in eleven
+  languages.
+- On the PC, Ctrl+V on Home, in a folder or in Temp keeps the picture or the files on the clipboard there.
+- On the PC, an installer (MSI): no administrator rights, Mininotes in Settings, Apps, and *Uninstall Mininotes…*
+  in the menu, which offers a backup and lets you keep your notes or not. After 30 days without a backup, Mininotes
+  reminds you.
+- On the PC, lines with bold, italic or links are no longer drawn over one another.
+- On the phone, what arrives while Mininotes is closed is gathered in one notification.
+- *Stamped on Minima…* lists everything stamped, with a + to stamp something more.
+
+### 0.4.016 to 0.4.018
+
+- A note's stamp covers its title as well as its text.
+- Temp is listed in Recent when you use it.
+- Text pasted from other apps keeps its line breaks.
+- A picture put in Temp reaches your other devices sooner.
+
+### 0.4.011 to 0.4.015
+
+- On the phone, Settings, *Keyboard learns from my notes*: on, the keyboard's voice typing works in notes.
+- The Integritas key goes to the devices you choose. A note's *This note* menu has *Stamp on Minima…*, a stamped
+  file is marked, and a stamp's details link to the Minima Explorer.
+- Less work at each start: devices no longer repeat everything to each other.
+- The phone listens again by itself after it restarts or after an update.
+
+### 0.4.010
 
 - *Read me* is now **README**: on Home and on GitHub, one and the same text, this one. A README nobody changed is
   written again by itself when a new version brings a new one; one you wrote in stays as you made it.
 
-### 0.4.008 to 0.4.009 (coming)
+### 0.4.008 to 0.4.009
 
 - A **Photos** album folder on Home by default: your pictures in a grid to browse, each opened large with previous and
   next.
@@ -125,8 +181,23 @@ sha256sum -c Mininotes-<version>.apk.sha256
 Android asks whether to allow installing from wherever you downloaded it; that permission can be switched off again
 afterwards.
 
-**Windows** (10 or 11): download `Mininotes-Windows-<version>.zip` from the same release, extract it and open
-`Mininotes.exe`. Java comes inside it; nothing else has to be installed.
+**Check who signed it.** Every release APK is signed with the same Mininotes key. Its SHA-256 certificate fingerprint,
+as [AppVerifier](https://github.com/soupslurpr/AppVerifier) takes it (copy the two lines, then *Verify from clipboard*):
+
+```
+org.mininotes.android
+F7:91:C2:14:D9:ED:9B:E9:DE:EC:6F:15:BE:D0:25:38:35:22:DD:F9:A8:21:23:4A:73:90:C8:1B:60:1F:91:AB
+```
+
+Or with the Android SDK: `apksigner verify --print-certs Mininotes-<version>.apk`. Any other fingerprint is not a build
+from this repository's releases.
+
+**Windows** (10 or 11): download `Mininotes-Windows-<version>.msi` from the same release and open it. It needs no
+administrator rights, and Mininotes is then in Windows' Settings, Apps, like any app. Uninstalling it there keeps your
+notes, which a later install finds again; *Uninstall Mininotes…* in the app's menu can delete them too, after offering
+a backup. Java comes inside it; nothing else has to be installed.
+
+Or, for those who prefer it, `Mininotes-Windows-<version>.zip`: extract it anywhere and open `Mininotes.exe`.
 
 Nothing else is needed on either: the Maxima node that carries your notes is inside the app.
 
@@ -135,9 +206,9 @@ Nothing else is needed on either: the Maxima node that carries your notes is ins
 ## 3. Write
 
 - **A ruled page, ready.** A note opens with the cursor in it and is saved as you write. There is no save button.
-- **Tabs.** A note can hold several pages, like index cards: *Add a tab*.
+- **Tabs.** A note can hold several pages, like index cards: *Add a tab*; drag to reorder.
 - **Bold, italic and underline.** Type the marks around the words, `**bold**`, `*italic*` and `__underline__`, or press
-  Ctrl+B, Ctrl+I or Ctrl+U on a keyboard.
+  Ctrl+B, Ctrl+I or Ctrl+U.
 - **Two people in one note.** When two people write in the same note before either has seen the other, the two are
   put together line by line and nothing either of them wrote is lost. What each person wrote can be shown in their
   own colour: tap a round under the title to change one.
@@ -175,7 +246,7 @@ Nothing else is needed on either: the Maxima node that carries your notes is ins
   installing, building and the list of every menu entry, which the PC says under the pointer).
 - **Show on Home**, in *Settings*, chooses which places Home shows (Recent, Temp, Shared with me, the archive, the bin)
   and whether the README is there. One that is off is still in the menu.
-- **Photos** (coming in 0.4.008 and 0.4.009): an album folder on Home by default, every picture in it in a grid, each
+- **Photos**: an album folder on Home by default, every picture in it in a grid, each
   opened large with the next and the previous a swipe or an arrow away. Add photos with its +, or take one. Any folder
   can be shown as an album from its menu.
 
@@ -312,11 +383,13 @@ blockchain from its menu. Only its fingerprint (SHA-256) leaves the device, neve
 - **Verify on Minima…** checks a file, later, against what was recorded: whether it was stamped, unchanged, and in
   which block and on which date. It changes nothing and costs nothing.
 - **The difference:** stamping writes the proof once; verifying reads it back, as often as you like.
-- **My profile, Integritas:** paste your API key and press *Save*; it is kept in your notebook, locked with it, and never
+- **A note's stamp** covers its title, an empty line, then its text; renaming it marks it changed. Stamps made before
+  0.4.018 cover the text alone: *Note, text only*.
+- **My profile, Stamping:** paste your API key and press *Save*; it is kept in your notebook, locked with it, and never
   put in a backup. Switch on any of your own devices under *Also on my devices* and the key goes to them too, sealed for
   each.
-- ***Stamped on Minima…*** in the menu lists everything stamped from this device with its fingerprint, the request
-  Integritas gave and, once verified, the Minima block, the date recorded and the transaction, to copy or verify again.
+- **Stamped on Minima…**, last in *Find*, lists what was stamped here; open one for its fingerprint, block and
+  transaction. Its **+** stamps a note or file in Mininotes, or a file on this device that is not put in Mininotes.
 
 ## 14. Privacy, encryption and keeping it safe
 
@@ -381,8 +454,9 @@ blockchain from its menu. Only its fingerprint (SHA-256) leaves the device, neve
 ## 16. Languages and translation
 
 Mininotes speaks eleven languages: English, French, German, Spanish, Italian, Portuguese, Russian, Chinese, Japanese,
-Hindi and Persian. *Translate…* in a note's menu puts the page into another language on the device, without sending it
-to a translation service.
+Hindi and Persian. It asks which at its first start, the device's own picked already, and this README is in that
+language too; *Settings, Language* changes both. *Translate…* in a note's menu puts the page into another language on
+the device, without sending it to a translation service.
 
 <!-- not in the app -->
 
@@ -395,6 +469,8 @@ does* turns these lines on or off. An entry ending with "…" opens a box or a p
 |---|---|
 | Rename | Give it another name. |
 | Remove this tab | Take this tab out of the note. |
+| Move left | Put this tab one place to the left. |
+| Move right | Put this tab one place to the right. |
 | Choose a picture | Show a picture of your own on it instead of its icon. |
 | Remove the picture | Show its icon again instead of the picture. |
 | Picture | Choose or remove a picture of your own for it. |
@@ -457,7 +533,10 @@ does* turns these lines on or off. An entry ending with "…" opens a box or a p
 | Update to v | Install the newer version. |
 | Feedback | Say something about Mininotes, publicly, under your name. |
 | Settings | How Mininotes works on this device. |
+| Mininotes on your phone | Mininotes on Android phones, with a code to scan to get it. |
+| Mininotes on your PC | Mininotes on Windows, with the link to get it. |
 | About | Which version this is, and who made Mininotes. |
+| Uninstall Mininotes | Remove Mininotes from this PC, keeping your notes or not, after offering a backup. |
 | Exit Mininotes | Close Mininotes. |
 | Send files | Send files straight to one of your devices or a person, in no note. |
 | Sent files | The files sent from here, and where each stands. |

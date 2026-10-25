@@ -127,7 +127,7 @@ final class DesktopDrops {
      * offered at once. The bar says it is going and, when that is done, where it stands.
      */
     private static void sending(Desktop pad,List<Path> files,Drop.Device to) {
-        pad.status.setToolTipText(null);pad.status.setText(Drop.sending(to.name,files.size()));
+        pad.status.setToolTipText(null);pad.status.setText(Say.t(Drop.sending(to.name,files.size())));
         pad.disk.submit(()->{
             List<NoteStore.Held> kept=new ArrayList<>();
             try {
@@ -144,8 +144,8 @@ final class DesktopDrops {
                 throw new IOException("Could not read "+(files.size()==1?"the file":"the files")+". Nothing was sent.",failure);
             }
         },id->{
-            if(pad.offline){pad.status.setText("Waiting for "+to.name+". This window was opened offline, so they go when Mininotes is next online.");return;}
-            pad.network.submit(()->Post.sendNow(pad.context,pad.store,pad.keys,id),said->pad.status.setText(said),pad::failed);
+            if(pad.offline){pad.status.setText(Say.t("Waiting for {0}. This window was opened offline, so they go when Mininotes is next online.",to.name));return;}
+            pad.network.submit(()->Post.sendNow(pad.context,pad.store,pad.keys,id),said->pad.status.setText(Say.t(said)),pad::failed);
         },pad::failed);
     }
 
@@ -266,7 +266,7 @@ final class DesktopDrops {
         Aimed(Desktop pad,TransferHandler was){this.pad=pad;this.was=was;}
         private static boolean files(TransferSupport support){return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);}
         @Override public boolean canImport(TransferSupport support) {
-            if(!files(support))return picture(pad,support)!=null||was!=null&&was.canImport(support);
+            if(!files(support))return picture(pad,support)!=null||onHome(pad,support)||was!=null&&was.canImport(support);
             // No caret or row chosen under them: what they would go to is lit instead, and said in the bar.
             if(support.isDrop()){support.setShowDropLocation(false);over(pad,aim(pad,support.getComponent(),support.getDropLocation().getDropPoint()));}
             return true;
@@ -280,10 +280,14 @@ final class DesktopDrops {
                     try {
                         BufferedImage picture=DesktopIconPicker.buffered((Image)support.getTransferable().getTransferData(DataFlavor.imageFlavor));
                         if(picture!=null){SwingUtilities.invokeLater(()->pad.attachPicture(aim.note,aim.name,picture));return true;}
-                    } catch(Exception unreadable){pad.status.setText("That picture could not be read from the clipboard");return false;}
+                    } catch(Exception unreadable){pad.status.setText(Say.t("That picture could not be read from the clipboard"));return false;}
                 }
+                // On Home, in a folder or in Temp, wherever the keys were (the search, the tree): kept there (decision 233).
+                if(onHome(pad,support)){SwingUtilities.invokeLater(pad::pasteHere);return true;}
                 return was!=null&&was.importData(support);
             }
+            // Files pasted, not let go, on Home, in a folder or in Temp: kept there, not sent (decision 233).
+            if(!support.isDrop()&&!pad.onPage()){away(pad);SwingUtilities.invokeLater(pad::pasteHere);return true;}
             try {
                 @SuppressWarnings("unchecked") List<File> files=(List<File>)support.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
                 List<Path> paths=new ArrayList<>();for(File one:files)if(one.isFile())paths.add(one.toPath());
@@ -305,6 +309,19 @@ final class DesktopDrops {
      * Where a paste would keep a picture: the note it is pasted on, where the clipboard holds a picture and no words or
      * files (Attachment.pasted). Null for anything else - a drop, words, files, or a paste that is not on a note.
      */
+    /**
+     * Whether a paste is a picture for Home, the folder shown or Temp (the owner, 2026-10-22: "take a screenshot with Greenshot,
+     * open a folder or Temp, and press Ctrl+V doesnt work"; decision 233): a paste, not a drop, while no note is on the
+     * page, of a picture with no words with it; the search or the tree having the keys then. Words still go where the keys are.
+     */
+    static boolean onHome(Desktop pad,TransferHandler.TransferSupport support) {
+        if(support.isDrop()||pad.onPage()||!support.isDataFlavorSupported(DataFlavor.imageFlavor))return false;
+        if(support.isDataFlavorSupported(DataFlavor.stringFlavor))
+            try{Object said=support.getTransferable().getTransferData(DataFlavor.stringFlavor);if(said instanceof String s&&!s.isBlank())return false;}
+            catch(Exception unreadable){/* no words, then */}
+        return true;
+    }
+
     static Aim picture(Desktop pad,TransferHandler.TransferSupport support) {
         if(support.isDrop()||!support.isDataFlavorSupported(DataFlavor.imageFlavor))return null;
         boolean words=false;
@@ -415,11 +432,11 @@ final class DesktopDrops {
     }
 
     private static void answer(Desktop pad,NoteStore.Transfer one,boolean yes) {
-        pad.status.setText(yes?"Accepting…":"Telling "+one.name+"…");
+        pad.status.setText(yes?Say.t("Accepting…"):Say.t("Telling {0}…",one.name));
         pad.network.submit(()->{
             if(yes)Post.takeSending(pad.context,pad.store,pad.keys,one.id);else Post.refuseSending(pad.context,pad.store,pad.keys,one.id);
             return null;
-        },done->{pad.status.setText(yes?"Accepted. The files are coming from "+one.name+"…":"Refused. "+one.name+" is told.");pad.refresh();},pad::failed);
+        },done->{pad.status.setText(yes?Say.t("Accepted. The files are coming from {0}…",one.name):Say.t("Refused. {0} is told.",one.name));pad.refresh();},pad::failed);
     }
 
     private static final java.time.format.DateTimeFormatter WHEN=java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm");

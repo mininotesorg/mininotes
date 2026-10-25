@@ -242,7 +242,8 @@ final class DesktopFolder extends JComponent {
         if(end.kind==NoteStore.Branch.Kind.FAVOURITES)return;
         // Tools: the places kept in it. Temp: what is to be gone, soonest first. Recent: what was opened lately (decisions 71, 72).
         if(end.kind==NoteStore.Branch.Kind.TOOLS){got.put("card",home.inTools(pad.store.awayCount(false),pad.store.awayCount(true),pad.store.temporaryCount()));return;}
-        if(end.kind==NoteStore.Branch.Kind.TEMP){List<NoteStore.Branch> temp=pad.store.asDrawn(pad.store.temporary(System.currentTimeMillis()));pad.store.dress(temp);got.put("card",temp);return;}
+        // Temp opened, so used: in Recent (decision 229).
+        if(end.kind==NoteStore.Branch.Kind.TEMP){pad.store.touch(NoteStore.Branch.Kind.TEMP,NoteStore.TEMP);List<NoteStore.Branch> temp=pad.store.asDrawn(pad.store.temporary(System.currentTimeMillis()));pad.store.dress(temp);got.put("card",temp);return;}
         if(end.kind==NoteStore.Branch.Kind.RECENT){List<NoteStore.Branch> lately=pad.store.asDrawn(pad.store.recent(System.currentTimeMillis()-pad.recentDays()*86_400_000L));pad.store.dress(lately);got.put("card",lately);return;}
         // Shared with me: the files shown there, kept on Home, and what is still coming to it (decision 94); and first, what
         // waits for an answer (decision 109).
@@ -280,7 +281,7 @@ final class DesktopFolder extends JComponent {
             // Out to the last level that is still there, and said: a card that quietly becomes another is worse.
             int at=(Integer)keep;String gone=path.get(at).name;
             while(trail.size()>at)trail.remove(trail.size()-1);
-            pad.status.setToolTipText(null);pad.status.setText("“"+gone+"” was put away");
+            pad.status.setToolTipText(null);pad.status.setText(Say.t("“{0}” was put away",gone));
             if(trail.isEmpty())close();else draw();
             return;
         }
@@ -429,10 +430,10 @@ final class DesktopFolder extends JComponent {
         left.setOpaque(false);right.setOpaque(false);
         if(trail.size()>1) {
             String above=trail.get(trail.size()-2).name;
-            JButton back=new JButton("‹  "+(above==null||above.isBlank()?"Untitled":above));
+            JButton back=new JButton("‹  "+(above==null||above.isBlank()?Say.t("Untitled"):above));
             back.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
             back.setFont(DesktopUi.BODY.deriveFont(13f));back.setForeground(DesktopUi.QUIET);back.setFocusPainted(false);
-            back.setToolTipText("Back to "+above+" (Esc)");back.getAccessibleContext().setAccessibleName("Back to "+above);
+            back.setToolTipText(Say.t("Back to {0} (Esc)",above));back.getAccessibleContext().setAccessibleName("Back to "+above);
             back.addActionListener(e->up());left.add(back);
             this.back=back;
         }
@@ -447,7 +448,7 @@ final class DesktopFolder extends JComponent {
         if(menu!=null) {
             JButton more=new JButton(Desktop.dots());
             more.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
-            more.setFocusPainted(false);more.setToolTipText("Menu");more.getAccessibleContext().setAccessibleName("Menu");
+            more.setFocusPainted(false);more.setToolTipText(Say.t("Menu"));more.getAccessibleContext().setAccessibleName("Menu");
             more.addActionListener(e->menu.get().show(more,0,more.getHeight()));
             right.add(more);
         }
@@ -459,7 +460,7 @@ final class DesktopFolder extends JComponent {
         JLabel name=new JLabel(said,SwingConstants.CENTER);name.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,18f));name.setForeground(DesktopUi.INK);
         name.setBorder(BorderFactory.createEmptyBorder(8,0,8,0));
         if(!place) {
-            name.setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));name.setToolTipText("Click to rename (F2)");
+            name.setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));name.setToolTipText(Say.t("Click to rename (F2)"));
             name.addMouseListener(new MouseAdapter(){public void mouseClicked(MouseEvent e){if(SwingUtilities.isLeftMouseButton(e))startNaming();}});
         }
         name.getAccessibleContext().setAccessibleName(place?said:"Folder "+said);
@@ -475,7 +476,7 @@ final class DesktopFolder extends JComponent {
         // Before its name, the face it wears on Home, as a note's is before its title: a click chooses another.
         JButton face=new JButton(DesktopHome.faceIcon(()->thing,FACE,()->pad.usual));
         face.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
-        face.setMargin(new Insets(2,2,2,2));face.setFocusPainted(false);face.setToolTipText("Change its icon");
+        face.setMargin(new Insets(2,2,2,2));face.setFocusPainted(false);face.setToolTipText(Say.t("Change its icon"));
         face.getAccessibleContext().setAccessibleName("The folder's icon: choose another");
         face.addActionListener(e->{if(thing!=null)DesktopIconPicker.open(pad,thing);});
         JPanel named=new JPanel(new GridBagLayout());named.setOpaque(false);
@@ -516,7 +517,7 @@ final class DesktopFolder extends JComponent {
     void startNaming() {
         if(naming!=null||thing==null||listing())return;
         JTextField field=new JTextField(thing.name);field.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,18f));field.setHorizontalAlignment(SwingConstants.CENTER);
-        field.getAccessibleContext().setAccessibleName("Name of the folder");field.setToolTipText("Type a name, then Enter");
+        field.getAccessibleContext().setAccessibleName("Name of the folder");field.setToolTipText(Say.t("Type a name, then Enter"));
         naming=field;
         Component was=((BorderLayout)head.getLayout()).getLayoutComponent(BorderLayout.CENTER);if(was!=null)head.remove(was);
         JPanel holder=new JPanel(new GridBagLayout());holder.setOpaque(false);
@@ -527,7 +528,7 @@ final class DesktopFolder extends JComponent {
         field.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke("ESCAPE"),"cancel");
         field.getActionMap().put("cancel",new AbstractAction(){public void actionPerformed(ActionEvent e){finishNaming(false);}});
         field.addFocusListener(new FocusAdapter(){public void focusLost(FocusEvent e){if(!e.isTemporary())finishNaming(true);}});
-        pad.status.setToolTipText(null);pad.status.setText("Type a name for the folder, then Enter");
+        pad.status.setToolTipText(null);pad.status.setText(Say.t("Type a name for the folder, then Enter"));
         SwingUtilities.invokeLater(()->{field.requestFocusInWindow();field.selectAll();});
     }
 
@@ -542,7 +543,7 @@ final class DesktopFolder extends JComponent {
         thing=new NoteStore.Branch(about.kind,about.id,about.parent,now,about.detail,0,0,true,about.colour);thing.icon=about.icon;thing.image=about.image;
         trail.set(trail.size()-1,step(thing));bar(last());
         pad.disk.submit(()->{pad.store.renameCollection(about.id,now);return null;},done->{
-            pad.status.setText("Renamed to "+now);
+            pad.status.setText(Say.t("Renamed to {0}",now));
             // Only where there was a name before, as on the phone: back to a made-up one is no undo.
             if(!was.isBlank()&&!was.equals(NoteStore.UNTITLED))pad.canUndo(was,()->{pad.store.renameCollection(about.id,was);return null;});
             pad.refresh();

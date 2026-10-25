@@ -67,6 +67,13 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
          * icon and its box say it is uploading. FILE lines only.
          */
         boolean uploading;
+        /**
+         * Stamped on Minima, worn on its icon (the owner, 2026-10-25: "the file should carry the stamped marked on its icon";
+         * decision 249): {@link #STAMP_NONE}, {@link #STAMP_SENT} while Minima has not shown it yet, {@link #STAMP_ON_MINIMA}.
+         * FILE lines only.
+         */
+        int stamped;
+        static final int STAMP_NONE=0,STAMP_SENT=1,STAMP_ON_MINIMA=2;
         /** The cell it was put in on its grid, on this device, or {@link Layout#NONE}: see {@link Layout}. */
         int cell=Layout.NONE;
         /**
@@ -224,6 +231,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     static {
         // SQLCipher's own SQLite. Only on the phone: the PC's build of this class has a SQLite of its own.
         try{System.loadLibrary("sqlcipher");}catch(Throwable notHere){/* not Android */}
+        // Why Integritas did not answer, in this app's log (decision 246): a code or a kind of failure, never a key.
+        Integritas.said=why->android.util.Log.i("Mininotes/Integritas",why);
     }
 
     NoteStore(Context c){this(c,key);}
@@ -1013,7 +1022,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 Incoming one=new Incoming(c.getString(0),c.getString(1),c.getString(2),c.getString(3),c.getString(4),
                     c.getLong(5),c.getString(6),c.getLong(7),c.getInt(8));
                 if(c.getInt(9)!=1&&!keeps(one.note)){orphaned.add(one.id);continue;}
-                if(Enclosure.due(one.tried,one.tries,now))due.add(one);
+                if(Enclosure.fetchDue(one.tried,one.tries,now))due.add(one);
             }
         }
         for(String id:orphaned)getWritableDatabase().delete("incoming","id=? AND declined=0",new String[]{id});
@@ -1663,6 +1672,21 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * have not said they have its bytes (the owner, 2026-10-11: "the screenshot shared in Temp from the laptop says it is
      * synced but it is not on the Graphene"). Only for this device's own: what came from elsewhere is its sender's to wait for.
      */
+    /**
+     * Those {@link #fileOwed} counts once its sleeve owes nobody: the devices a file of this device's own went to and that have
+     * not said they have it. By address, for the box a press on its amber mark opens, which said only "Your latest words go as
+     * soon as they are written down" for a file (the owner, 2026-10-21: a picture on Temp "seems waiting for a note").
+     */
+    Set<String> toConfirm(String id) {
+        Set<String> out=new java.util.LinkedHashSet<>();
+        if(!originOf(id).isEmpty()||!sleevesOwed(id,false).isEmpty())return out;
+        Map<String,Boolean> loose=looseAudience(shares(),id);
+        if(loose==null)return out;
+        Set<String> have=new HashSet<>(holders(id));
+        for(String address:loose.keySet())if(!have.contains(address))out.add(address);
+        return out;
+    }
+
     int fileOwed(String id,Map<String,Boolean> loose,boolean theirs) {
         if(loose==null||loose.isEmpty())return 0;
         int owed=sleevesOwed(id,false).size();
@@ -5016,6 +5040,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             Branch line=fileLine(file,parent,null,state,waiting);int[] cell=fileCells.get(file.id);
             // Owed to somebody and not up yet: it says it is uploading, since its sleeve waits for that (decision 94).
             line.uploading=waiting>0&&!sleeveReady(file.id);
+            line.stamped=stampMark(file.id);
             line.cell=cell==null?Layout.NONE:cell[0];line.page=cell==null?Layout.NO_PAGE:cell[1];lines.add(line);
         }
         // The files' timers too, which inside did not see.
@@ -5386,7 +5411,11 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                     int tries,long checked,long block,String txpow,String tx,String recorded,boolean kept,String nft,String nftTx) {
         boolean confirmed(){return block>0||STAMP_CONFIRMED.equals(state);}
         boolean waiting(){return !confirmed()&&STAMP_WAITING.equals(state);}
-        boolean note(){return "note".equals(kind);}
+        /** A note: its text alone (stamped before 0.4.018) or its title and text (decision 230). */
+        boolean note(){return Integritas.NOTE.equals(kind)||Integritas.TITLED.equals(kind);}
+        boolean titled(){return Integritas.TITLED.equals(kind);}
+        /** A file from this device's drive, never in Mininotes: verified by picking it again. */
+        boolean outside(){return Integritas.OUTSIDE.equals(kind);}
     }
     /** Sent, and looked for on Minima until found. */
     static final String STAMP_WAITING="waiting";
@@ -5411,6 +5440,13 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     List<StampRow> stamps(){stampsAgree();return stampRows(null,null);}
     /** Every stamp of one note or file, the newest first: each version stamped (decision 218). */
     List<StampRow> stampsOf(String id){return stampRows("id=?",new String[]{id});}
+    /** How far a note or file is stamped, for its icon: one look at its rows (see {@link Branch#stamped}). */
+    int stampMark(String id) {
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT COUNT(*),MAX(block) FROM stamped WHERE id=?",new String[]{id})) {
+            if(!c.moveToFirst()||c.getInt(0)==0)return Branch.STAMP_NONE;
+            return c.getLong(1)>0?Branch.STAMP_ON_MINIMA:Branch.STAMP_SENT;
+        }
+    }
     /** Those still being looked for on Minima, for a start of the app to go on looking. */
     List<StampRow> stampsWaiting(){return stampRows("state=? AND block=0",new String[]{STAMP_WAITING});}
     /** One stamp, by its row, or null. */
@@ -5470,6 +5506,82 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         ContentValues v=new ContentValues();if(coin!=null&&!coin.isEmpty())v.put("nft",coin);if(tx!=null&&!tx.isEmpty())v.put("nfttx",tx);
         getWritableDatabase().update("stamped",v,"hash=?",new String[]{hash});
     }
+    /**
+     * Every stamp kept here, the newest first, as the card to the owner's other devices carries them (decision 252): all a
+     * row needs to be listed and verified again there, a note's stamped title and text with it; how often and when it was
+     * looked for stay here.
+     */
+    List<StampCard.Row> stampsCard() {
+        List<StampCard.Row> out=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().query("stamped",new String[]{"id","kind","name","hash","at","request","said","address","state","block",
+                "txpow","tx","recorded","title","words","nft","nfttx"},null,null,null,null,"at DESC, n DESC")) {
+            while(c.moveToNext())out.add(new StampCard.Row(c.getString(0),c.getString(1),c.getString(2),c.getString(3),c.getLong(4),c.getString(5),
+                c.getString(6),c.getString(7),c.getString(8),c.getLong(9),c.getString(10),c.getString(11),c.getString(12),
+                c.isNull(13)?"":c.getString(13),c.isNull(14)?null:c.getString(14),c.getString(15),c.getString(16)));
+        }
+        return out;
+    }
+
+    /**
+     * What a stamps card from another device of the owner's brought (decision 252): how many stamps are new here, how many
+     * known ones learned more, and the fingerprints of both, so every box and list showing them is drawn again.
+     */
+    record StampsTaken(int added,int updated,Set<String> hashes) {
+        boolean changed(){return added>0||updated>0;}
+    }
+
+    /**
+     * A stamps card from another device of the owner's, taken in (decision 252). A stamp is known by its request, or, for
+     * one copied from before 0.4.010 without one, by what was stamped, its fingerprint and when. One not known here is kept
+     * as it is there, looked for nowhere yet. One known learns only what it lacks: where on Minima it landed when it is found
+     * there and not here, the NFT of a verification where none is kept here, and a note's stamped text where none was. Nothing
+     * is ever taken away, and nothing found is said to be waiting again.
+     */
+    StampsTaken stampsArrived(List<StampCard.Row> rows) {
+        int added=0,updated=0;Set<String> hashes=new java.util.LinkedHashSet<>();
+        if(rows==null||rows.isEmpty())return new StampsTaken(0,0,hashes);
+        SQLiteDatabase db=getWritableDatabase();
+        db.beginTransaction();
+        try {
+            for(StampCard.Row one:rows) {
+                String where=one.request.isEmpty()?"request='' AND id=? AND hash=? AND at=?":"request=?";
+                String[] args=one.request.isEmpty()?new String[]{one.id,one.hash,String.valueOf(one.at)}:new String[]{one.request};
+                long n=-1;boolean confirmed=false,hasNft=false,hasNftTx=false,hasWords=false;
+                try(Cursor c=db.query("stamped",new String[]{"n","state","block","nft","nfttx","words IS NOT NULL"},where,args,null,null,"n","1")) {
+                    if(c.moveToFirst()) {
+                        n=c.getLong(0);confirmed=c.getLong(2)>0||STAMP_CONFIRMED.equals(c.getString(1));
+                        hasNft=!c.getString(3).isEmpty();hasNftTx=!c.getString(4).isEmpty();hasWords=c.getInt(5)!=0;
+                    }
+                }
+                if(n<0) {
+                    ContentValues v=new ContentValues();
+                    v.put("id",one.id);v.put("kind",one.kind);v.put("name",one.name);v.put("hash",one.hash);v.put("at",one.at);
+                    v.put("request",one.request);v.put("said",one.said);v.put("address",one.address);v.put("state",one.state);
+                    v.put("block",one.block);v.put("txpow",one.txpow);v.put("tx",one.tx);v.put("recorded",one.recorded);
+                    v.put("nft",one.nft);v.put("nfttx",one.nftTx);
+                    if(one.words!=null){v.put("title",one.title);v.put("words",one.words);}
+                    if(db.insert("stamped",null,v)<0)throw new IllegalStateException("Could not keep that stamp");
+                    added++;hashes.add(one.hash);
+                    continue;
+                }
+                ContentValues v=new ContentValues();
+                if(one.confirmed()&&!confirmed) {
+                    v.put("state",STAMP_CONFIRMED);v.put("block",one.block);v.put("txpow",one.txpow);v.put("tx",one.tx);v.put("recorded",one.recorded);
+                }
+                if(!hasNft&&!one.nft.isEmpty())v.put("nft",one.nft);
+                if(!hasNftTx&&!one.nftTx.isEmpty())v.put("nfttx",one.nftTx);
+                if(!hasWords&&one.words!=null){v.put("title",one.title);v.put("words",one.words);}
+                if(v.size()==0)continue;
+                db.update("stamped",v,"n=?",new String[]{String.valueOf(n)});
+                updated++;hashes.add(one.hash);
+            }
+            db.setTransactionSuccessful();
+        } finally {db.endTransaction();}
+        // A fingerprint now found on Minima by one stamp is found for every stamp of it here too.
+        if(added>0||updated>0)stampsAgree();
+        return new StampsTaken(added,updated,hashes);
+    }
+
     /** When a thing was last stamped from here, or null. */
     Stamp stampOf(String id) {
         try(Cursor c=getReadableDatabase().query("stamped",new String[]{"hash","at"},"id=?",new String[]{id},null,null,"at DESC, n DESC","1")){return c.moveToFirst()?new Stamp(c.getString(0),c.getLong(1)):null;}
@@ -5545,7 +5657,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 Map<String,Boolean> loose=looseAudience(rules,file.id);
                 Branch line=fileLine(file,home(file.note)?Sharing.EVERYTHING:file.note,says==null?in:says.apply(new long[]{until}),
                     Sharing.state(loose,c.getInt(FILE_ROW.length+1)==1),fileOwed(file.id,loose,c.getInt(FILE_ROW.length+1)==1));
-                line.temporary=until>0;
+                line.temporary=until>0;line.stamped=stampMark(file.id);
                 out.add(line);
             }
         }
@@ -6254,6 +6366,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
 
     /** What {@link #sleeveArrived} did: nothing; the list folded in; the file waited for; the copy here let go. */
     static final int SLEEVE_NOT=0, SLEEVE_TOOK=1, SLEEVE_FETCH=2, SLEEVE_GONE=3;
+    /** How soon a file that failed to come is tried again when its sender says it again (see sleeveArrived). */
+    static final long SLEEVE_RETRY=15_000L;
 
     /**
      * The files owed to somebody on their own (see {@link Sleeve}), as waits: each shared by a rule on it, at a revision
@@ -6598,6 +6712,10 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         try {
             boolean waiting=!ids(db,"SELECT id FROM incoming WHERE id=? AND declined=0",id).isEmpty();
             if(waiting){db.execSQL("UPDATE incoming SET manifest=?,tried=0,tries=0,alone=1 WHERE id=? AND manifest<>?",new Object[]{sleeve.manifest,id,sleeve.manifest});
+                // Said again by its sender while a try here had failed: news (most often "its pieces are up now", a moment
+                // after a first try found them not yet there), so tried again now, not after the minute a failure waits; at
+                // most once in a quarter minute. Seen 2026-10-20: a picture on the Pro's Temp reached the PC in 2 min 20 s.
+                db.execSQL("UPDATE incoming SET tried=0,tries=0 WHERE id=? AND tries>0 AND tried<?",new Object[]{id,System.currentTimeMillis()-SLEEVE_RETRY});
                 if(until>0)db.execSQL("UPDATE incoming SET until=? WHERE id=?",new Object[]{until,id});}
             else {
                 ContentValues v=new ContentValues();
@@ -6778,8 +6896,10 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         String said=kept.getString(WELCOMED,"");
         if(said!=null&&!said.isEmpty())return false;
         long now=System.currentTimeMillis();
+        nameFirstFolders();
         // Read me first, so My first note, a moment later, is first on Home and the note opened last.
-        String[][] notes={{READ_ME,READ_ME_SAYS},{FIRST_NOTE,FIRST_NOTE_SAYS}};
+        // README in the language chosen, at the first start or since (decision 232); My first note's words, as the app's.
+        String[][] notes={{READ_ME,readMeSays()},{Say.t(FIRST_NOTE),Say.t(FIRST_NOTE_SAYS)}};
         for(int at=0;at<notes.length;at++) {
             // A README come as Read me from a device not yet on 0.4.010 is one too (decision 221).
             String[] named=at==0?READ_ME_TITLES:new String[]{notes[at][0],notes[at][0]};
@@ -6791,6 +6911,24 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         kept.edit().putString(WELCOMED,version==null||version.isEmpty()?"yes":version).apply();
         return true;
     }
+    /**
+     * A new notebook's first folders in the language chosen (the owner, 2026-10-25: "yes a new notebook's first folder
+     * should take the chosen language"): My notes and the Notes inside it are written in English by the first migration,
+     * before any language is known. Only in a notebook with no note yet and only where the name is still the English one,
+     * so a folder renamed, put back from a backup or come from another device is never touched.
+     */
+    void nameFirstFolders() {
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT 1 FROM notes LIMIT 1",null)){if(c.moveToFirst())return;}
+        for(String[] first:new String[][]{{SchemaMigrations.FIRST_COLLECTION,FIRST_FOLDER},{SchemaMigrations.FIRST_BOOK,FIRST_FOLDER_INSIDE}}) {
+            String said=Say.t(first[1]);
+            if(said.equals(first[1]))continue;
+            try(Cursor c=getReadableDatabase().query("things",new String[]{"name"},"id=?",new String[]{first[0]},null,null,null,"1")) {
+                if(!c.moveToFirst()||!first[1].equals(c.getString(0)))continue;
+            }
+            rename(first[0],said);
+        }
+    }
+    static final String FIRST_FOLDER="My notes",FIRST_FOLDER_INSIDE="Notes";
     /** The setting that says the two notes were written on this device, and by which version (see {@link #welcome}). */
     static final String WELCOMED="welcomed";
     static final String FIRST_NOTE="My first note", FIRST_NOTE_SAYS="Write anything here. It is saved as you type.";
@@ -7046,6 +7184,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * through {@link ReadMe#text}. 0.4.009's, the last written by hand, only where that copy could not be read.
      */
     static final String READ_ME_SAYS=ReadMe.text()!=null?ReadMe.text():READ_ME_0_4_009;
+    /** README as it is now in the language in use (decision 232): READ_ME_SAYS in English. */
+    static String readMeSays(){String said=ReadMe.text(Say.language());return said!=null?said:READ_ME_SAYS;}
     /**
      * Every Read me an earlier build wrote by hand, word for word: one still saying exactly that is said again (see {@link
      * #readMeAgain}). The 0.3.008 one also as the guard leaves it once it was saved again (decision 114), its codes and their
@@ -7056,7 +7196,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     /** Whether a README's body is one a build wrote and nobody changed: by hand before 0.4.010, from the README since. */
     static boolean readMeUntouched(String body) {
         if(body==null)return false;
-        if(body.equals(READ_ME_SAYS)||ReadMe.shipped(body))return true;
+        if(body.equals(READ_ME_SAYS)||body.equals(readMeSays())||ReadMe.shipped(body))return true;
         for(String before:READ_ME_BEFORE)if(before.equals(body))return true;
         return false;
     }
@@ -7069,7 +7209,14 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      *
      * @return whether one was said again
      */
-    boolean readMeAgain() {
+    boolean readMeAgain(){return readMeAgain(false);}
+    /**
+     * @param anew the language was just changed here (Settings, Language): an untouched README is said in it, whichever
+     *             language it was in. At a start it is said again only where it is English, or this device's language, and
+     *             an older text: one of the owner's devices set to another language leaves it as that one wrote it, so two
+     *             devices in two languages never write it back and forth (decision 232).
+     */
+    boolean readMeAgain(boolean anew) {
         // README wears an icon of its own, not a page's (the owner, 2026-10-19: "Read me needs a specific icon, not the
         // generic file one"; decision 214), where nobody gave it another, under either name.
         boolean dressed=false;
@@ -7079,8 +7226,10 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         try(Cursor c=getReadableDatabase().query("notes",new String[]{"id","title","body"},"title IN (?,?) AND "+HERE,READ_ME_TITLES,null,null,null)) {
             while(c.moveToNext()) {
                 String body=c.getString(2);
-                if(READ_ME.equals(c.getString(1))&&READ_ME_SAYS.equals(body))continue;// already said
-                if(readMeUntouched(body))ids.add(c.getString(0));
+                if(READ_ME.equals(c.getString(1))&&readMeSays().equals(body))continue;// already said
+                if(!readMeUntouched(body))continue;
+                String in=ReadMe.language(body);
+                if(anew||in==null||"en".equals(in)||in.equals(Say.language()))ids.add(c.getString(0));
             }
         }
         boolean said=false;
@@ -7088,7 +7237,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             if(onlyReads(id))continue;
             Note n=get(id);if(n==null||!n.complete)continue;
             keepVersion(id,"");
-            n.title=READ_ME;n.body=READ_ME_SAYS;n.writers=null;n.revision=n.revision+1;n.updated=System.currentTimeMillis();
+            n.title=READ_ME;n.body=readMeSays();n.writers=null;n.revision=n.revision+1;n.updated=System.currentTimeMillis();
             save(n);said=true;
         }
         return said||dressed;
@@ -7710,6 +7859,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
 
     /** The two places a thing can be put instead of being on the shelves. */
     static final String ARCHIVE="archive", BIN="bin", TOOLS="tools", TEMP="temp", RECENT="recent", OPEN="open";
+    /** When Temp was last opened or given something here, for Recent (decision 229). */
+    static final String TEMP_USED="tempUsed";
     /**
      * Whether a file let go on Temp on another of my devices is shown on Home as well as in Temp (the owner, 2026-10-04: "On
      * laptop, the Temp files are also shown on the desktop, where is the setting for that"; decision 98). Off unless switched
@@ -7747,6 +7898,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      */
     void makeTemporary(Branch.Kind kind,String id,long until) {
         long when=Math.max(0L,until);
+        // Put in Temp: Temp used, for Recent (decision 229). Taken off it is not a use of it.
+        if(when>0)touch(Branch.Kind.TEMP,TEMP);
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
         try {
             if(kind==Branch.Kind.PAGE) {
@@ -7858,6 +8011,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
 
     /** A note or a collection opened here, now: what Recent lists. Never sent. */
     void touch(Branch.Kind kind,String id) {
+        // Temp, a place with no row: when it was opened or something put in it, kept on this device (decision 229).
+        if(kind==Branch.Kind.TEMP){where.getSharedPreferences("settings",Context.MODE_PRIVATE).edit().putLong(TEMP_USED,System.currentTimeMillis()).apply();return;}
         if((kind!=Branch.Kind.PAGE&&!shelf(kind))||id==null||home(id))return;
         // Opened, so what somebody else changed in it has been seen.
         if(kind==Branch.Kind.PAGE)seen(id);
@@ -7913,6 +8068,13 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 found.add(new Object[]{at,new Branch(Branch.Kind.PAGE,page.id,page.book,page.heading(),
                     home(page.book)?"note on Home":"note in "+bookName(page.book),0,0,false,page.colour)});
             }
+        }
+        // And Temp, where it was used lately (the owner, 2026-10-21: "let's make sure Temp folder is listed in recent when used";
+        // decision 229): opened, or something put in it. Taken out of Recent as anything is, and back once used again.
+        long tempAt=where.getSharedPreferences("settings",Context.MODE_PRIVATE).getLong(TEMP_USED,0L);
+        if(tempAt>=since&&taken.getOrDefault(TEMP,0L)<tempAt) {
+            int n=temporary(System.currentTimeMillis()).size();
+            found.add(new Object[]{tempAt,new Branch(Branch.Kind.TEMP,TEMP,Sharing.EVERYTHING,"Temp",n<=0?"":n==1?"1 thing":n+" things",0,0,true)});
         }
         found.sort((one,other)->Long.compare((Long)other[0],(Long)one[0]));
         List<Branch> out=new ArrayList<>();

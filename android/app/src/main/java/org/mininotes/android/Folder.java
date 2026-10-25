@@ -299,6 +299,8 @@ final class Folder {
         // Tools: the places kept in it (decision 72). Temp: what is to be gone, soonest first. Recent: what was opened lately.
         if(end.kind==NoteStore.Branch.Kind.TOOLS){got.put("card",home.inTools(a.store.awayCount(false),a.store.awayCount(true),a.store.temporaryCount()));return;}
         if(end.kind==NoteStore.Branch.Kind.TEMP) {
+            // Opened, so used: in Recent (decision 229).
+            a.store.touch(NoteStore.Branch.Kind.TEMP,NoteStore.TEMP);
             List<NoteStore.Branch> temp=a.store.asDrawn(a.store.temporary(System.currentTimeMillis()));a.store.dress(temp);got.put("card",temp);return;
         }
         if(end.kind==NoteStore.Branch.Kind.RECENT) {

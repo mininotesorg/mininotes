@@ -312,7 +312,12 @@ final class AssistantBox {
      */
     private Runnable way(Assistant.Place place) {
         return switch(place) {
-            case PROFILE,INTEGRITAS,PARLONS,BACKUP -> a::profile;
+            case PROFILE -> a::profile;
+            // At its own part of My profile (the owner, 2026-10-19: "in setting Integritas it will open directly the section in
+            // the profile page"; decision 231: that part is Stamping).
+            case INTEGRITAS -> ()->a.profile(MainActivity.STAMPING,null);
+            case PARLONS -> ()->a.profile("You",null);
+            case BACKUP -> ()->a.profile("Backup",null);
             case PEOPLE -> ()->a.people().open();
             case LANGUAGE -> a::chooseLanguage;
             case STAMPED -> ()->PhoneStamp.list(a);

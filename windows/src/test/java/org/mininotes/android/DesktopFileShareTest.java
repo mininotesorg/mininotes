@@ -141,6 +141,40 @@ public class DesktopFileShareTest {
         return file;
     }
 
+    /**
+     * A first try that found its pieces not up yet, then its sender saying it again (the owner, 2026-10-21: a picture on the
+     * Pro's Temp took more than two minutes): tried again at once, not after the minute a failure waits; but not twice in a
+     * quarter minute however often it is said.
+     */
+    @Test public void aFileSaidAgainAfterAFailedTryIsTriedAgainAtOnce() throws Exception {
+        String file=a.onHome(new byte[]{7,7,7},"picture.png");
+        a.store.give(Sharing.Scope.FILE,file,B_AT,Sharing.Level.READ,"Test phone");
+        goesUp(a,file);
+        b.hear(a.sleeve(b,file));
+        assertEquals(1,b.store.toFetch(System.currentTimeMillis()).size());
+        b.store.fetchFailed(file);
+        assertTrue("a failure waits",b.store.toFetch(System.currentTimeMillis()).isEmpty());
+        b.hear(a.sleeve(b,file));
+        assertTrue("said again within a quarter minute: still waits",b.store.toFetch(System.currentTimeMillis()).isEmpty());
+        b.store.getWritableDatabase().execSQL("UPDATE incoming SET tried=? WHERE id=?",new Object[]{System.currentTimeMillis()-NoteStore.SLEEVE_RETRY-1,file});
+        b.hear(a.sleeve(b,file));
+        assertEquals("said again later: tried at once",1,fetches(b));
+    }
+
+    /** A file that went, waiting for the device to say it has it: the box says so, by name, not words about writing. */
+    @Test public void theBoxOfAFileThatWentNamesWhoHasNotConfirmed() throws Exception {
+        String file=a.onHome(new byte[]{8,8,8},"picture.png");
+        a.store.give(Sharing.Scope.FILE,file,B_AT,Sharing.Level.READ,"Test phone");
+        goesUp(a,file);
+        b.hear(a.sleeve(b,file));
+        a.store.handedOver(B_AT,file,a.store.fileRevision(file));
+        a.hear(b.said(a,file,a.store.fileRevision(file),Receipt.TOOK));
+        String said=SyncStatus.waits(a.store,NoteStore.Branch.Kind.FILE,file);
+        assertNotEquals(Waits.UNSAVED,said);
+        assertTrue(said,said.contains("Test phone")&&said.contains("confirm"));
+        assertEquals(1,SyncStatus.waitingThings(a.store,NoteStore.Branch.Kind.FILE,file).size());
+    }
+
     @Test public void aFileSharedOnItsOwnIsKeptOnHomeShownInSharedWithMeAndReadOnly() throws Exception {
         byte[] bytes=new byte[30_000];new Random(3).nextBytes(bytes);
         String file=shared(bytes);

@@ -84,7 +84,7 @@ final class DesktopLock {
 
     /** A fault that ends Mininotes, said - over what the person is doing only if Windows lets it, never flashing. */
     static void tell(String title,String message) {
-        JDialog said=new JOptionPane(message,JOptionPane.ERROR_MESSAGE).createDialog(null,title);
+        JDialog said=new JOptionPane(Say.t(message),JOptionPane.ERROR_MESSAGE).createDialog(null,Say.t(title));
         quietUnlessLet(said);said.setVisible(true);said.dispose();
     }
 
@@ -154,7 +154,7 @@ final class DesktopLock {
             // locking again - nobody there, its window lost behind another - waited for good, so the button never
             // answered again. Now it is never greyed: pressed, it gives up any question still waiting and asks afresh.
             JPanel byPassword=DesktopUi.row(password,open);byPassword.setVisible(false);
-            password.putClientProperty(com.formdev.flatlaf.FlatClientProperties.PLACEHOLDER_TEXT,"Backup password");
+            password.putClientProperty(com.formdev.flatlaf.FlatClientProperties.PLACEHOLDER_TEXT,Say.t("Backup password"));
             JButton hello=DesktopUi.primary("Unlock with Windows Hello",()->askHello[0].run());hello.setName("unlockHello");
             askHello[0]=()->{
                 if(asking[0]!=null)asking[0].cancel(true);
@@ -261,13 +261,13 @@ final class DesktopLock {
         DesktopUi.add(body,DesktopUi.quiet("The same again"));DesktopUi.gap(body,4);DesktopUi.add(body,again);DesktopUi.gap(body,6);DesktopUi.add(body,wrong);
         JButton go=DesktopUi.primary("Unlock and set password",()->{
             String problem=problem(first.getPassword(),again.getPassword());
-            if(problem!=null){wrong.setText(problem);return;}
+            if(problem!=null){wrong.setText(Say.t(problem));return;}
             try {
                 byte[] opened=Vault.recover(kept,words.getText());
                 AtomicFile.write(lockFile(folder),Vault.newPassword(kept,opened,first.getPassword()));
                 key[0]=opened;box[0].dispose();
-            } catch(Vault.Refused no){wrong.setText(no.getMessage());}
-            catch(Exception e){wrong.setText("The new password could not be saved. The words still open it.");}
+            } catch(Vault.Refused no){wrong.setText(Say.t(no.getMessage()));}
+            catch(Exception e){wrong.setText(Say.t("The new password could not be saved. The words still open it."));}
         });
         box[0]=DesktopUi.sheet(owner,"Recovery words",body,DesktopUi.footer(go),true);
         box[0].getRootPane().setDefaultButton(go);box[0].getRootPane().putClientProperty("focus",words);DesktopUi.show(box[0],460,600);
@@ -290,7 +290,7 @@ final class DesktopLock {
         try{made=Vault.make(password);}catch(Exception e){app.failed(e);after.run();return;}
         finally{Arrays.fill(password,'\0');}
         if(!showWords(app.frame,made.words)||!checkWords(app.frame,made.words)){after.run();return;}
-        app.status.setText("Locking the notebook…");
+        app.status.setText(Say.t("Locking the notebook…"));
         Path folder=app.context.getFilesDir().toPath();
         app.disk.submit(()->{
             AtomicFile.write(folder.resolve(PENDING),made.kept);
@@ -300,7 +300,7 @@ final class DesktopLock {
             // And every attachment, sealed with the same key.
             DesktopFiles.every(app.store,made.key,true);
             return null;
-        },done->{app.status.setText("Mininotes is locked.");after.run();app.securityShown();},
+        },done->{app.status.setText(Say.t("Mininotes is locked."));after.run();app.securityShown();},
             e->{try{Files.deleteIfExists(folder.resolve(PENDING));}catch(Exception ignored){/* taken off at the next start */}app.failed(e);after.run();});
     }
 
@@ -320,7 +320,7 @@ final class DesktopLock {
         DesktopUi.add(body,DesktopUi.quiet("The same again"));DesktopUi.gap(body,4);DesktopUi.add(body,again);DesktopUi.gap(body,6);DesktopUi.add(body,wrong);
         JButton go=DesktopUi.primary("Continue",()->{
             String problem=problem(first.getPassword(),again.getPassword());
-            if(problem!=null){wrong.setText(problem);return;}
+            if(problem!=null){wrong.setText(Say.t(problem));return;}
             chosen[0]=first.getPassword();box[0].dispose();
         });
         box[0]=DesktopUi.sheet(owner,"Lock Mininotes",body,DesktopUi.footer(go),true);
@@ -354,7 +354,7 @@ final class DesktopLock {
             String plain=String.join(" ",words);
             java.awt.datatransfer.StringSelection held=new java.awt.datatransfer.StringSelection(plain);
             Toolkit.getDefaultToolkit().getSystemClipboard().setContents(held,null);
-            copied.setText("Copied. Paste them somewhere safe now: the clipboard is emptied in one minute.");
+            copied.setText(Say.t("Copied. Paste them somewhere safe now: the clipboard is emptied in one minute."));
             // Not left on the clipboard, where any program can read it, for longer than it takes to paste.
             javax.swing.Timer clear=new javax.swing.Timer(60_000,e->{
                 try{var board=Toolkit.getDefaultToolkit().getSystemClipboard();
@@ -400,10 +400,10 @@ final class DesktopLock {
         DesktopUi.add(body,DesktopUi.note("This backup is locked. Type its password, or the 12 recovery words of the notebook it came from.",380,DesktopUi.INK,DesktopUi.BODY));
         DesktopUi.gap(body,12);DesktopUi.add(body,said);DesktopUi.gap(body,6);DesktopUi.add(body,wrong);
         JButton go=DesktopUi.primary("Open the backup",()->{
-            wrong.setForeground(DesktopUi.QUIET);wrong.setText("Opening…");wrong.paintImmediately(wrong.getVisibleRect());
+            wrong.setForeground(DesktopUi.QUIET);wrong.setText(Say.t("Opening…"));wrong.paintImmediately(wrong.getVisibleRect());
             String typed=said.getText();
             try{key[0]=typed.trim().split("\\s+").length==Vault.WORDS?Vault.recover(lock,typed):Vault.open(lock,typed.toCharArray());box[0].dispose();}
-            catch(Vault.Refused no){wrong.setForeground(DesktopUi.WARN);wrong.setText("That does not open this backup.");}
+            catch(Vault.Refused no){wrong.setForeground(DesktopUi.WARN);wrong.setText(Say.t("That does not open this backup."));}
         });
         box[0]=DesktopUi.sheet(owner,"Locked backup",body,DesktopUi.footer(go),true);
         box[0].getRootPane().setDefaultButton(go);box[0].getRootPane().putClientProperty("focus",said);DesktopUi.show(box[0],440,420);
@@ -426,10 +426,10 @@ final class DesktopLock {
         DesktopUi.add(body,DesktopUi.quiet("The same again"));DesktopUi.gap(body,4);DesktopUi.add(body,again);DesktopUi.gap(body,6);DesktopUi.add(body,wrong);
         JButton go=DesktopUi.primary("Choose where to save it",()->{
             String problem=problem(first.getPassword(),again.getPassword());
-            if(problem!=null){wrong.setText(problem);return;}
+            if(problem!=null){wrong.setText(Say.t(problem));return;}
             said[0]=first.getPassword();box[0].dispose();
         });
-        JButton plain=new JButton("Without a password");
+        JButton plain=new JButton(Say.t("Without a password"));
         plain.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_BORDERLESS);
         plain.addActionListener(e->{
             if(!DesktopUi.confirm(box[0],"Without a password?","Anyone who gets the file can read every note and file in it.","Export without a password",true))return;
@@ -477,16 +477,16 @@ final class DesktopLock {
         DesktopUi.Text helloSaid=DesktopUi.quiet(" ");helloSaid.setName("helloSaid");helloSaid.setVisible(false);
         boolean[] helloHere={Boolean.TRUE.equals(DesktopHello.known())};JPanel[] whileOnRef={null};Runnable[] shownRef={()->{}};
         hello.addActionListener(e->{
-            if(!hello.isSelected()){DesktopHello.forget(folder);helloSaid.setForeground(DesktopUi.QUIET);helloSaid.setText("Windows Hello no longer opens Mininotes.");helloSaid.setVisible(true);return;}
+            if(!hello.isSelected()){DesktopHello.forget(folder);helloSaid.setForeground(DesktopUi.QUIET);helloSaid.setText(Say.t("Windows Hello no longer opens Mininotes."));helloSaid.setVisible(true);return;}
             byte[] key=app.context.databaseKey();if(key==null){hello.setSelected(false);return;}
-            hello.setEnabled(false);helloSaid.setForeground(DesktopUi.QUIET);helloSaid.setText("Waiting for Windows Hello…");helloSaid.setVisible(true);
+            hello.setEnabled(false);helloSaid.setForeground(DesktopUi.QUIET);helloSaid.setText(Say.t("Waiting for Windows Hello…"));helloSaid.setVisible(true);
             // Not on the disk thread: Hello waits for the person, and saving must not wait with it.
             new SwingWorker<Void,Void>(){
                 protected Void doInBackground() throws Exception{DesktopHello.enable(folder,key);return null;}
                 protected void done(){
                     hello.setEnabled(true);
-                    try{get();helloSaid.setForeground(DesktopUi.QUIET);helloSaid.setText("Windows Hello now opens Mininotes. The backup password still works.");shownRef[0].run();}
-                    catch(Exception e){Throwable why=e.getCause()!=null?e.getCause():e;hello.setSelected(false);helloSaid.setForeground(DesktopUi.WARN);helloSaid.setText(why.getMessage()!=null?why.getMessage():"Windows Hello could not be set up.");}
+                    try{get();helloSaid.setForeground(DesktopUi.QUIET);helloSaid.setText(Say.t("Windows Hello now opens Mininotes. The backup password still works."));shownRef[0].run();}
+                    catch(Exception e){Throwable why=e.getCause()!=null?e.getCause():e;hello.setSelected(false);helloSaid.setForeground(DesktopUi.WARN);helloSaid.setText(Say.t(why.getMessage()!=null?why.getMessage():"Windows Hello could not be set up."));}
                 }
             }.execute();
         });
@@ -497,10 +497,10 @@ final class DesktopLock {
         Runnable shown=()->{boolean yes=locked(folder),viaHello=DesktopHello.has(folder);on.setSelected(yes);
             if(whileOnRef[0]!=null)whileOnRef[0].setVisible(yes);
             hello.setSelected(viaHello);helloRow.setVisible(yes&&helloHere[0]);
-            state.setIcon(padlock(yes,18));state.setText(yes?"Locked and encrypted":"Not locked");state.setForeground(yes?DesktopUi.ACCENT:DesktopUi.INK);
-            means.setText(!yes?"Anyone who can open this PC's files can read your notes. Lock Mininotes to encrypt them"+(helloHere[0]?"; it then opens with Windows Hello.":" with a password.")
-                :viaHello?"Mininotes opens with Windows Hello. Your backup password and your 12 recovery words open it too. Your notes, their attachments and the backups you export are encrypted."
-                :"Mininotes asks for your backup password when it opens"+(helloHere[0]?". Switch on Windows Hello below and you will rarely need it":"")+". Your notes, their attachments and the backups you export are encrypted.");
+            state.setIcon(padlock(yes,18));state.setText(Say.t(yes?"Locked and encrypted":"Not locked"));state.setForeground(yes?DesktopUi.ACCENT:DesktopUi.INK);
+            means.setText(!yes?Say.t(helloHere[0]?"Anyone who can open this PC's files can read your notes. Lock Mininotes to encrypt them; it then opens with Windows Hello.":"Anyone who can open this PC's files can read your notes. Lock Mininotes to encrypt them with a password.")
+                :viaHello?Say.t("Mininotes opens with Windows Hello. Your backup password and your 12 recovery words open it too. Your notes, their attachments and the backups you export are encrypted.")
+                :Say.t(helloHere[0]?"Mininotes asks for your backup password when it opens. Switch on Windows Hello below and you will rarely need it. Your notes, their attachments and the backups you export are encrypted.":"Mininotes asks for your backup password when it opens. Your notes, their attachments and the backups you export are encrypted."));
             app.securityShown();};
         shownRef[0]=shown;shown.run();
         // Once the lock is on, Windows Hello is set up straight away where this PC has it: that is how it is meant to open.
@@ -549,7 +549,7 @@ final class DesktopLock {
         for(int i=0;i<3;i++){fields[i]=new JTextField(18);fields[i].setName("word"+(asked.get(i)+1));body.add(DesktopUi.row(DesktopUi.body("Word "+(asked.get(i)+1)),fields[i]));}
         DesktopUi.gap(body,6);DesktopUi.add(body,wrong);
         JButton go=DesktopUi.primary("Lock the notebook",()->{
-            for(int i=0;i<3;i++)if(!fields[i].getText().trim().equalsIgnoreCase(words.get(asked.get(i)))){wrong.setText("Word "+(asked.get(i)+1)+" is not right. Check what you wrote down.");return;}
+            for(int i=0;i<3;i++)if(!fields[i].getText().trim().equalsIgnoreCase(words.get(asked.get(i)))){wrong.setText(Say.t("Word {0} is not right. Check what you wrote down.",asked.get(i)+1));return;}
             ok[0]=true;box[0].dispose();
         });
         JButton back=DesktopUi.button("Show the words again",()->showWords(box[0],words));
@@ -573,14 +573,14 @@ final class DesktopLock {
         DesktopUi.add(body,DesktopUi.note("Your recovery words stay the same.",360,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f)));
         JButton go=DesktopUi.primary("Change password",()->{
             String problem=problem(first.getPassword(),again.getPassword());
-            if(problem!=null){wrong.setText(problem);return;}
+            if(problem!=null){wrong.setText(Say.t(problem));return;}
             try {
                 byte[] kept=Files.readAllBytes(folder.resolve(KEPT));
                 byte[] key=Vault.open(kept,now.getPassword());
                 AtomicFile.write(folder.resolve(KEPT),Vault.newPassword(kept,key,first.getPassword()));
-                box[0].dispose();app.status.setText("Password changed");
-            } catch(Vault.Refused no){wrong.setText("The current password is not right.");}
-            catch(Exception e){wrong.setText("The password could not be changed. The old one still works.");}
+                box[0].dispose();app.status.setText(Say.t("Password changed"));
+            } catch(Vault.Refused no){wrong.setText(Say.t("The current password is not right."));}
+            catch(Exception e){wrong.setText(Say.t("The password could not be changed. The old one still works."));}
         });
         box[0]=DesktopUi.sheet(app.frame,"Change backup password",body,DesktopUi.footer(go),true);
         box[0].getRootPane().setDefaultButton(go);box[0].getRootPane().putClientProperty("focus",now);DesktopUi.show(box[0],440,520);
@@ -595,19 +595,19 @@ final class DesktopLock {
         DesktopUi.gap(body,12);DesktopUi.add(body,DesktopUi.quiet("Password"));DesktopUi.gap(body,4);DesktopUi.add(body,now);DesktopUi.gap(body,6);DesktopUi.add(body,wrong);
         JButton off=DesktopUi.danger("Turn off the lock",()->{
             try{Vault.open(Files.readAllBytes(folder.resolve(KEPT)),now.getPassword());go[0]=true;box[0].dispose();}
-            catch(Vault.Refused no){wrong.setText("That password is not right.");}
-            catch(Exception e){wrong.setText("The lock could not be read.");}
+            catch(Vault.Refused no){wrong.setText(Say.t("That password is not right."));}
+            catch(Exception e){wrong.setText(Say.t("The lock could not be read."));}
         });
         box[0]=DesktopUi.sheet(app.frame,"Turn off the lock?",body,DesktopUi.footer(off),true);
         box[0].getRootPane().setDefaultButton(off);box[0].getRootPane().putClientProperty("focus",now);DesktopUi.show(box[0],440,400);
         if(!go[0]){after.run();return;}
-        app.status.setText("Turning off the lock…");
+        app.status.setText(Say.t("Turning off the lock…"));
         app.disk.submit(()->{
             byte[] key=app.context.databaseKey();
             if(key!=null)DesktopFiles.every(app.store,key,false);
             app.store.getWritableDatabase().rekey(null);
             Files.deleteIfExists(folder.resolve(KEPT));DesktopHello.forget(folder);app.context.unlock(null);
             return null;
-        },done->{app.status.setText("Lock turned off");after.run();app.securityShown();},e->{app.failed(e);after.run();});
+        },done->{app.status.setText(Say.t("Lock turned off"));after.run();app.securityShown();},e->{app.failed(e);after.run();});
     }
 }

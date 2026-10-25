@@ -309,7 +309,7 @@
 ? where do I put my integritas api key
 ? what did I stamp
 ! Stamp on Minima, in a file's menu or a note's, records the file's fingerprint (never the file) on the Minima blockchain with the date, through your own Integritas account. Later, Verify on Minima finds that record and gives a PDF report, which proves the file existed then, unchanged: even one changed letter makes another fingerprint.
-! Link your account once in My profile, under Integritas: paste the API key from your profile at integritas.technology. It is kept in your notebook on the device, locked with it, and sent only to Integritas. In the attachments menu you can stamp several files at once.
+! Link your account once in My profile, under Stamping: paste the API key from your profile at integritas.technology. It is kept in your notebook on the device, locked with it, and sent only to Integritas. In the attachments menu you can stamp several files at once.
 @ INTEGRITAS
 @ STAMPED
 

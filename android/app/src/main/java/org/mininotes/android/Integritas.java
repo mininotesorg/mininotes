@@ -57,8 +57,49 @@ final class Integritas {
         } catch(java.security.NoSuchAlgorithmException never){throw new IllegalStateException("SHA-256 is missing",never);}
     }
     static String hash(byte[] bytes) throws IOException {return hash(new java.io.ByteArrayInputStream(bytes));}
+
+    /**
+     * A SHA-256 fingerprint found in what was pasted (the owner, 2026-10-25: "when I receive a file, that I can compare it to
+     * the hash that I have"; decision 250): 64 hexadecimal digits, with or without 0x, in capitals or not, with spaces or
+     * colons between pairs as some tools write them, and words around it allowed. Lowercase, or null where there is none.
+     */
+    static String fingerprintIn(String pasted) {
+        if(pasted==null)return null;
+        String joined=pasted.replaceAll("(?<=[0-9A-Fa-f])[ :](?=[0-9A-Fa-f])","");
+        java.util.regex.Matcher m=java.util.regex.Pattern.compile("(?<![0-9A-Fa-f])(?:0[xX])?([0-9A-Fa-f]{64})(?![0-9A-Fa-f])").matcher(joined);
+        return m.find()?m.group(1).toLowerCase(Locale.ROOT):null;
+    }
+    /** Whether a fingerprint pasted is this one: true, false, or null while nothing pasted is a fingerprint yet. */
+    static Boolean sameFingerprint(String mine,String pasted) {
+        String theirs=fingerprintIn(pasted);
+        return theirs==null||mine==null?null:theirs.equalsIgnoreCase(mine);
+    }
     /** A note's fingerprint: its words, as Copy the text gives them, in UTF-8. */
     static String hashOfText(String text) throws IOException {return hash((text==null?"":text).getBytes(StandardCharsets.UTF_8));}
+
+    /**
+     * What a note's stamp covers from 0.4.018 (the owner, 2026-10-21: "Why integritas/stamping doesnt include the title of the
+     * note? I think it should"; decision 230): its title, an empty line, then its text, as the PC's Copy the text gives them,
+     * so anybody can copy the note and make the same SHA-256 without Mininotes; a note with no title, its text alone.
+     */
+    static String noteWords(String title,String body) {
+        String t=title==null?"":title,b=body==null?"":body;
+        // As Copy the note: a title of spaces is none, and a title is taken exactly as written.
+        return t.trim().isEmpty()?b:t+"\n\n"+b;
+    }
+    static String hashOfNote(String title,String body) throws IOException {return hashOfText(noteWords(title,body));}
+    /** Kinds of stamp: a note's title and text (from 0.4.018); "note", its text alone (stamps made before); a file in
+     *  Mininotes; a file on this device's drive, never put in Mininotes (decision 230). */
+    static final String TITLED="titled", NOTE="note", FILE="file", OUTSIDE="outside";
+    /** A note as it is now, fingerprinted the way {@code row} was: each stamp keeps the form it was made in. */
+    static String hashNow(NoteStore.StampRow row,String title,String body) throws IOException {
+        return TITLED.equals(row.kind())?hashOfNote(title,body):hashOfText(body);
+    }
+    /** Of a note's stamps, newest first, the one that matches it as it is now, each by its own form; else null. */
+    static NoteStore.StampRow matching(List<NoteStore.StampRow> all,String title,String body) {
+        for(NoteStore.StampRow one:all)try{if(one.hash().equals(hashNow(one,title,body)))return one;}catch(IOException never){/* the next */}
+        return null;
+    }
 
     static String hex(byte[] bytes) {
         StringBuilder out=new StringBuilder();
@@ -196,8 +237,21 @@ final class Integritas {
 
     /** What is fingerprinted, said plainly, for the box: a note's text (in characters) or a file (in bytes). */
     static String what(boolean note,long size) {
-        if(note)return Say.t("The note's text as it was saved, without its title: {0} characters, in UTF-8. That exact text is kept with the stamp, in your notebook.",String.valueOf(size));
+        if(note)return Say.t("The note's title and text as they were saved: {0} characters, in UTF-8. That exact text is kept with the stamp, in your notebook.",String.valueOf(size));
         return Say.t("The file exactly as it is kept here: {0}.",Attachment.size(size));
+    }
+
+    /**
+     * What Integritas answered a stamp with, said for the box (the owner, 2026-10-25: "it says hash anchored successfully,
+     * first this should be translated and then lower it says that it is still progressing, this is a bit confusing";
+     * decision 249). Its "Hash anchored successfully." means it took the fingerprint and sent it to Minima, not that Minima
+     * has it yet: said so, in the language chosen, so the step after (waiting for Minima) follows from it. Anything else
+     * it says is quoted.
+     */
+    static String answered(String said) {
+        if(said==null||said.isBlank())return "";
+        if(said.toLowerCase(Locale.ROOT).contains("anchored successfully"))return Say.t("Integritas took it and sent it on to Minima.");
+        return Say.t("Integritas said: {0}",said);
     }
 
     /** Everything kept of a stamp, to copy: plain lines anybody can check against Minima. */
@@ -233,6 +287,12 @@ final class Integritas {
         private final java.util.Map<Long,java.util.concurrent.ScheduledFuture<?>> due=new java.util.concurrent.ConcurrentHashMap<>();
         private final java.util.Map<Long,Long> next=new java.util.concurrent.ConcurrentHashMap<>();
         private final java.util.Map<Long,String> trouble=new java.util.concurrent.ConcurrentHashMap<>();
+        /** Looks in a row that got no answer at all, for each stamp. */
+        private final java.util.Map<Long,Integer> unanswered=new java.util.concurrent.ConcurrentHashMap<>();
+        /** Looked for because somebody asked (Verify again, Check now): what went wrong is said at once. */
+        private final java.util.Set<Long> asked=java.util.concurrent.ConcurrentHashMap.newKeySet();
+        /** How many of those before the screen is told Integritas cannot be reached. */
+        static final int QUIET_LOOKS=3;
 
         /** @param unit milliseconds in a second of waiting: 1000, or fewer in a test */
         Watch(NoteStore store,long unit) {
@@ -257,7 +317,7 @@ final class Integritas {
             java.util.concurrent.ScheduledFuture<?> was=due.remove(n);if(was!=null)was.cancel(false);
             timer.execute(()->{try{NoteStore.StampRow row=store.stampRow(n);
                 if(row!=null&&!row.confirmed()&&!row.waiting())store.stampChecked(n,0,row.checked(),NoteStore.STAMP_WAITING);}catch(RuntimeException closed){return;}
-                look(n);});
+                asked.add(n);look(n);});
         }
         /**
          * The stamps of this fingerprint told as they are now, after Verify on Minima or a report found or kept something of
@@ -274,14 +334,20 @@ final class Integritas {
 
         private void look(long n) {
             due.remove(n);
+            boolean wanted=asked.remove(n);
             NoteStore.StampRow row;
             try{row=store.stampRow(n);}catch(RuntimeException closed){return;}
             if(row==null||row.confirmed())return;
             int tries=row.tries()+1;long now=System.currentTimeMillis();
             try {
-                Found f=check(store.secret(KEY),row.hash());trouble.remove(n);
+                Found f=check(store.secret(KEY),row.hash());trouble.remove(n);unanswered.remove(n);
                 Block b=f.match()?chosen(f.blocks(),row.at()):null;
                 if(b!=null){store.stampLanded(n,b.number(),b.txpow(),b.tx(),b.date(),tries,now);tell(store.stampRow(n),true);return;}
+            } catch(Unreachable away) {
+                // A look nobody asked for says nothing the first times Integritas does not answer: a phone waking, a
+                // network changing or the server's moment of trouble passes, and the next look is soon (decision 246).
+                int times=unanswered.merge(n,1,Integer::sum);
+                if(wanted||times>=QUIET_LOOKS)trouble.put(n,away.getMessage());
             } catch(IOException failed){trouble.put(n,failed.getMessage()==null?"Integritas could not be reached.":failed.getMessage());}
             catch(RuntimeException closed){return;}
             boolean more=tries<MOST;
@@ -299,15 +365,32 @@ final class Integritas {
     private static JSONObject post(String path,String key,String request,JSONObject body,boolean report) throws IOException {
         if(!looksLikeAKey(key))throw new IOException("Link your Integritas account first: paste the API key from your profile at integritas.technology.");
         IOException last=null;
-        for(String base:bases) {
-            try{return once(base+"/"+path,key.trim(),request,body,report);}
-            catch(Unreachable gone){last=gone;}
+        long from=System.currentTimeMillis();
+        // Both names are one server today (147.93.126.192, read 2026-10-25), so the second host is no help when that
+        // server, or the phone's way out, has a moment's trouble. A round that failed quickly (a network not up yet, a
+        // refusal, no name found) is tried once more after a pause; one that waited out the time is not made to wait again.
+        for(int round=0;round<2;round++) {
+            for(String base:bases) {
+                try{return once(base+"/"+path,key.trim(),request,body,report);}
+                catch(Unreachable gone){last=gone;}
+            }
+            if(round>0||System.currentTimeMillis()-from>QUICK)break;
+            try{Thread.sleep(againAfter);}catch(InterruptedException stop){Thread.currentThread().interrupt();break;}
         }
-        throw last==null?new IOException("Integritas could not be reached."):new IOException("Integritas could not be reached. Try again in a moment.");
+        // Why, in the log: a code or the kind of failure, never the key or what was stamped.
+        said.accept("no answer from "+bases.length+" host(s) for "+path+": "+(last==null?"none tried":why(last)));
+        throw last==null?new Unreachable("Integritas could not be reached."):new Unreachable("Integritas could not be reached. Try again in a moment.");
     }
+    /** Where a line for the log goes: each app's own log, set by NoteStore (this class holds no Android types). */
+    static volatile java.util.function.Consumer<String> said=why->{};
+    /** A round that failed in less than this was quick, and is tried again (see {@link #post}). */
+    private static final long QUICK=10_000;
+    /** The pause before that second round; a test makes it short. */
+    static long againAfter=3_000;
+    private static String why(IOException e){return e.getMessage()==null?e.getClass().getSimpleName():e.getClass().getSimpleName()+" "+e.getMessage();}
 
-    /** A host that did not answer at all, or does not have the API: the next is tried. */
-    private static final class Unreachable extends IOException{Unreachable(String why){super(why);}}
+    /** A host that did not answer at all, or does not have the API: the next is tried. Thrown on when none answers. */
+    static final class Unreachable extends IOException{Unreachable(String why){super(why);}}
 
     private static JSONObject once(String url,String key,String request,JSONObject body,boolean report) throws IOException {
         HttpURLConnection http;
@@ -335,6 +418,35 @@ final class Integritas {
             return said;
         } finally {http.disconnect();}
     }
+
+    /**
+     * The PDF report a verification made, fetched while its link lasts (about an hour) so it can be kept with what it is about
+     * (the owner, 2026-10-25: "making sure I can atached the integritas pdf report"; decision 253). Only over https, or to this
+     * machine for a test; at most {@link #REPORT_MOST} bytes, and only what starts as a PDF does.
+     */
+    static byte[] download(String link) throws IOException {
+        URL url;
+        try{url=new URL(link);}catch(java.net.MalformedURLException bad){throw new IOException("Integritas gave no report this time. Try again in a moment.");}
+        boolean here="127.0.0.1".equals(url.getHost())||"localhost".equals(url.getHost());
+        if(!"https".equals(url.getProtocol())&&!(here&&"http".equals(url.getProtocol())))throw new IOException("Integritas gave no report this time. Try again in a moment.");
+        HttpURLConnection http=(HttpURLConnection)url.openConnection();
+        try {
+            http.setConnectTimeout(WAIT);http.setReadTimeout(WAIT);http.setInstanceFollowRedirects(true);
+            if(http.getResponseCode()!=200)throw new IOException("The report could not be fetched. Try again in a moment.");
+            try(InputStream in=http.getInputStream()) {
+                ByteArrayOutputStream all=new ByteArrayOutputStream();byte[] part=new byte[8192];int n;
+                while((n=in.read(part))!=-1){all.write(part,0,n);if(all.size()>REPORT_MOST)throw new IOException("The report could not be fetched. Try again in a moment.");}
+                byte[] pdf=all.toByteArray();
+                if(pdf.length<5||pdf[0]!='%'||pdf[1]!='P'||pdf[2]!='D'||pdf[3]!='F')throw new IOException("The report could not be fetched. Try again in a moment.");
+                return pdf;
+            }
+        } catch(java.net.SocketTimeoutException slow){throw new IOException("The report could not be fetched. Try again in a moment.");}
+        finally{http.disconnect();}
+    }
+    /** The most a report may weigh: far above any Integritas makes. */
+    static final int REPORT_MOST=20*1024*1024;
+    /** What a report kept with a thing is called: its name, then what it is. */
+    static String reportName(String of){String base=of==null||of.isBlank()?Say.t("Untitled"):of.replaceAll("\\.[A-Za-z0-9]{1,8}$","");return base+", Integritas report.pdf";}
 
     private static String read(InputStream in) throws IOException {
         if(in==null)return "";

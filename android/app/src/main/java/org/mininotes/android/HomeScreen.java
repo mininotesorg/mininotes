@@ -1003,13 +1003,8 @@ final class HomeScreen {
      * @param where the collection it makes things in, asked when it is pressed, so a pop-up that has moved on is followed
      */
     View plus(final java.util.function.Supplier<String> where) {
-        TextView plus=a.label("+",26,a.PAPER);
-        plus.setGravity(Gravity.CENTER);plus.setIncludeFontPadding(false);
-        GradientDrawable round=new GradientDrawable();round.setShape(GradientDrawable.OVAL);round.setColor(a.ACCENT);
-        // The touch shown inside the round and nowhere else: with no mask, a ripple keeps to what it is drawn over.
-        plus.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x40FFFFFF),round,null));
-        plus.setElevation(a.dp(6));
-        plus.setContentDescription("New");
+        // Drawn by MainActivity.roundPlus, as Stamped on Minima's is (decision 231).
+        TextView plus=a.roundPlus("New",null);
         // And files from this device, photos and anything else, wherever there is a + (decision 87).
         // Take a photo keeps the picture in this folder, or on Home, without a picker (decision 123).
         plus.setOnClickListener(v->{
@@ -1542,7 +1537,7 @@ final class HomeScreen {
         // 2026-10-14: "the same everywhere a change hasn't been viewed"). Over the middle of the top edge, clear of the mark.
         if(branch.fresh||branch.updated) {
             // New from somebody else; ✓ when one of my own devices updated it (decision 220).
-            TextView fresh=a.label(branch.fresh?"new":"✓",MainActivity.QUIET,a.PAPER);
+            TextView fresh=a.label(branch.fresh?Say.onNote("new"):"✓",MainActivity.QUIET,a.PAPER);
             fresh.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             fresh.setIncludeFontPadding(false);fresh.setPadding(a.dp(6),a.dp(2),a.dp(6),a.dp(3));
             GradientDrawable pill=new GradientDrawable();pill.setColor(a.ACCENT);pill.setCornerRadius(a.dp(10));
@@ -1564,6 +1559,20 @@ final class HomeScreen {
             FrameLayout.LayoutParams low=new FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);
             low.setMargins(0,0,0,-a.dp(8));
             over.addView(going,low);
+        }
+        // Stamped on Minima (decision 249): a stamp on its lower right corner, on a paper disc, in the accent once Minima has
+        // it and quiet while it is on its way; its menu's first line says which.
+        if(branch.kind==NoteStore.Branch.Kind.FILE&&branch.stamped!=NoteStore.Branch.STAMP_NONE) {
+            boolean there=branch.stamped==NoteStore.Branch.STAMP_ON_MINIMA;
+            FrameLayout disc=new FrameLayout(a);
+            GradientDrawable round=new GradientDrawable();round.setShape(GradientDrawable.OVAL);round.setColor(a.PAPER);
+            round.setStroke(Math.max(1,a.dp(1)),a.LINE);disc.setBackground(round);
+            View stamp=new View(a);stamp.setBackground(IconFace.symbol(a,"stamp",there?a.ACCENT:a.MUTED));
+            disc.addView(stamp,new FrameLayout.LayoutParams(a.dp(14),a.dp(14),Gravity.CENTER));
+            disc.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            FrameLayout.LayoutParams corner=new FrameLayout.LayoutParams(a.dp(22),a.dp(22),Gravity.BOTTOM|Gravity.END);
+            corner.setMargins(0,0,-a.dp(6),-a.dp(6));
+            over.addView(disc,corner);
         }
         over.setClipChildren(false);over.setClipToPadding(false);
         return over;
@@ -1657,7 +1666,7 @@ final class HomeScreen {
             over.addView(a.placeMark(place,badge),corner);
         }
         if(place.fresh) {
-            TextView fresh=a.label("new",MainActivity.QUIET,a.PAPER);
+            TextView fresh=a.label(Say.onNote("new"),MainActivity.QUIET,a.PAPER);
             fresh.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             fresh.setIncludeFontPadding(false);fresh.setPadding(a.dp(6),a.dp(2),a.dp(6),a.dp(3));
             GradientDrawable pill=new GradientDrawable();pill.setColor(a.ACCENT);pill.setCornerRadius(a.dp(10));
@@ -1843,13 +1852,15 @@ final class HomeScreen {
      * also have record a note").
      */
     void recordNote(final String asked) {
-        final String where=asked==null||asked.isEmpty()||MainActivity.takesNew(asked)?Things.HOME:asked;
+        final String place=asked!=null&&MainActivity.takesNew(asked)?asked:null,where=asked==null||asked.isEmpty()||place!=null?Things.HOME:asked;
         a.background.submit(()->Things.HOME.equals(where)?Boolean.TRUE:a.store.mayWriteIn(NoteStore.Branch.Kind.COLLECTION,where),may->{
             if(Boolean.FALSE.equals(may)){a.alert("This folder is read only here. Ask whoever shared it to let you write in it.");return;}
             final NoteStore.Note note=new NoteStore.Note();note.book=where;
             note.title=Say.t("Recording")+" "+new java.text.SimpleDateFormat("d MMM, HH:mm",java.util.Locale.getDefault()).format(new java.util.Date());note.body="";
-            a.background.submit(()->{a.store.save(note);return a.store.get(note.id);},kept->{
-                if(Things.HOME.equals(where))placeNew(note.id);
+            // Written at once, with its title: from a place's +, put in the place at once too, as its first word would put a
+            // note typed in. It was left on Home, never in Temp (decision 238).
+            a.background.submit(()->{a.store.save(note);if(place!=null)a.intoPlaceNow(NoteStore.Branch.Kind.PAGE,note.id,place);return a.store.get(note.id);},kept->{
+                if(Things.HOME.equals(where)&&!NoteStore.ARCHIVE.equals(place)&&!NoteStore.BIN.equals(place))placeNew(note.id);
                 a.cameFrom=new ArrayList<>(a.trail);a.cameFromNote=note.id;
                 a.write((NoteStore.Note)kept);
                 a.getWindow().getDecorView().postDelayed(a::record,250);
@@ -1932,8 +1943,9 @@ final class HomeScreen {
         sheet.row("Copy",()->withHeld(file,held->a.copyFile(held.id,held.name)));
         sheet.row("Send with another app…",()->withHeld(file,held->a.sendWithApp(held.id,held.name,held.kind)));
         sheet.row("Save on my phone…",()->withHeld(file,held->a.saveCopyOf(held.id,held.name,held.kind)));
-        sheet.row("Stamp on Minima…",()->withHeld(file,held->PhoneStamp.file(a,held)));
-        sheet.row("Verify on Minima…",()->withHeld(file,held->PhoneStamp.verifyFile(a,held)));
+        // On Minima: one row, saying how far its stamp is, opening the one window for it (decision 253).
+        if(file.stamped!=NoteStore.Branch.STAMP_NONE)sheet.row("Stamp on Minima…",Say.t(file.stamped==NoteStore.Branch.STAMP_ON_MINIMA?"On Minima":"Waiting for Minima"),()->withHeld(file,held->PhoneStamp.thing(a,held.id,false)));
+        else sheet.row("Stamp on Minima…",()->withHeld(file,held->PhoneStamp.thing(a,held.id,false)));
         sheet.row("Send to a device…",()->a.chooseDevice(Collections.singletonList(Lending.of(file.id)),new ArrayList<>()));
         sheet.row("Put in a note…",()->withHeld(file,held->a.putInNote(loose(held))));
         sheet.row("Move to…",()->{a.carrying=file;a.browse();});

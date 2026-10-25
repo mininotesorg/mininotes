@@ -17,6 +17,22 @@ final class DesktopBackup {
     /** The start of a backup written while the notebook was locked: this, then its lock, then the sealed zip. */
     static final byte[] LOCKED={'M','N','B','1'};
 
+    /**
+     * A backup proposed (the owner, 2026-10-22: "Generally speaking we should propose a backup system. It should be clear
+     * that any private element can't be backed up"; decision 235): when one was last saved here, and when this version first
+     * opened the notebook, kept in its settings; the line the status strip says once 30 days have gone by with neither.
+     */
+    static final String BACKED_UP="backedUp",FIRST_SEEN="backupCountedFrom";
+    static final String REMIND="No backup in 30 days. Back up now…";
+    static final long REMIND_AFTER=30L*24*60*60*1000;
+    /** Whether to propose one now: notes to lose, and 30 days since the last backup, or since counting began for none. */
+    static boolean due(long now,long backedUp,long countedFrom,boolean anyNotes) {
+        long since=Math.max(backedUp,countedFrom);
+        return anyNotes&&since>0&&now-since>=REMIND_AFTER;
+    }
+    /** A time kept as words; 0 for none or anything unreadable. */
+    static long number(String kept){try{return kept==null?0:Long.parseLong(kept.trim());}catch(NumberFormatException no){return 0;}}
+
     static void write(NoteStore store,Path target) throws Exception{write(store,target,null,null,null);}
     static void write(NoteStore store,Path target,byte[] key,byte[] lock) throws Exception{write(store,target,key,lock,null);}
     /**

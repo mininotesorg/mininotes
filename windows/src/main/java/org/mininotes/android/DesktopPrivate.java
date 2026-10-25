@@ -145,13 +145,20 @@ final class DesktopPrivate {
         // While the password field comes up, what is typed is kept for it; a word handed over again whole, code and all, gives
         // only what follows the code, as on the phone (decision 114).
         @Override public void insertString(FilterBypass fb,int at,String s,AttributeSet a) throws BadLocationException {
+            s=ends(s);
             if(catching==this){PrivateCode.more(caught,s);return;}
             fb.insertString(at,s,a);caught(fb,at,s);
         }
         @Override public void replace(FilterBypass fb,int at,int length,String s,AttributeSet a) throws BadLocationException {
+            s=ends(s);
             if(catching==this){PrivateCode.more(caught,s);return;}
             fb.replace(at,length,s,a);caught(fb,at,s);
         }
+        /**
+         * What is typed or pasted ends its lines as the page does (decision 228: pasted paragraphs ran into one on the phone;
+         * the same here for U+2029 and the rest). Never a note being drawn: it opens as it was saved.
+         */
+        private String ends(String s){return s!=null&&LineEnds.other(s)&&typing.getAsBoolean()?LineEnds.plain(s):s;}
         @Override public void remove(FilterBypass fb,int at,int length) throws BadLocationException {
             if(catching==this){if(caught.length()>0)caught.setLength(caught.length()-1);return;}
             fb.remove(at,length);
@@ -203,10 +210,10 @@ final class DesktopPrivate {
     private void password(String hint,String already,java.awt.Point at,java.util.function.BiConsumer<char[],Box> enter,Runnable away) {
         JDialog box=new JDialog(d.frame);box.setUndecorated(true);box.setType(Window.Type.POPUP);
         JPasswordField field=new JPasswordField(already,22);asking=field;
-        field.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,hint);
+        field.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,Say.t(hint));
         field.putClientProperty(FlatClientProperties.STYLE,"margin:8,10,8,10");
         oneEye(field);
-        field.getAccessibleContext().setAccessibleName(hint);
+        field.getAccessibleContext().setAccessibleName(Say.t(hint));
         JPanel round=new JPanel(new BorderLayout());round.setBackground(DesktopUi.CARD);
         round.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(DesktopUi.LINE.darker()),BorderFactory.createEmptyBorder(6,6,6,6)));
         // An eye at its right that shows the characters while it is held (decision 116).
@@ -217,9 +224,9 @@ final class DesktopPrivate {
         Box[] self={null};
         self[0]=new Box(){
             // No blinking caret while it says Opening, so it does not look as if it wants typing (decision 116): not editable, and the caret hidden.
-            public void waiting(String words){field.setText("");field.setEditable(false);field.getCaret().setVisible(false);field.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,words);field.repaint();}
+            public void waiting(String words){field.setText("");field.setEditable(false);field.getCaret().setVisible(false);field.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,Say.t(words));field.repaint();}
             public void again(String asked,java.util.function.BiConsumer<char[],Box> then){next[0]=then;field.setText("");field.setEditable(true);field.getCaret().setVisible(true);
-                field.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,asked);field.getAccessibleContext().setAccessibleName(asked);field.requestFocusInWindow();field.repaint();}
+                field.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,Say.t(asked));field.getAccessibleContext().setAccessibleName(Say.t(asked));field.requestFocusInWindow();field.repaint();}
             public void close(){if(done[0])return;done[0]=true;if(asking==field)asking=null;field.setText("");box.dispose();}
         };
         field.addActionListener(e->{if(done[0]||!field.isEditable())return;char[] said=field.getPassword();field.setText("");next[0].accept(said,self[0]);});
@@ -312,7 +319,7 @@ final class DesktopPrivate {
         JPanel left=new JPanel();left.setLayout(new BoxLayout(left,BoxLayout.Y_AXIS));left.setOpaque(false);
         back.setAlignmentX(Component.LEFT_ALIGNMENT);named.setAlignmentX(Component.LEFT_ALIGNMENT);left.add(back);left.add(named);
         top.add(left,BorderLayout.CENTER);
-        more=DesktopUi.button("⋯",()->moreMenu().show(more,0,more.getHeight()));more.setToolTipText("More");more.getAccessibleContext().setAccessibleName("More");
+        more=DesktopUi.button("⋯",()->moreMenu().show(more,0,more.getHeight()));more.setToolTipText(Say.t("More"));more.getAccessibleContext().setAccessibleName("More");
         JPanel middleRight=new JPanel(new GridBagLayout());middleRight.setOpaque(false);middleRight.add(DesktopUi.actions(more));
         top.add(middleRight,BorderLayout.EAST);
         screen.add(top,BorderLayout.NORTH);
@@ -330,7 +337,7 @@ final class DesktopPrivate {
         middle.add(binPanel,"bin");
         // The same + as Home's, in the same place, the foot on the right (the owner, 2026-10-06: "let's keep the same + at
         // the bottom"; decision 114), over whatever is shown, the bin aside.
-        plus=DesktopHome.round();plus.setToolTipText("New note or folder");plus.getAccessibleContext().setAccessibleName("New");
+        plus=DesktopHome.round();plus.setToolTipText(Say.t("New note or folder"));plus.getAccessibleContext().setAccessibleName("New");
         plus.addActionListener(e->{JPopupMenu menu=plusMenu();Dimension m=menu.getPreferredSize();menu.show(plus,plus.getWidth()-m.width-6,-m.height-2);});
         JLayeredPane room=new JLayeredPane(){
             @Override public void doLayout() {
@@ -354,7 +361,7 @@ final class DesktopPrivate {
         // Laid out as a note's page is (see Desktop.build): its title, then ruled paper, washed in its colour.
         noteView=new JPanel(new BorderLayout());noteView.setBackground(GROUND);
         noteTitle=new JTextField();noteTitle.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,24f));noteTitle.setForeground(DesktopUi.INK);
-        noteTitle.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,"Untitled");noteTitle.setBorder(BorderFactory.createEmptyBorder());noteTitle.setBackground(GROUND);
+        noteTitle.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,Say.t("Untitled"));noteTitle.setBorder(BorderFactory.createEmptyBorder());noteTitle.setBackground(GROUND);
         noteTitle.getAccessibleContext().setAccessibleName("Note title");
         JPanel titled=new JPanel(new BorderLayout());titled.setOpaque(false);titled.setBorder(BorderFactory.createEmptyBorder(2,42,10,38));titled.add(noteTitle);
         notePage=new Desktop.Paper();notePage.setLineWrap(true);notePage.setWrapStyleWord(true);notePage.setFont(DesktopUi.BODY.deriveFont(18f));
@@ -397,8 +404,8 @@ final class DesktopPrivate {
         boolean onNote=note!=null&&shown.thing(note)!=null;
         if(!onNote)note=null;
         // Where ‹ goes, named: up a level, and at the top out of here, back to Mininotes as it was.
-        back.setText("‹ "+(onNote?(in!=null?in.name():"Private"):inBin?"Private":in!=null?parentName(in):Say.t("Home")));
-        heading.setText(inBin?"Bin":onNote?"Private note":in!=null?in.name():"Private");
+        back.setText("‹ "+(onNote?(in!=null?in.name():Say.t("Private")):inBin?Say.t("Private"):in!=null?parentName(in):Say.t("Home")));
+        heading.setText(inBin?Say.t("Bin"):onNote?Say.t("Private note"):in!=null?in.name():Say.t("Private"));
         plus.setVisible(!inBin);
         if(inBin){drawBin();cards.show(middle,"bin");}
         else if(onNote){drawNote();cards.show(middle,"note");}
@@ -471,7 +478,7 @@ final class DesktopPrivate {
         if(System.currentTimeMillis()-lastUse>IDLE){close();return;}
         // In minutes, never bytes, the same words as the phone's (decision 114).
         says.setForeground(full?DesktopUi.WARN:DesktopUi.QUIET);
-        says.setText(shown.saying(full));
+        says.setText(Say.t(shown.saying(full)));
     }
 
     private static String size(long bytes){return bytes<1024?bytes+" bytes":bytes<1024*1024?(bytes/1024)+" KB":String.format(java.util.Locale.ROOT,"%.1f MB",bytes/1048576.0);}
@@ -618,7 +625,7 @@ final class DesktopPrivate {
 
     private void changePassword() {
         JPasswordField first=new JPasswordField(24),again=new JPasswordField(24);
-        first.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,"New password");again.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,"The same again");
+        first.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,Say.t("New password"));again.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT,Say.t("The same again"));
         JPanel body=DesktopUi.column();
         DesktopUi.add(body,DesktopUi.note("A long phrase of several words is best. Nobody can recover it if it is forgotten. Until everything is written again under it, the old password still opens this.",360,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f)));
         // An eye at each field's right that shows the characters while it is held (decision 116).
@@ -626,15 +633,15 @@ final class DesktopPrivate {
         JDialog[] box={null};JLabel wrong=new JLabel(" ");wrong.setForeground(DesktopUi.WARN);DesktopUi.gap(body,6);DesktopUi.add(body,wrong);
         JButton go=DesktopUi.primary("Change password",()->{
             char[] a=first.getPassword(),b=again.getPassword();
-            if(a.length==0){wrong.setText("Type the new password.");return;}
-            if(!Arrays.equals(a,b)){wrong.setText("The two are not the same.");Arrays.fill(a,'\0');Arrays.fill(b,'\0');return;}
+            if(a.length==0){wrong.setText(Say.t("Type the new password."));return;}
+            if(!Arrays.equals(a,b)){wrong.setText(Say.t("The two are not the same."));Arrays.fill(a,'\0');Arrays.fill(b,'\0');return;}
             Arrays.fill(b,'\0');box[0].dispose();
-            PrivateSpace now=shown;says.setText("Changing the password…");
+            PrivateSpace now=shown;says.setText(Say.t("Changing the password…"));
             worker.submit(()->{
                 boolean[] fit={true};
                 try{now.space.rekey(a);}catch(Slots.Full f){fit[0]=false;}catch(Throwable quietly){fit[0]=false;}
                 finally{Arrays.fill(a,'\0');}
-                SwingUtilities.invokeLater(()->{if(shown==now){full=!fit[0];tick();if(fit[0])says.setText("Password changed. Keep Mininotes open until it is all written.");}});
+                SwingUtilities.invokeLater(()->{if(shown==now){full=!fit[0];tick();if(fit[0])says.setText(Say.t("Password changed. Keep Mininotes open until it is all written."));}});
             });
         });
         box[0]=DesktopUi.sheet(d.frame,"Change password",body,DesktopUi.footer(go),true);
@@ -647,7 +654,7 @@ final class DesktopPrivate {
         if(shown==null)return;
         List<Path> picked=DesktopPick.open(d.frame,"From this device",true);if(picked.isEmpty())return;
         File[] chosen=new File[picked.size()];for(int i=0;i<chosen.length;i++)chosen[i]=picked.get(i).toFile();
-        final String into=note;final String parent=note==null?folder:null;final PrivateSpace now=shown;says.setText("Adding…");
+        final String into=note;final String parent=note==null?folder:null;final PrivateSpace now=shown;says.setText(Say.t("Adding…"));
         final List<File> files=Arrays.asList(chosen);
         worker.submit(()->{
             List<Object[]> ready=new ArrayList<>();
@@ -689,12 +696,12 @@ final class DesktopPrivate {
             (one?named+" stays where it was unless you move it.":named+" stay where they were unless you move them.")+" The copy kept here is private.",
             one?"Move to Recycle Bin":"Move them",false))return;
         if(!(java.awt.Desktop.isDesktopSupported()&&java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.MOVE_TO_TRASH))) {
-            says.setText("Mininotes cannot move it to the Recycle Bin here. Delete it in File Explorer.");return;
+            says.setText(Say.t("Mininotes cannot move it to the Recycle Bin here. Delete it in File Explorer."));return;
         }
         int gone=0;boolean refused=false;
         for(File f:originals){try{if(java.awt.Desktop.getDesktop().moveToTrash(f))gone++;else refused=true;}catch(Throwable cannot){refused=true;}}
-        says.setText(refused?"Some originals could not be moved. Delete them in File Explorer."
-            :(gone==1?"The original is in the Recycle Bin":"The originals are in the Recycle Bin"));
+        says.setText(Say.t(refused?"Some originals could not be moved. Delete them in File Explorer."
+            :(gone==1?"The original is in the Recycle Bin":"The originals are in the Recycle Bin")));
     }
     static String jpegName(String name){int dot=name.lastIndexOf('.');return (dot>0?name.substring(0,dot):name)+".jpg";}
 
@@ -744,7 +751,7 @@ final class DesktopPrivate {
     /** A copy saved where the user says: their own act, the one way anything private leaves Mininotes. */
     private void saveCopy(PrivateSpace.Kept k) {
         Path target=DesktopPick.save(d.frame,"Save on my computer",k.name);if(target==null)return;
-        try{Files.write(target,shown.bytesOf(k.id));says.setText("Saved a copy");}catch(Throwable failed){says.setText("Could not save a copy there");}
+        try{Files.write(target,shown.bytesOf(k.id));says.setText(Say.t("Saved a copy"));}catch(Throwable failed){says.setText(Say.t("Could not save a copy there"));}
     }
 
     // ---- closing --------------------------------------------------------------------------------------------------------
@@ -875,7 +882,7 @@ final class DesktopPrivate {
         char echo=field.getEchoChar();
         JButton button=new JButton(new Eye(20,14,false));
         button.putClientProperty(FlatClientProperties.BUTTON_TYPE,FlatClientProperties.BUTTON_TYPE_BORDERLESS);
-        button.setFocusable(false);button.setToolTipText("Hold to show the password");button.getAccessibleContext().setAccessibleName("Show the password");
+        button.setFocusable(false);button.setToolTipText(Say.t("Hold to show the password"));button.getAccessibleContext().setAccessibleName("Show the password");
         button.getModel().addChangeListener(e->{boolean down=button.getModel().isPressed();field.setEchoChar(down?(char)0:echo);button.setIcon(new Eye(20,14,down));});
         return button;
     }
@@ -889,7 +896,7 @@ final class DesktopPrivate {
         Tiles(boolean bin){super(null);setOpaque(false);this.bin=bin;}
         void fill(List<PrivateSpace.Thing> things) {
             removeAll();
-            if(things.isEmpty()){JLabel none=new JLabel(bin?"Nothing is in the bin.":folder.isEmpty()?"Nothing private yet. Make a note or a folder with the +.":"Nothing in this folder yet.");
+            if(things.isEmpty()){JLabel none=new JLabel(Say.t(bin?"Nothing is in the bin.":folder.isEmpty()?"Nothing private yet. Make a note or a folder with the +.":"Nothing in this folder yet."));
                 none.setFont(DesktopUi.BODY.deriveFont(13f));none.setForeground(DesktopUi.QUIET);none.setName("none");add(none);}
             for(PrivateSpace.Thing t:things)add(new Tile(t,bin));
             revalidate();repaint();

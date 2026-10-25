@@ -182,6 +182,11 @@ final class Pad extends EditText {
         // Settings, on by default, lets the keyboard learn, and dictate. A private space's page stays incognito whatever it says.
         setImeOptions(getImeOptions()|android.view.inputmethod.EditorInfo.IME_FLAG_NO_EXTRACT_UI|android.view.inputmethod.EditorInfo.IME_FLAG_NO_FULLSCREEN);
         learns(learnsHere(c));
+        // What is pasted, dropped or sent by the keyboard ends its lines as the page does (decision 228: pasted paragraphs ran
+        // into one). Never what put() lays down: a note is opened as it was saved. Kept by MainActivity, which only swaps
+        // the length filters.
+        setFilters(new android.text.InputFilter[]{(source,start,end,dest,dstart,dend)->
+            putting||!LineEnds.other(source.subSequence(start,end))?null:LineEnds.plain(source.subSequence(start,end))});
         coasting=new OverScroller(c);
         // Before anybody else's watcher: whoever reads the page after a keystroke reads runs that already fit it.
         addTextChangedListener(new TextWatcher() {

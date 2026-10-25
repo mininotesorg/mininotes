@@ -182,7 +182,7 @@ final class DesktopLook {
     /** "Colour strength": ten tones, pastel at the left, the colour itself at the right, for the one thing the menu is about. */
     static JComponent strength(IntSupplier colour,IntSupplier tone,IntConsumer setTone) {
         JPanel holder=new JPanel(new BorderLayout(0,4));holder.setOpaque(false);holder.setBorder(BorderFactory.createEmptyBorder(6,16,10,16));
-        JLabel what=new JLabel("Colour strength");what.setFont(DesktopUi.BODY.deriveFont(12.5f));what.setForeground(Desktop.QUIET);
+        JLabel what=new JLabel(Say.t("Colour strength"));what.setFont(DesktopUi.BODY.deriveFont(12.5f));what.setForeground(Desktop.QUIET);
         holder.add(what,BorderLayout.NORTH);holder.add(new Band(colour,tone,setTone));
         return holder;
     }
@@ -209,7 +209,7 @@ final class DesktopLook {
         private int step(){return Tint.TONES.length;}
         private void take(int x){int w=Math.max(1,getWidth()-getHeight());go(Math.round((x-getHeight()/2f)*(step()-1)/(float)w));}
         private void go(int to){to=Math.max(0,Math.min(step()-1,to));if(to==tone.getAsInt())return;setTone.accept(to);said();repaint();}
-        private void said(){getAccessibleContext().setAccessibleName("Colour strength, "+(tone.getAsInt()+1)+" of "+step()+". Pastel at the left, the colour itself at the right.");setToolTipText("Colour strength "+(tone.getAsInt()+1)+" of "+step());}
+        private void said(){getAccessibleContext().setAccessibleName("Colour strength, "+(tone.getAsInt()+1)+" of "+step()+". Pastel at the left, the colour itself at the right.");setToolTipText(Say.t("Colour strength {0} of {1}",tone.getAsInt()+1,step()));}
         private Color at(int t){int colour=this.colour.getAsInt();return Tint.known(colour)?new Color(Tint.over(colour,DesktopUi.CARD.getRGB(),Tint.weigh(0.22f,t,0.92f),false)):DesktopUi.mix(DesktopUi.CARD,Desktop.INK,0.06f+0.5f*t/(step()-1));}
         @Override protected void paintComponent(Graphics g0) {
             Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
@@ -251,7 +251,7 @@ final class DesktopLook {
             }
         };
         Runnable mark=()->{int at=rung.getAsInt();smaller.setEnabled(at>0);bigger.setEnabled(at<count-1);
-            String said="Text size, step "+(at+1)+" of "+count;rungs.setToolTipText(said);rungs.getAccessibleContext().setAccessibleName(said);rungs.repaint();};
+            String said=Say.t("Text size, step {0} of {1}",at+1,count);rungs.setToolTipText(said);rungs.getAccessibleContext().setAccessibleName(said);rungs.repaint();};
         smaller.addActionListener(e->{setRung.accept(clamp.applyAsInt(rung.getAsInt()-1));mark.run();});
         bigger.addActionListener(e->{setRung.accept(clamp.applyAsInt(rung.getAsInt()+1));mark.run();});
         rungs.addMouseListener(new MouseAdapter(){public void mouseReleased(MouseEvent e){mark.run();}});

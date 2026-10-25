@@ -10,7 +10,7 @@ import javax.swing.*;
 
 /**
  * The Agent on the PC, decision 213: one tall conversation with Full screen; Take me there opening My profile at its
- * Integritas part with the key's field ready; and the conversation kept in the notebook through closing the window, for
+ * Stamping part (named Integritas before decision 231) with the key's field ready; and the conversation kept in the notebook through closing the window, for
  * three hours after the last message, and forgotten by New conversation. A made-up notebook, offline.
  */
 public class DesktopAssistantKeptTest {
@@ -35,7 +35,7 @@ public class DesktopAssistantKeptTest {
         return DesktopAssistant.shown();
     }
 
-    @Test public void takeMeThereOpensTheIntegritasPartOfMyProfile() throws Exception {
+    @Test public void takeMeThereOpensTheStampingPartOfMyProfile() throws Exception {
         DesktopAssistant a=opened();
         // Tall: most of the screen it is on.
         Rectangle screen=onEdt(()->a.box().getGraphicsConfiguration().getBounds());
@@ -56,6 +56,9 @@ public class DesktopAssistantKeptTest {
             Rectangle at=SwingUtilities.convertRectangle(field.getParent(),field.getBounds(),scroll.getViewport().getView());
             return seen.y>0&&seen.contains(at.x,at.y)&&seen.contains(at.x,at.y+at.height-1);
         }));
+        // The part is called Stamping now, and its card is the one in sight (decision 231).
+        assertNotNull(onEdt(()->named(profile,"profileCard "+DesktopProfile.STAMPING)));
+        assertEquals("Stamping",DesktopProfile.STAMPING);
         shoot(profile,"99f-profile-at-integritas");
         // The conversation, with its Take me there, is still there when the Agent opens again.
         DesktopAssistant again=opened();
@@ -106,6 +109,10 @@ public class DesktopAssistantKeptTest {
     }
     private static JDialog profile() throws Exception {
         return onEdt(()->{for(Window w:Window.getWindows())if(w instanceof JDialog d&&d.isShowing()&&Say.t("My profile").equals(d.getTitle()))return d;return null;});
+    }
+    private static Component named(Container in,String name) {
+        for(Component c:in.getComponents()){if(name.equals(c.getName()))return c;if(c instanceof Container k){Component f=named(k,name);if(f!=null)return f;}}
+        return null;
     }
     private static String said(DesktopAssistant a) throws Exception {
         StringBuilder all=new StringBuilder();

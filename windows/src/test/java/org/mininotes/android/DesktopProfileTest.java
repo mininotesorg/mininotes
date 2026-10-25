@@ -21,6 +21,28 @@ public class DesktopProfileTest {
             // The app's text size on the ladder a note's menu has (decision 209), not a list.
             SwingUtilities.invokeAndWait(()->{Container ladder=(Container)find(profile[0],"app text size",false);assertNotNull(ladder);
                 assertNotNull(find(ladder,"A−",true));assertNotNull(find(ladder,"A+",true));assertFalse(hasList(profile[0]));});
+            // Each part easy to find (the owner, 2026-10-21; decision 231): at the top, every part by its name, a link, in the
+            // page's order; and each on its card, its name and symbol, and the line saying what it holds.
+            assertEquals(java.util.List.of("You","Your code","Connection","People and devices","Stamping","Text size","Security","Backup"),java.util.List.of(DesktopProfile.PARTS));
+            SwingUtilities.invokeAndWait(()->{
+                Container top=(Container)find(profile[0],"profileParts",false);assertNotNull(top);
+                java.util.List<String> named=new java.util.ArrayList<>();
+                for(Component c:top.getComponents())if(c instanceof JButton b){named.add(b.getText());assertEquals(Boolean.TRUE,b.getClientProperty("link"));}
+                assertEquals(java.util.List.of(DesktopProfile.PARTS),named);
+                int above=-1;
+                for(int i=0;i<DesktopProfile.PARTS.length;i++) {
+                    String part=DesktopProfile.PARTS[i];
+                    JLabel heading=(JLabel)find(profile[0],"profilePart "+part,false);assertNotNull(part,heading);assertEquals(part,heading.getText());assertNotNull(part,heading.getIcon());
+                    assertTrue(part,DesktopIcons.known(DesktopProfile.ICONS[i]));
+                    assertEquals(DesktopProfile.ABOUT[i],((JTextArea)find(profile[0],"profileAbout "+part,false)).getText());
+                    Component card=find(profile[0],"profileCard "+part,false);assertNotNull(part,card);
+                    assertTrue(part+" comes after the one before",card.getY()>above);above=card.getY();
+                }
+                assertTrue("the links are above the first part",top.getY()<find(profile[0],"profileCard You",false).getY());
+                // No part called Integritas any more: it is Stamping, and keeps its key and link.
+                assertNull(find(profile[0],"profilePart Integritas",false));
+                assertNotNull(find(profile[0],"integritasKey",false));assertNotNull(find(profile[0],"integritas.technology",true));
+            });
             SwingUtilities.invokeAndWait(()->{assertNull(find(profile[0],"Save name",true));((JTextField)find(profile[0],"profileName",false)).setText("Desk fixture");});
             pad.disk.flush(15000);SwingUtilities.invokeAndWait(()->{});
             assertEquals("Desk fixture",new org.mininotes.desktop.platform.content.Context(folder.toFile()).getSharedPreferences("settings",0).getString("me",""));
