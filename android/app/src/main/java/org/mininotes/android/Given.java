@@ -128,6 +128,15 @@ final class Given {
         return none?Say.t("{0} files added",kept):Say.t("{0} files added, {1} not",kept,refused);
     }
 
+    /** The same, saying where they went: {@code place} as it is shown, Home or a name in quotes; null for nowhere named. */
+    static String added(int kept,String onlyName,int refused,String place) {
+        if(kept==0||place==null)return added(kept,onlyName,refused);
+        boolean named=kept==1&&onlyName!=null&&!onlyName.isEmpty(),none=refused==0;
+        if(kept==1)return named?(none?Say.t("{0} added to {1}",onlyName,place):Say.t("{0} added to {1}, {2} not",onlyName,place,refused))
+            :(none?Say.t("1 file added to {0}",place):Say.t("1 file added to {0}, {1} not",place,refused));
+        return none?Say.t("{0} files added to {1}",kept,place):Say.t("{0} files added to {1}, {2} not",kept,place,refused);
+    }
+
     /** One file that was not taken, and why, for the list that says so. */
     static String refusal(String name,String why){return Attachment.named(name)+" – "+Say.t(why);}
 

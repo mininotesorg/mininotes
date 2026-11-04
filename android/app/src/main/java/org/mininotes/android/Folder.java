@@ -301,7 +301,9 @@ final class Folder {
         if(end.kind==NoteStore.Branch.Kind.TEMP) {
             // Opened, so used: in Recent (decision 229).
             a.store.touch(NoteStore.Branch.Kind.TEMP,NoteStore.TEMP);
-            List<NoteStore.Branch> temp=a.store.asDrawn(a.store.temporary(System.currentTimeMillis()));a.store.dress(temp);got.put("card",temp);return;
+            // And what it shows, seen: no "new" left on it to tap away one by one (decision 286).
+            a.store.seenInTemp();
+            List<NoteStore.Branch> temp=a.store.asDrawn(a.store.temporaryShown(System.currentTimeMillis()));a.store.dress(temp);got.put("card",temp);return;
         }
         if(end.kind==NoteStore.Branch.Kind.RECENT) {
             List<NoteStore.Branch> lately=a.store.asDrawn(a.store.recent(System.currentTimeMillis()-a.recentDays()*86_400_000L));a.store.dress(lately);got.put("card",lately);return;

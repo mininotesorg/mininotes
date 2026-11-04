@@ -144,6 +144,8 @@ public final class Listening extends Service {
         // What was handed over and never answered is sent again from the node's own upkeep, so it goes on
         // happening for as long as the process lives, screen or no screen.
         Node.everyBeat(()->Post.again(app,store,keys));
+        // And files added while the node was starting go the moment it is up, not at the next round (decision 304).
+        Node.whenUp(()->Post.travelSoon(app,store,keys));
         heardForReal=true;
         // What happens to files sent on their own away from an arrival - fetched, answered - goes where an arrival does.
         Post.news=landed->told(app,landed);

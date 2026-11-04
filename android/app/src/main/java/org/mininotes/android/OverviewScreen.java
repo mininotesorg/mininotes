@@ -83,7 +83,7 @@ final class OverviewScreen {
         row.addView(cards,new FrameLayout.LayoutParams(-2,-1));
         along=row;
         column.addView(row,new LinearLayout.LayoutParams(-1,0,1));
-        TextView empty=a.label("Nothing opened lately. The notes and folders you open are here, the newest first.",MainActivity.QUIET,a.MUTED);
+        TextView empty=a.label("Nothing opened lately.",MainActivity.QUIET,a.MUTED);
         empty.setGravity(Gravity.CENTER);empty.setPadding(a.dp(32),0,a.dp(32),0);
         empty.setVisibility(View.GONE);
         none=empty;

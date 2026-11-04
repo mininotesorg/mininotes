@@ -347,6 +347,30 @@ final class Receipt {
      */
     static final int STAMPS=39;
 
+    /**
+     * "This build links devices of mine one of mine introduces" (decision 268; see {@link Introducing}). Said to the owner's own
+     * devices, as {@link #STAMPS} is; {@link #LINK_MINE} is never said to a device that has not said this.
+     */
+    static final int LINKS_MINE=40;
+    /**
+     * "Link with this device of mine": said by a device of mine to another of mine, the device it is about named in the envelope's
+     * page by the first sixteen bytes of its key's fingerprint ({@link Introducing#which}), which the card of persons it sent
+     * lists. Read by a build from before as nothing; never said to one.
+     */
+    static final int LINK_MINE=41;
+    /**
+     * "This build reads "not here" on a list" (decision 293; see {@link Sharing.Rule#here}). Said to every paired device, as
+     * {@link #ABOUT_ME} is; an entry marked "not here" is left off every list sealed for a device that has not said it, so a
+     * build from before never takes one for a rule that only adds, nor meets a mark it would stop reading at.
+     */
+    static final int NOT_HERE=42;
+    /**
+     * "This build reads only what changed in a note" (decision 320; see {@link Delta}). Said to every paired device, as
+     * {@link #NOT_HERE} is; a change is never sealed for a device that has not said it, which goes on getting every note whole.
+     * One that cannot rebuild a change asks for the note whole with {@link #ASK}, which every build answers.
+     */
+    static final int CHANGES=43;
+
     private Receipt(){}
 
     /** The inside of an answer. */

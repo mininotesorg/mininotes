@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The fast build only (decision 311): the backup before an install, sent by adb's shell alone. DUMP is a permission no
+     ordinary app can hold, so nothing else on the phone can ask for it. Never in a published build. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver android:name=".ShellBackup" android:exported="true" android:permission="android.permission.DUMP" />
+    </application>
+</manifest>

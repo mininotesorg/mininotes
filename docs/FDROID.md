@@ -26,7 +26,9 @@ find nothing in it that is not free software. Most of that is already true of Mi
 
 Four things stand in the way, one of them outside our hands:
 
-1. **The Maxima core has no licence.** `android/maxima-core/` is 88 files vendored from
+1. **Done 2026-11-02: the Maxima core is MIT** (its author's LICENSE at maxima `6c71fbf`, confirmed for
+   the vendored `6e00175`; copied into `android/maxima-core/`, NOTICE updated). What follows is how it stood.
+   **The Maxima core had no licence.** `android/maxima-core/` is 88 files vendored from
    github.com/eurobuddha/maxima, which declares no licence (checked again 2026-10-09). Its author's
    "go for it, with my blessing" is a permission to Mininotes, recorded in NOTICE and
    docs/MAXIMA-TRANSPORT.md; it is not a licence, and NOTICE says so in as many words. F-Droid judges
@@ -256,7 +258,7 @@ About box; and read F-Droid's third-party pages as a rough second opinion, not a
 
 ## Decisions for the owner
 
-1. Send the three lines to the Maxima author, or not. Without a licence, Phases 3 and 4 cannot happen.
+1. Send the three lines to the Maxima author, or not. Without a licence, Phases 3 and 4 cannot happen. (Sent by the owner on 2026-10-28; the author answered with MIT on 2026-10-31, confirmed 2026-11-02. Done.)
 2. The in-app installer: an opt-in switch off by default (recommended, keeps the feature), or taken
    out and replaced by the release page.
 3. One key everywhere before the first F-Droid build (recommended, Phase 4), or F-Droid's key and two
@@ -273,4 +275,4 @@ About box; and read F-Droid's third-party pages as a rough second opinion, not a
 - F-Droid forum, "Does F-Droid provide any sort of stats?": https://forum.f-droid.org/t/does-f-droid-provide-any-sort-of-stats/4346
 - Third-party estimates: https://divested.dev/pages/fdroid_stats and the fdroid-metrics dashboard
 - IzzyOnDroid inclusion policy (same licence rule): https://izzyondroid.org/docs/general/AppInclusionPolicy/
-- The Maxima repository, no licence as of 2026-10-09: https://github.com/eurobuddha/maxima
+- The Maxima repository, MIT since commit 6c71fbf (2026-10-31): https://github.com/eurobuddha/maxima

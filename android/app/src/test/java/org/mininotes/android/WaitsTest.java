@@ -99,4 +99,25 @@ public class WaitsTest {
             Unsent.said(new Unsent.Problem(Unsent.Why.NEEDS_UPDATE,"Old phone","Seeds","",""),"this phone"));
         assertEquals("A device needs to update Mininotes to receive this",Unsent.needsUpdate(" "));
     }
+    /** Decision 312: the box as a row a device, the one needing most first, each with its own mark and what it lacks in a few words. */
+    @Test public void theBoxIsARowADeviceWithItsMarkAndAFewWords() {
+        List<Waits.Row> rows=Waits.rows(List.of(new Waits.Device("Test phone",files(3,9),0),new Waits.Device("Test tablet",text(),0),
+            new Waits.Device("Test laptop",new Waits.Where(2,1,4,false,true),1),new Waits.Device("Done one",DONE,0)),5);
+        assertEquals(3,rows.size());
+        assertEquals(new Waits.Row("Test laptop",SyncMark.STUCK,"Not heard from for more than three days · Changes to 2 notes · 1 file to confirm · 1 answer waiting"),rows.get(0));
+        assertEquals(new Waits.Row("Test tablet",SyncMark.WAITING,"Changes to 1 note"),rows.get(1));
+        assertEquals("Test phone",rows.get(2).name());
+        assertEquals("3 files to confirm",rows.get(2).state());
+        // One note's own box says "your changes"; a device with only answers kept for it is still waited for.
+        assertEquals("Your changes",Waits.rows(List.of(new Waits.Device("Test tablet",text(),0)),1).get(0).state());
+        assertEquals(new Waits.Row("Test tablet",SyncMark.WAITING,"2 answers waiting"),Waits.rows(List.of(new Waits.Device("Test tablet",DONE,2)),1).get(0));
+        // Unnamed, locked, sent, asked: each said, and nothing for a device that has it all.
+        assertEquals("A paired device",Waits.rows(List.of(new Waits.Device(" ",text(),0)),1).get(0).name());
+        assertEquals(new Waits.Row("Test phone",SyncMark.PAUSED,"Locked · takes it in when opened"),
+            Waits.rows(List.of(new Waits.Device("Test phone",new Waits.Where(1,0,0,false,false,true),0)),1).get(0));
+        assertEquals("Sent · waiting for them to confirm",Waits.rows(List.of(new Waits.Device("Test phone",new Waits.Where(0,0,0,false,false),0)),1).get(0).state());
+        assertEquals("Waiting for them to accept",Waits.rows(List.of(new Waits.Device("Test phone",new Waits.Where(0,0,0,true,false,false,0,1),0)),1).get(0).state());
+        assertEquals("Needs to update Mininotes",Waits.rows(List.of(new Waits.Device("Old phone",Waits.needsUpdate(),0)),1).get(0).state());
+        assertTrue(Waits.rows(List.of(new Waits.Device("Done one",DONE,0)),1).isEmpty());
+    }
 }

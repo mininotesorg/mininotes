@@ -23,8 +23,6 @@ final class DesktopSettings {
             line.add(mark,BorderLayout.WEST);line.add(DesktopUi.note(one.meaning(),340,DesktopUi.INK,DesktopUi.BODY));
             DesktopUi.add(all,line);
         }
-        DesktopUi.gap(all,DesktopUi.S);
-        DesktopUi.add(all,DesktopUi.note("After the mark, a round for each person the note reaches: its dot is where they stand. Click a round to see who, and where.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         return all;
     }
 
@@ -91,7 +89,7 @@ final class DesktopSettings {
         JPanel sync=DesktopUi.column();sync.add(DesktopUi.switchRow("Sync automatically",syncing));
         sync.add(DesktopUi.row(DesktopUi.body("Send changes"),afterHolder));
         DesktopUi.add(sync,DesktopUi.note(NoteStore.RIGHT_AWAY_COSTS,380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));DesktopUi.gap(sync,DesktopUi.S);
-        DesktopUi.add(sync,DesktopUi.note("Off, a note goes when you click its mark under the title, or Sync now. A note or a folder can also keep a timing of its own, in its Share box.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
+        DesktopUi.add(sync,DesktopUi.note("Off: a note goes when you click its mark.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         DesktopUi.add(body,DesktopUi.card(null,sync));
         DesktopUi.gap(body,DesktopUi.L);
 
@@ -141,7 +139,9 @@ final class DesktopSettings {
         JCheckBox auto=DesktopUi.toggle("Update automatically",app.autoUpdate());
         auto.addActionListener(e->app.setAutoUpdate(auto.isSelected()));
         JPanel updates=DesktopUi.column();updates.add(DesktopUi.switchRow("Update automatically",auto));
-        DesktopUi.add(updates,DesktopUi.note("New versions are downloaded from GitHub, checked, and put in place when you restart or close Mininotes. This is v"+Desktop.VERSION+".",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
+        // Which version this is stays said, on its own line, now the sentence it ended is gone (decision 302).
+        DesktopUi.add(updates,DesktopUi.note("Updated at the next restart.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
+        DesktopUi.add(updates,DesktopUi.note(Say.t("Mininotes v{0}",Desktop.VERSION),380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         DesktopUi.gap(updates,DesktopUi.S);DesktopUi.add(updates,DesktopUi.actions(DesktopUi.button("Check now",()->{box[0].dispose();app.lookForUpdate(true);})));
         DesktopUi.add(body,DesktopUi.card(null,updates));
         DesktopUi.gap(body,DesktopUi.L);
@@ -167,7 +167,6 @@ final class DesktopSettings {
         JCheckBox opened=DesktopUi.toggle("Recent",app.openListWanted());
         opened.addActionListener(e->app.setOpenListWanted(opened.isSelected()));
         DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.switchRow("Recent",opened));
-        DesktopUi.add(window,DesktopUi.note("Every folder and note as a list, beside Home and the page. ⋯ → Tree, or Ctrl+B, does the same.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         // The archive and the bin as icons on Home, as a phone keeps its bin on its desktop (decision 41); off, in ⋯.
         // Home's places, each on Home or not, as Home's right-click switches them (decision 78).
         for(String[] place:Desktop.PLACES_ON_HOME) {
@@ -182,6 +181,10 @@ final class DesktopSettings {
         JPanel stayRow=new JPanel(new BorderLayout(12,0));stayRow.setOpaque(false);stayRow.add(DesktopUi.body("Temp: things stay"),BorderLayout.WEST);
         JPanel holdStay=new JPanel(new FlowLayout(FlowLayout.RIGHT,0,0));holdStay.setOpaque(false);holdStay.add(stay);stayRow.add(holdStay,BorderLayout.EAST);
         DesktopUi.gap(window,DesktopUi.S);DesktopUi.add(window,stayRow);
+        // The notepad that stays in Temp, its words going in Temp's time (decision 307): made once by itself, on or off here too.
+        JCheckBox notepad=DesktopUi.toggle("Temp: a notepad that stays",app.store.notepadOn(Post.me(app.context).id));
+        notepad.addActionListener(e->{boolean on=notepad.isSelected();app.disk.submit(()->{app.store.notepad(Post.me(app.context).id,on);return null;},done->app.refresh(),app::failed);});
+        DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.switchRow("Temp: a notepad that stays",notepad));
         // Temp as a note to self (decision 84).
         JCheckBox toMine=DesktopUi.toggle("Temp: send what is in it",app.tempToMine());
         toMine.addActionListener(e->app.setTempToMine(toMine.isSelected()));
@@ -192,7 +195,6 @@ final class DesktopSettings {
         JCheckBox tempHome=DesktopUi.toggle("Temp: also show on Home",app.store.tempOnHome());
         tempHome.addActionListener(e->app.setTempOnHome(tempHome.isSelected()));
         DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.switchRow("Temp: also show on Home",tempHome));
-        DesktopUi.add(window,DesktopUi.note("What comes on Temp from your other devices is in Temp. On, it is on Home as well.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         // How long Recent keeps what was opened (the owner: "an option letting the user decide for how long").
         int[] keepDays={1,3,7,30};int kept=java.util.Arrays.binarySearch(keepDays,app.recentDays());
         JComboBox<String> keeps=DesktopUi.combo(new String[]{"A day","Three days","A week","A month"});keeps.setSelectedIndex(Math.max(0,kept));
@@ -214,19 +216,16 @@ final class DesktopSettings {
         JPanel sharedRow=new JPanel(new BorderLayout(12,0));sharedRow.setOpaque(false);sharedRow.add(DesktopUi.body("Shared with me goes to"),BorderLayout.WEST);
         JPanel holdShared=new JPanel(new FlowLayout(FlowLayout.RIGHT,0,0));holdShared.setOpaque(false);holdShared.add(sharedTo);sharedRow.add(holdShared,BorderLayout.EAST);
         DesktopUi.gap(window,DesktopUi.S);DesktopUi.add(window,sharedRow);
-        DesktopUi.add(window,DesktopUi.note("Where a file somebody shares with you on its own shows. It stays on Home, so it never goes on with a folder.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         // Favourites and the search on Home (decision 47), as Home's right-click switches them.
         JCheckBox dockOn=DesktopUi.toggle("Dock",app.showing(Desktop.SHOW_DOCK));
         dockOn.addActionListener(e->app.setShowing(Desktop.SHOW_DOCK,dockOn.isSelected()));
         JCheckBox searchOn=DesktopUi.toggle("Search",app.showing(Desktop.SHOW_SEARCH));
         searchOn.addActionListener(e->app.setShowing(Desktop.SHOW_SEARCH,searchOn.isSelected()));
         DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.switchRow("Dock",dockOn));window.add(DesktopUi.switchRow("Search",searchOn));
-        DesktopUi.add(window,DesktopUi.note("On Home's first page. Off, favourites are still in the Favourites icon, and search is Ctrl+F.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         // The same ladder as in a note's menu and on the phone: ten rungs. Here it is this PC's, for every note that
         // has no size of its own; one that has keeps it (see Reading).
         JPanel sizeHolder=new JPanel(new GridBagLayout());sizeHolder.setOpaque(false);sizeHolder.add(DesktopLook.ladder(app::textSize,app::setTextSize));
         DesktopUi.gap(window,DesktopUi.S);window.add(DesktopUi.row(DesktopUi.body("Text size of notes"),sizeHolder));
-        DesktopUi.add(window,DesktopUi.note("Notes open at this size unless one has its own, set from its menu.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         DesktopUi.add(body,DesktopUi.card(null,window));
         DesktopUi.gap(body,DesktopUi.L);
 
@@ -248,7 +247,6 @@ final class DesktopSettings {
         JPanel myInk=new JPanel(new GridBagLayout());myInk.setOpaque(false);
         writing.add(DesktopUi.row(DesktopUi.body("My writing colour"),myInk));
         app.inkRow(null,(you,row)->{myInk.add(row);myInk.revalidate();myInk.repaint();});
-        DesktopUi.add(writing,DesktopUi.note("In notes two or more people write in. To change someone's colour, click their round under a note's title.",380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(12.5f)));
         DesktopUi.add(body,DesktopUi.card(null,writing));
 
         box[0]=DesktopUi.sheet(app.frame,"Settings",DesktopUi.scrolling(body),null,true);
@@ -366,22 +364,35 @@ final class DesktopSettings {
             if(kept.contains(one)){said.setText(Say.t("{0} is already one of your relays.",one));return;}
             if(kept.size()>=Relays.MOST){said.setText(Say.t("Eight relays is the most. Remove one first."));return;}
             add.setEnabled(false);typed.setEnabled(false);said.setText(Say.t("Checking {0}…",one));
+            // Whether it was kept, known here rather than read off the words said: in French they never start "Added" (the owner's
+            // screenshot, 2026-11-02: the address stayed in the field after Ajouté).
+            boolean[] added={false};
             app.connectivity.submit(()->{
-                if(!Node.relayAnswers(one))return one+" did not answer, so it was not added. Check the address, and that the relay is running.";
+                if(!Node.relayAnswers(one))return Say.t("{0} did not answer, so it was not added. Check the address, and that the relay is running.",one);
                 SwingUtilities.invokeLater(()->said.setText(Say.t("Connecting to {0}…",one)));
                 boolean connected=Node.addRelay(app.context,one);
-                return connected?"Added. Connected to "+one+"."
-                    :Node.running()?"Added. "+one+" answered but did not take this PC yet; it is tried again every few minutes."
+                added[0]=true;
+                return connected?Say.t("Added. Connected to {0}.",one)
+                    :Node.running()?Say.t("Added. {0} answered but did not take this PC yet; it is tried again every few minutes.",one)
                     :"Added. It is used once sharing starts.";
             },outcome->{
                 add.setEnabled(true);typed.setEnabled(true);said.setText(Say.t(outcome));
-                if(outcome.startsWith("Added"))typed.setText("");
+                if(added[0])typed.setText("");
                 draw[0].run();
             },failure->{add.setEnabled(true);typed.setEnabled(true);said.setText(Say.t("It could not be checked."));});
         };
         adds[0]=DesktopUi.button("Add",adding);typed.addActionListener(e->adding.run());
         card.add(DesktopUi.row(typed,adds[0]));
         DesktopUi.add(card,said);
+        // The same relays on every device of the owner's (decision 316): what is chosen here goes to them at the next round.
+        JCheckBox same=DesktopUi.toggle(Relays.SAME,Node.relaysSame(app.context));
+        DesktopUi.gap(card,DesktopUi.S);card.add(DesktopUi.switchRow(Relays.SAME,same));
+        DesktopUi.add(card,DesktopUi.note(Relays.SAME_MEANS,380,DesktopUi.QUIET,small));
+        same.addActionListener(e->{
+            boolean on=same.isSelected();
+            app.connectivity.submit(()->{Node.relaysSame(app.context,on);if(on&&Node.running())Node.roundNow();return null;},
+                done->said.setText(Say.t(on?Relays.SAME_ON:Relays.SAME_OFF)),failure->said.setText(Say.t("That could not be changed.")));
+        });
         return card;
     }
 }

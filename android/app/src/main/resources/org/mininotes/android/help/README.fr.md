@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 a78f7778ee3e66851fb3a075691b87fc51902d2d0cebd76aceca20322bba7a36 -->
+<!-- Translated from README.md, SHA-256 bfd9bcfd1e0b8071f5b694aeec3d5a2e71a5283194b4168d12a53daee11cb960 -->
 
 # Mininotes
 
@@ -44,6 +44,15 @@ voyage scellé de bout en bout sur le réseau Minima, ou directement d'un appare
 ## 1. Nouveautés
 
 Les plus récentes d'abord. Chaque version est la même sur le téléphone et sur le PC, sauf mention contraire.
+
+### 0.4.031
+
+- Sur le PC, une mise à jour s'applique désormais même quand Mininotes a été ouvert depuis un raccourci, et une mise à
+  jour qui n'aboutit pas le dit au démarrage suivant. Le programme d'installation peut mettre Mininotes sur votre
+  Bureau.
+- Moins de travail en arrière-plan : ce que les appareils se doivent les uns aux autres n'est recalculé que lorsque
+  quelque chose a changé.
+- Davantage de phrases de l'app sont dans votre langue.
 
 ### 0.4.030
 
@@ -710,8 +719,8 @@ transmettre et le vendre, mais ce que vous transmettez, modifié ou non, part av
 Les conditions des tiers sont dans [NOTICE](NOTICE).
 
 Le transport Maxima intégré à l'app est le cœur de [eurobuddha/maxima](https://github.com/eurobuddha/maxima), inclus
-sans modification avec la permission de son auteur et crédité dans NOTICE. Il lui appartient et n'est pas sous GPL ; son
-propre dépôt ne porte pas encore de licence.
+sans modification avec la permission de son auteur et crédité dans NOTICE. Il lui appartient et n'est pas sous GPL ; il est
+sous la licence MIT de son auteur.
 
 <!-- not in the app -->
 

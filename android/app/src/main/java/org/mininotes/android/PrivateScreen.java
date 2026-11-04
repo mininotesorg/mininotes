@@ -563,7 +563,7 @@ final class PrivateScreen {
         menu.row("Put back",()->{shown.putBack(t.id);write();draw();});
         menu.line();
         menu.danger("Delete for good…",()->secure(a.new Box().setTitle("Delete for good?")
-            .setMessage("“"+t.name()+"” is deleted for good. This cannot be undone.")
+            .setMessage(Say.t("“{0}” is deleted for good. This cannot be undone.",t.name()))
             .setPositiveButton("Delete for good",(d,w)->{shown.deleteForGood(t.id);write();draw();}).setNegativeButton("Cancel",null).show()));
         menu.show(from);
     }
@@ -973,8 +973,8 @@ final class PrivateScreen {
         boolean one=uris.size()==1;
         String named=one?"“"+names.get(0)+"”":uris.size()+" files";
         secure(a.new Box().setTitle("Delete the original from this phone?")
-            .setMessage((one?named+" stays where it was unless you delete it.":named+" stay where they were unless you delete them.")
-                +" The copy kept here is private.")
+            .setMessage(one?Say.t("“{0}” stays where it was unless you delete it. The copy kept here is private.",names.get(0))
+                :Say.t("{0} files stay where they were unless you delete them. The copy kept here is private.",uris.size()))
             .setPositiveButton(one?"Delete the original":"Delete the originals",(d,w)->deleteOriginals(resolver,uris))
             .setNegativeButton(one?"Keep it":"Keep them",null).show());
     }

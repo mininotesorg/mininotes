@@ -301,7 +301,7 @@ final class DesktopStamp {
                 } else if(row.waiting()) {
                     step(Mark.GOING,"3. Waiting for Minima");
                     long next=w.nextLook(row.n());long in=next<=0?0:Math.max(0,(next-System.currentTimeMillis()+999)/1000);
-                    indent(said(Say.t("The fingerprint is in a transaction on its way into a block, usually within a few minutes. This PC looks for it, less and less often, even with this box closed, and says when it is there."),DesktopUi.QUIET));
+                    indent(said(Say.t("On its way to Minima, usually within a few minutes."),DesktopUi.QUIET));
                     String looked=row.tries()==0?Say.t("Not looked for yet."):Say.t("Looked for {0} times, last at {1}.",String.valueOf(row.tries()),Integritas.when(row.checked()));
                     indent(said(looked+"  "+(next<=0?Say.t("Looking now…"):Say.t("Next look in {0} s.",String.valueOf(in))),DesktopUi.INK));
                     String trouble=w.trouble(row.n());

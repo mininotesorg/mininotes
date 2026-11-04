@@ -106,6 +106,8 @@ final class Carton {
         }
         // Anything a later build adds goes after this, where a build from before stops reading: each behind its mark.
         if(sent.looks()){out.writeInt(Parcel.LOOK_MARK);out.writeInt(sent.tone);out.writeLong(sent.colourDecided);out.writeLong(sent.toneDecided);}
+        // Which entries are "not here" (decision 293), last: only on a list made for a build that reads it.
+        Parcel.writeHeres(out,sent.members,many);
         out.flush();
         return bytes.toByteArray();
     }
@@ -187,10 +189,18 @@ final class Carton {
      */
     private static void looks(DataInputStream in,Sent into) {
         try {
-            if(in.available()<24||in.readInt()!=Parcel.LOOK_MARK)return;
-            int tone=in.readInt();long colourAt=in.readLong(),toneAt=in.readLong();
-            if(colourAt>0)into.colourDecided=colourAt;
-            if(toneAt>0){into.tone=Tint.toned(tone)?tone:Tint.USUAL;into.toneDecided=toneAt;}
+            while(in.available()>=4) {
+                int mark=in.readInt();
+                if(mark==Parcel.LOOK_MARK) {
+                    if(in.available()<20)return;
+                    int tone=in.readInt();long colourAt=in.readLong(),toneAt=in.readLong();
+                    if(colourAt>0)into.colourDecided=colourAt;
+                    if(toneAt>0){into.tone=Tint.toned(tone)?tone:Tint.USUAL;into.toneDecided=toneAt;}
+                } else if(mark==Parcel.HERE_MARK) {
+                    // Which entries of the list are "not here" (decision 293): see Parcel.readHeres.
+                    if(!Parcel.readHeres(in,into.members))return;
+                } else return;
+            }
         } catch(IOException damaged){/* unsaid */}
     }
 }

@@ -68,9 +68,36 @@ final class Arriving {
      */
     static Decision weigh(String here,long hereRev,String base,long baseRev,String theirs,long theirRev,
                           boolean theyHadMine,boolean iHadTheirs) {
+        return weigh(here,hereRev,base,baseRev,theirs,theirRev,theyHadMine,iHadTheirs,0);
+    }
+
+    /**
+     * The same, knowing the revision this device and the sender last both had.
+     *
+     * <p>A device's count never goes back, and that agreement is written only where both really had that revision. So
+     * what the same sender wrote below it was written before it: old news, whatever its base says. The Pro, closed for
+     * a morning, was handed every copy of a busy note the PC had sent it meanwhile (2026-11-04); each said it was
+     * made against the last text the PC knew the Pro had, hours old, so each was merged against that old text, brought
+     * back the rows the owner had changed since (mostly the first of each tab, where the owner writes), counted one
+     * higher, and went back to the PC, which took it as newer while the owner was typing there.
+     *
+     * @param agreedWithThem the revision this device and the sender last both had, or 0 where they never did
+     */
+    static Decision weigh(String here,long hereRev,String base,long baseRev,String theirs,long theirRev,
+                          boolean theyHadMine,boolean iHadTheirs,long agreedWithThem) {
         if(here==null)return new Decision(What.NEW,theirs==null?"":theirs,Math.max(0,theirRev),false);
         String mine=here, came=theirs==null?"":theirs;
         if(mine.equals(came))return new Decision(What.NEWER,mine,Math.max(hereRev,theirRev),false);
+        if(stale(theirRev,agreedWithThem))return new Decision(What.OLDER,null,hereRev,false);
+        // Each holds the other's text: both are old to both, and neither was written on top of the other. Asked first,
+        // or each device takes the other's as newer for ever - two texts of a note at revision 20 swapped 246 times in
+        // two minutes on the Pro, each swap a version, until the note's whole history was pushed out. The higher count
+        // wins; at the same count, the same text on both devices, by its trace, so the two end up agreeing.
+        if(theyHadMine&&iHadTheirs) {
+            boolean theirsWins=theirRev!=hereRev?theirRev>hereRev:trace(came).compareTo(trace(mine))>0;
+            return theirsWins?new Decision(What.NEWER,came,Math.max(theirRev,hereRev),false)
+                :new Decision(What.OLDER,null,hereRev,false);
+        }
         // This phone has not written since the two sides last agreed, so what arrived simply follows it on.
         if(hereRev<=baseRev&&theirRev>=hereRev)return new Decision(What.NEWER,came,Math.max(theirRev,hereRev),false);
         // The sender had not written since then, so this phone is the one that moved: nothing to take.
@@ -95,6 +122,12 @@ final class Arriving {
         if(merged.text.equals(came))return new Decision(What.NEWER,came,Math.max(hereRev,theirRev),false);
         return new Decision(What.MERGED,merged.text,Math.max(hereRev,theirRev)+1,!merged.clean);
     }
+
+    /**
+     * Whether what came is below the revision this device and its sender last both had: written before that, so behind
+     * what is here. Strictly below: two devices can count the same number for two different texts.
+     */
+    static boolean stale(long theirRev,long agreedWithThem){return agreedWithThem>0&&theirRev<agreedWithThem;}
 
     /**
      * The same question, for a copy this phone may only read.

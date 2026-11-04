@@ -128,7 +128,19 @@ Android, by a tap and never on its own, and a `Waking` alarm wakes the pad every
 
 ## Licence
 
-The maxima repository declares no licence, and its author is not this project's owner. An earlier
+**MIT, since 2026-10-31.** The author put the MIT License on their original Maxima and Parlons code at
+commit `6c71fbf` ("License original Maxima and Parlons code under MIT"), and confirmed to the owner on
+2026-11-02 that it covers `6e00175`, the commit vendored here. The tree was not re-vendored: between the
+two commits `core/src/main` gained Parlons chat and file transfer (17 files, about 1,160 lines) and a
+change to how relays share peers, none of it needed here and none of it tested here, so taking it is a
+separate change with its own round. Checked again on 2026-11-02: the 88 files still match `6e00175`
+blob for blob. `android/maxima-core/LICENSE` is the author's file, byte for byte; both builds pack it beside the
+code as `MAXIMA-LICENSE.txt` (the APK in META-INF, the PC package at its root), as MIT asks. The author's
+THIRD-PARTY-NOTICES places the Minima-derived (Apache-2.0) code in other modules, not in `:core`.
+
+The rest of this section is the history from before the licence.
+
+The maxima repository declared no licence, and its author is not this project's owner. An earlier
 version of this page said the two had the same owner and called the matter a formality; that was wrong,
 and it is not one. Code published with no licence is its author's alone: reading it is allowed, copying
 it on to other people is not, until the author says so.

@@ -191,10 +191,19 @@ final class Pad extends EditText {
         // Before anybody else's watcher: whoever reads the page after a keystroke reads runs that already fit it.
         addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s,int start,int count,int after){replaced=count>0&&after>0&&!putting?s.subSequence(start,start+count).toString():null;}
-            @Override public void onTextChanged(CharSequence s,int start,int before,int count){typed(s,start,before,count);}
+            @Override public void onTextChanged(CharSequence s,int start,int before,int count){if(!makingLines)madeFrom=-1;typed(s,start,before,count);}
             @Override public void afterTextChanged(Editable e){}
         });
         swipes=new GestureDetector(c,new GestureDetector.SimpleOnGestureListener() {
+            // A drag past the end of the writing, onto the paper under it (decision 267): the editor's own drag stops at the
+            // last line, so the page takes it on from there, and back.
+            @Override public boolean onScroll(MotionEvent from,MotionEvent to,float across,float down) {
+                int written=writtenFurthest(),most=furthest();
+                if(most<=written)return false;
+                int want=getScrollY()+Math.round(down);
+                if(want>written||getScrollY()>written)dragTo=Math.max(0,Math.min(want,most));
+                return false;
+            }
             @Override public boolean onFling(MotionEvent from,MotionEvent to,float across,float down) {
                 int most=furthest();
                 if(most<=0)return false;
@@ -205,17 +214,108 @@ final class Pad extends EditText {
         });
     }
 
-    /** How far down the page can go: the writing's height, less what the screen already shows. */
-    private int furthest() {
+    /** How far down the writing goes: its height, less what the screen already shows. */
+    private int writtenFurthest() {
         if(getLayout()==null)return 0;
         return Math.max(0,getLayout().getHeight()+getTotalPaddingTop()+getTotalPaddingBottom()-getHeight());
     }
 
+    /**
+     * How far down the page can go: past the writing onto about a screen of empty paper (decision 267), so a note of any
+     * length scrolls on until its last line is near the top, as a pad's page goes on under the last line written. Only on a
+     * page that takes writing: a page only read keeps to its words.
+     */
+    private int furthest() {
+        if(getLayout()==null)return 0;
+        int paper=paperBelow&&getKeyListener()!=null&&isEnabled()?BlankLines.paperBelow(getHeight()-getTotalPaddingTop()-getTotalPaddingBottom(),getLineHeight()):0;
+        return Math.max(0,getLayout().getHeight()+getTotalPaddingTop()+getTotalPaddingBottom()-getHeight()+paper);
+    }
+
+    /** Whether this page has paper under its writing: a note's page, where a tap on it makes the lines (MainActivity.reachLine). */
+    boolean paperBelow;
+
+    /** Where a drag on the paper under the writing takes the page, once the editor has had its say; -1 for none. */
+    private int dragTo=-1;
+
     @Override public boolean onTouchEvent(MotionEvent event) {
         // A finger on the page stops it where it is, the way a hand stops a sliding sheet.
         if(event.getActionMasked()==MotionEvent.ACTION_DOWN&&!coasting.isFinished())coasting.forceFinished(true);
+        dragTo=-1;
         swipes.onTouchEvent(event);
-        return super.onTouchEvent(event);
+        boolean took=super.onTouchEvent(event);
+        if(dragTo>=0) {
+            if(dragTo!=getScrollY()){scrollTo(getScrollX(),dragTo);cancelLongPress();}
+            dragTo=-1;took=true;
+        }
+        return took;
+    }
+
+    /**
+     * The cursor kept in view, as an editor does at every change; but on the paper under the writing, a cursor already in
+     * view leaves the page where it is. The editor's own rule pulls the end of the words down to the foot of the screen, and
+     * a tap on an empty rule halfway down took the line tapped to the bottom of the page.
+     */
+    @Override public boolean bringPointIntoView(int offset) {
+        if(onPaperInView(offset))return false;
+        return super.bringPointIntoView(offset);
+    }
+    // Only the platform calls this one, and only from Android 14, where it is.
+    @android.annotation.SuppressLint("NewApi")
+    @Override public boolean bringPointIntoView(int offset,boolean requestRectWithoutFocus) {
+        if(onPaperInView(offset))return false;
+        return super.bringPointIntoView(offset,requestRectWithoutFocus);
+    }
+    private boolean onPaperInView(int offset) {
+        android.text.Layout out=getLayout();
+        if(out==null||getScrollY()<=writtenFurthest())return false;
+        int line=out.getLineForOffset(Math.max(0,Math.min(offset,length())));
+        int top=out.getLineTop(line)+getTotalPaddingTop(),bottom=out.getLineBottom(line)+getTotalPaddingTop();
+        return top>=getScrollY()&&bottom<=getScrollY()+getHeight()-getTotalPaddingBottom();
+    }
+
+    // ---- lines made by a tap on the paper (decision 267, see BlankLines) ------------------------------------------
+
+    /**
+     * Where the lines a tap made under the writing begin, while nothing has been typed on them; -1 for none. They are
+     * paper, not writing: the note is read without them (see unwrittenFrom), and when the cursor leaves them they go.
+     */
+    private int madeFrom=-1;
+    /** While the page itself puts in or takes away the lines a tap made: not a change anybody typed. */
+    private boolean makingLines;
+    /** Told when the cursor moves, so the lines a tap made can go if it left them (see trimMade). */
+    Runnable selectionMoved;
+
+    /** Lines under the writing, for a tap on an empty rule: the cursor on the last of them. Nothing typed, nothing written. */
+    void makeLines(int count) {
+        if(count<=0)return;
+        Editable text=getText();
+        int from=text.length();
+        makingLines=true;
+        try{text.append(BlankLines.lines(count));}finally{makingLines=false;}
+        if(madeFrom<0)madeFrom=from;
+        setSelection(text.length());
+    }
+
+    /** Where lines a tap made and nobody wrote on begin, or -1: the page's words end there, as far as the note is concerned. */
+    int unwrittenFrom(){return madeFrom>=0&&BlankLines.unwritten(getText(),madeFrom)?madeFrom:-1;}
+
+    /** Lines a tap made that the cursor has left: taken away again, down to the cursor if it is still on one of them. */
+    void trimMade() {
+        int from=unwrittenFrom();
+        if(from<0){madeFrom=-1;return;}
+        Editable text=getText();
+        int keep=BlankLines.keep(text,from,getSelectionStart(),getSelectionEnd());
+        if(keep<text.length()) {
+            makingLines=true;
+            try{text.delete(keep,text.length());}finally{makingLines=false;}
+        }
+        if(keep<=from)madeFrom=-1;
+    }
+
+    @Override protected void onSelectionChanged(int start,int end) {
+        super.onSelectionChanged(start,end);
+        // Called by the text field while it is being built, before this page's fields are.
+        if(madeFrom>=0&&selectionMoved!=null)selectionMoved.run();
     }
 
     @Override public void computeScroll() {

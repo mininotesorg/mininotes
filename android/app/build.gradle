@@ -8,8 +8,8 @@ android {
         applicationId 'org.mininotes.android'
         minSdk 28
         targetSdk 35
-        versionCode 4030
-        versionName '0.4.030'
+        versionCode 4053
+        versionName '0.4.053'
         testInstrumentationRunner 'org.mininotes.android.PadPerformanceProbe'
         // True only in the demo build below: made-up notes on first start and pretend recovery words (see Demo).
         buildConfigField 'boolean','DEMO','false'
@@ -53,6 +53,17 @@ android {
         release {
             minifyEnabled false
             if(rootProject.file('keystore.properties').exists())signingConfig signingConfigs.family
+        }
+        // The owner's phones, fast (decision 311): GrapheneOS compiles no app as it runs and never compiles a debuggable one,
+        // so the debug build ran interpreted on the Graphene. This is the release build signed with the debug key, so it goes
+        // over the debug build with its notebook, and back again; not debuggable, so compiled. Run-as cannot reach it: its
+        // backup before an install is ShellBackup (src/fast), which only it has.
+        //     gradlew -p android assembleFast  ->  app/build/outputs/apk/fast/app-fast.apk
+        fast {
+            initWith release
+            signingConfig signingConfigs.debug
+            debuggable false
+            matchingFallbacks=['release']
         }
         // A demo for recording the website's animation: the same sources, installed beside the real app with its own
         // notebook, filled with made-up notes on first start and showing pretend recovery words. Never released.

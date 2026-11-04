@@ -26,23 +26,51 @@ final class Background implements AutoCloseable {
 
     Background(Main main){this.main=main;}
 
+    /**
+     * Two lines of work on the one thread: what the person is doing, and what can wait (copies that arrived while the
+     * notebook was locked). Each turn of the thread takes the next of the first where there is one. Still one thing at a
+     * time, so storage stays serialized, and each line keeps its own order. Opened on a morning's backlog, the Pro sat
+     * ten minutes on a blank note whose Back did nothing, all of it queued behind the inbox (2026-11-04).
+     */
+    private final java.util.Queue<Runnable> now=new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private final java.util.Queue<Runnable> later=new java.util.concurrent.ConcurrentLinkedQueue<>();
+
     /** Runs work off the interface thread. Work runs in submission order; no callback sees the worker thread. */
-    <T> void submit(Work<T> work,Consumer<T> done,Consumer<Exception> failed) {
-        try {
-            worker.execute(()->{
-                T value=null;Exception failure=null;
-                try{value=work.run();}catch(Exception e){failure=e;}
-                final T result=value;final Exception error=failure;
-                if(closed)return;
-                main.post(()->{if(closed)return;if(error!=null)failed.accept(error);else done.accept(result);});
-            });
-        } catch(RejectedExecutionException e) { /* Shutting down: the interface that asked is already gone. */ }
+    <T> void submit(Work<T> work,Consumer<T> done,Consumer<Exception> failed){queue(now,work,done,failed);}
+
+    /**
+     * The same, for work that gives way: run in its own order, but only when nothing submitted with {@link #submit} is
+     * waiting. For one arrived message at a time, never a whole inbox in one piece.
+     */
+    <T> void submitLater(Work<T> work,Consumer<T> done,Consumer<Exception> failed){queue(later,work,done,failed);}
+
+    private <T> void queue(java.util.Queue<Runnable> line,Work<T> work,Consumer<T> done,Consumer<Exception> failed) {
+        line.add(()->{
+            T value=null;Exception failure=null;
+            try{value=work.run();}catch(Exception e){failure=e;}
+            final T result=value;final Exception error=failure;
+            if(closed)return;
+            main.post(()->{if(closed)return;if(error!=null)failed.accept(error);else done.accept(result);});
+        });
+        // One turn for each piece of work queued, whichever line it is in: the turn takes the most urgent.
+        try{worker.execute(this::turn);}
+        catch(RejectedExecutionException e){/* Shutting down: the interface that asked is already gone. */}
     }
 
-    /** Waits for queued work to reach disk, for lifecycle callbacks that can precede process death. */
+    private void turn() {
+        Runnable next=now.poll();
+        if(next==null)next=later.poll();
+        if(next!=null)next.run();
+    }
+
+    /**
+     * Waits for queued work to reach disk, for lifecycle callbacks that can precede process death. Only what the person
+     * did: copies that arrived wait in their inbox file until taken in, and lose nothing by waiting.
+     */
     boolean flush(long millis) {
         CountDownLatch drained=new CountDownLatch(1);
-        try{worker.execute(drained::countDown);}catch(RejectedExecutionException e){return false;}
+        now.add(drained::countDown);
+        try{worker.execute(this::turn);}catch(RejectedExecutionException e){return false;}
         try{return drained.await(millis,TimeUnit.MILLISECONDS);}
         catch(InterruptedException e){Thread.currentThread().interrupt();return false;}
     }

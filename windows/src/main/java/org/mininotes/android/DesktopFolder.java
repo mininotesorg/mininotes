@@ -63,7 +63,7 @@ final class DesktopFolder extends JComponent {
         album=new DesktopAlbum.Grid(DesktopAlbum.squares(pad,DesktopAlbum.MADE),this::openPicture,
             (one,on)->pad.home.fileMenu(one.line()).show(on,on.getWidth()/2,on.getHeight()/2));
         albumView=new DesktopAlbum.View(album);
-        plus=home.plusButton(this::id);
+        plus=home.plusButton(this::madeIn);
         JLayeredPane body=new JLayeredPane(){
             @Override public void doLayout() {
                 scroll.setBounds(0,0,getWidth(),getHeight());
@@ -93,7 +93,8 @@ final class DesktopFolder extends JComponent {
         addMouseMotionListener(new MouseMotionAdapter(){});addMouseWheelListener(e->{});
         // A right-click on the card itself, not on an icon: what can be made in it, then the collection's own menu.
         MouseAdapter room=new MouseAdapter(){
-            public void mousePressed(MouseEvent e){if(e.isPopupTrigger()&&thing!=null)pad.roomMenu(thing,e.getComponent(),e.getX(),e.getY());}
+            // A press on the empty room lets go of the icons chosen there (decision 292), as Explorer's does.
+            public void mousePressed(MouseEvent e){home.clearChoice();if(e.isPopupTrigger()&&thing!=null)pad.roomMenu(thing,e.getComponent(),e.getX(),e.getY());}
             public void mouseReleased(MouseEvent e){if(e.isPopupTrigger()&&thing!=null)pad.roomMenu(thing,e.getComponent(),e.getX(),e.getY());}
         };
         for(JComponent part:new JComponent[]{card,grid,head,album,albumView})part.addMouseListener(room);scroll.getViewport().addMouseListener(room);
@@ -145,6 +146,12 @@ final class DesktopFolder extends JComponent {
     boolean inBin(){return !trail.isEmpty()&&last().kind==NoteStore.Branch.Kind.BIN;}
     /** The collection the card shows, or Home when it shows none. */
     String id(){return trail.isEmpty()||listing()?Things.HOME:last().id;}
+    /**
+     * Where the card's + makes things: the collection shown, or the place where a place takes new things (Temp, the archive,
+     * the bin, Favourites), Home for the others. Not {@link #id}, which is Home for every place: Temp's + made notes on Home
+     * (the owner, 2026-10-28; decision 266).
+     */
+    String madeIn(){return listing()&&Desktop.takesNew(last().id)?last().id:id();}
     /** The collection it is in, or Home: where a thing carried out onto the dimmed Home goes. */
     String parentId(){return parent;}
     String parentName(){return parentName;}
@@ -243,7 +250,8 @@ final class DesktopFolder extends JComponent {
         // Tools: the places kept in it. Temp: what is to be gone, soonest first. Recent: what was opened lately (decisions 71, 72).
         if(end.kind==NoteStore.Branch.Kind.TOOLS){got.put("card",home.inTools(pad.store.awayCount(false),pad.store.awayCount(true),pad.store.temporaryCount()));return;}
         // Temp opened, so used: in Recent (decision 229).
-        if(end.kind==NoteStore.Branch.Kind.TEMP){pad.store.touch(NoteStore.Branch.Kind.TEMP,NoteStore.TEMP);List<NoteStore.Branch> temp=pad.store.asDrawn(pad.store.temporary(System.currentTimeMillis()));pad.store.dress(temp);got.put("card",temp);return;}
+        // And what it shows, seen: no "new" left on it to click away one by one (decision 286).
+        if(end.kind==NoteStore.Branch.Kind.TEMP){pad.store.touch(NoteStore.Branch.Kind.TEMP,NoteStore.TEMP);pad.store.seenInTemp();List<NoteStore.Branch> temp=pad.store.asDrawn(pad.store.temporaryShown(System.currentTimeMillis()));pad.store.dress(temp);got.put("card",temp);return;}
         if(end.kind==NoteStore.Branch.Kind.RECENT){List<NoteStore.Branch> lately=pad.store.asDrawn(pad.store.recent(System.currentTimeMillis()-pad.recentDays()*86_400_000L));pad.store.dress(lately);got.put("card",lately);return;}
         // Shared with me: the files shown there, kept on Home, and what is still coming to it (decision 94); and first, what
         // waits for an answer (decision 109).
@@ -303,9 +311,12 @@ final class DesktopFolder extends JComponent {
             if(trail.size()>1&&parentName!=null&&trail.get(trail.size()-2).kind==NoteStore.Branch.Kind.COLLECTION&&trail.get(trail.size()-2).id.equals(parent)){NoteStore.Branch above=trail.get(trail.size()-2);
                 trail.set(trail.size()-2,new NoteStore.Branch(NoteStore.Branch.Kind.COLLECTION,above.id,above.parent,parentName,"",0,0,true,above.colour));}
         }
-        // Files from Explorer let go on the card are kept with this collection (decision 23); in a place, on Home.
-        card.putClientProperty(DesktopHome.KEEPS,thing);grid.putClientProperty(DesktopHome.KEEPS,thing);
-        album.putClientProperty(DesktopHome.KEEPS,thing);albumView.putClientProperty(DesktopHome.KEEPS,thing);
+        // Files from Explorer let go on the card are kept with this collection (decision 23); on Temp's, in Temp (decision 150,
+        // lost when places stopped having a thing: they fell on Home, decision 266); in any other place, on Home.
+        NoteStore.Branch keeps=thing!=null?thing:end.kind==NoteStore.Branch.Kind.TEMP?end:null;
+        // The dimmed Home round the card too: while a card is open, it is where things go.
+        putClientProperty(DesktopHome.KEEPS,keeps);card.putClientProperty(DesktopHome.KEEPS,keeps);grid.putClientProperty(DesktopHome.KEEPS,keeps);
+        album.putClientProperty(DesktopHome.KEEPS,keeps);albumView.putClientProperty(DesktopHome.KEEPS,keeps);
         bar(end);
         // What waits for an answer is an icon in the same grid, not a strip of buttons (decision 127).
         @SuppressWarnings("unchecked") List<NoteStore.Branch> waitingFor=end.kind==NoteStore.Branch.Kind.SHARED?(List<NoteStore.Branch>)got.getOrDefault("waitingFor",List.of()):List.of();
@@ -456,7 +467,9 @@ final class DesktopFolder extends JComponent {
         left.setPreferredSize(new Dimension(side,left.getPreferredSize().height));right.setPreferredSize(new Dimension(side,right.getPreferredSize().height));
         JPanel l=new JPanel(new GridBagLayout());l.setOpaque(false);l.add(left);JPanel r=new JPanel(new GridBagLayout());r.setOpaque(false);r.add(right);
         head.add(l,BorderLayout.WEST);head.add(r,BorderLayout.EAST);
-        String said=place?end.name:DesktopHome.named(thing!=null?thing:end);
+        // A place's own name in the language in use, as its tile on Home says it: the Bin open in French said "Bin" (the owner,
+        // 2026-10-30; decision 291). A folder's name is the owner's own and is never looked up.
+        String said=place?Say.t(end.name):DesktopHome.named(thing!=null?thing:end);
         JLabel name=new JLabel(said,SwingConstants.CENTER);name.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,18f));name.setForeground(DesktopUi.INK);
         name.setBorder(BorderFactory.createEmptyBorder(8,0,8,0));
         if(!place) {

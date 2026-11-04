@@ -283,9 +283,15 @@ final class FlushMarks extends BoxView {
             }
             FontMetrics drawn = metrics();
             int height = lineHeight();
+            // Only the rows inside what is being painted (decision 288): a bold word or an address is drawn again by painting
+            // its own small box, and every row of its paragraph was walked and drawn for it, so a letter typed inside a long
+            // paragraph cost the whole paragraph many times over (up to 59 ms a letter).
+            Rectangle clip = g.getClipBounds();
             int at = getStartOffset();
             for (int row = 0; row < rows.length; row++) {
-                walk(box.x, box.x, at, rows[row], g, box.y + row * height + drawn.getAscent());
+                int top = box.y + row * height;
+                if (clip == null || top + height > clip.y && top < clip.y + clip.height)
+                    walk(box.x, box.x, at, rows[row], g, top + drawn.getAscent());
                 at = rows[row];
             }
             g.dispose();
@@ -316,7 +322,10 @@ final class FlushMarks extends BoxView {
             for (int i = from; i < to; i++) {
                 int rel = i - origin;
                 if (rel >= 0 && rel < text.length() && (gone[rel] || text.charAt(rel) == '\n')) continue;
-                float next = walk(box.x, at, i, i + 1, null, 0);
+                // Measured from the row's start, as modelToView and paint measure it: one letter at a time, summed, drifted from a
+                // run measured whole, by ten pixels across a row at the 4th text size, and a click landed four letters early
+                // (decision 309, when the PC's notes started at that size).
+                float next = walk(box.x, box.x, from, i + 1, null, 0);
                 if (x < (at + next) / 2f) return i;
                 at = next;
             }

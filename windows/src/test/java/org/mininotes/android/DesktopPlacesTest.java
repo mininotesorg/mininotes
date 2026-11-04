@@ -165,6 +165,9 @@ public class DesktopPlacesTest {
             // the cell the moved one leaves.
             int[] favouritesAt=onEdt(()->home.drawn().get(NoteStore.FAVOURITES).clone()),ideasWas=onEdt(()->home.drawn().get(tile(home,"Ideas").thing.id).clone());
             key(pad,()->tile(home,"Ideas"),KeyEvent.VK_DOWN,InputEvent.CTRL_DOWN_MASK);settle(pad);
+            // Moved by the time the PC gets to it: a fixed wait was too short under the full suite's load.
+            String ideasId=onEdt(()->tile(home,"Ideas").thing.id);
+            for(int i=0;i<100&&java.util.Arrays.equals(ideasWas,onEdt(()->home.drawn().get(ideasId)));i++){Thread.sleep(100);settle(pad);}
             SwingUtilities.invokeAndWait(()->{
                 assertArrayEquals("the Favourites icon stays",favouritesAt,home.drawn().get(NoteStore.FAVOURITES));
                 DesktopHome.Tile there=home.in(ideasWas[0],ideasWas[1]);assertNull("the cell Ideas left stays empty, not "+(there==null?"":there.thing.name+" "+there.thing.kind),there);

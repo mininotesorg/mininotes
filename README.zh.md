@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 a78f7778ee3e66851fb3a075691b87fc51902d2d0cebd76aceca20322bba7a36 -->
+<!-- Translated from README.md, SHA-256 bfd9bcfd1e0b8071f5b694aeec3d5a2e71a5283194b4168d12a53daee11cb960 -->
 
 # Mininotes
 
@@ -42,6 +42,12 @@ Mininotes 是一本用在手机和电脑上的笔记本：它让你的笔记、�
 ## 1. 最新变化
 
 最新的在前。除非另有说明，每个版本在手机和电脑上都一样。
+
+### 0.4.031
+
+- 在电脑上，即使 Mininotes 是从快捷方式打开的，更新现在也会生效；没有完成的更新会在下次启动时说明。安装程序可以把 Mininotes 放到你的桌面上。
+- 后台工作更少：设备之间彼此还欠什么，只有在有东西变化时才会重新计算。
+- 应用中更多的句子使用你的语言。
 
 ### 0.4.030
 
@@ -508,7 +514,7 @@ APK 会生成在 `android/app/build/outputs/apk/release/` 中，未签名：用�
 Mininotes 是**自由开源软件**，采用
 [GNU 通用公共许可证第 3 版或更高版本](LICENSE)。你可以使用、研究、修改和传播它，也可以出售它，但无论你传播的内容是否经过修改，都必须按同一许可证附带其源代码。第三方条款见 [NOTICE](NOTICE)。
 
-应用内的 Maxima 传输层是 [eurobuddha/maxima](https://github.com/eurobuddha/maxima) 的核心，经其作者许可原样内置，并在 NOTICE 中注明。它属于其作者，不受 GPL 约束；它自己的仓库目前还没有附带许可证。
+应用内的 Maxima 传输层是 [eurobuddha/maxima](https://github.com/eurobuddha/maxima) 的核心，经其作者许可原样内置，并在 NOTICE 中注明。它属于其作者，不受 GPL 约束；它采用其作者的 MIT 许可证。
 
 <!-- not in the app -->
 

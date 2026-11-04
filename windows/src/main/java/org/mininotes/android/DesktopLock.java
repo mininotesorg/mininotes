@@ -275,7 +275,7 @@ final class DesktopLock {
     }
 
     static String problem(char[] first,char[] again) {
-        if(first.length<SHORTEST)return "Use at least "+SHORTEST+" characters.";
+        if(first.length<SHORTEST)return Say.t("Use at least {0} characters.",SHORTEST);
         if(!Arrays.equals(first,again))return "The two passwords are not the same.";
         return null;
     }

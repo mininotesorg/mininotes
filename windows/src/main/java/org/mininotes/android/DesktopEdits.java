@@ -2,17 +2,10 @@ package org.mininotes.android;
 
 /** Commit against the current row, preserving anything received while typing. */
 final class DesktopEdits {
-    static String limits(String title,String body) {
-        if(title.length()>160)return "Title has "+title.length()+" characters; the limit is 160.";
-        if(body.length()>24000)return "Note text has "+body.length()+" characters; the limit is 24,000.";
-        return null;
-    }
-    static String warning(String title,String body) {
-        String over=limits(title,body);if(over!=null)return over;
-        if(title.length()>=144)return "Title: "+title.length()+" of 160 characters.";
-        if(body.length()>=21600)return "Note text: "+body.length()+" of 24,000 characters.";
-        return null;
-    }
+    /** Said in the language in use, as the phone says it (decision 282; see NoteLimit). */
+    static String limits(String title,String body){return NoteLimit.over(title.length(),body);}
+    /** The line near a limit: the whole note, and the tab open, which is {@code tab} letters of it (decision 319). */
+    static String warning(String title,String body,int tab){return NoteLimit.near(title.length(),body.length(),tab,Sections.of(body).size());}
     static String refusal(NoteStore store,NoteStore.Note base,String title,String body) {
         NoteStore.Note current=store.get(base.id);
         if(current==null)return "This note no longer exists. Your writing can be kept on this PC.";

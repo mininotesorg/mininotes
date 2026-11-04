@@ -485,6 +485,22 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     }
 
     /**
+     * {@link #everybodyIn} of each of these notes, the tree, the rules and what reached whom read once for all of them, not
+     * once a note (decision 261). A note not on the shelves has nobody.
+     */
+    Map<String,Set<String>> everybodyInNotes(java.util.Collection<String> notes) {
+        Map<String,Set<String>> out=new HashMap<>();
+        if(notes.isEmpty())return out;
+        Set<String> wanted=new HashSet<>(notes);
+        List<Outbox.Page> pages=new ArrayList<>();
+        for(Outbox.Page page:pagesUnder(Branch.Kind.LIBRARY,Sharing.EVERYTHING))if(wanted.contains(page.id))pages.add(page);
+        // A rule withOwnHolders adds is of one note, and reaches no other: read for all of them, each note has what it had alone.
+        List<Sharing.Rule> rules=withOwnHolders(shares(),pages,sent());
+        for(Outbox.Page page:pages)out.computeIfAbsent(page.id,any->new java.util.LinkedHashSet<>()).addAll(Sharing.audience(rules,page.path()).keySet());
+        return out;
+    }
+
+    /**
      * Whether a thing is shared at all — itself, or anything on it.
      *
      * <p>A shelf says what is true of what is on it: a book holding one shared note wears the shared mark
@@ -611,6 +627,63 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         values.put("place",-file.added);
         db.insertWithOnConflict("files",null,values,SQLiteDatabase.CONFLICT_REPLACE);
         if(changed&&shelf(file.held))touched(db,file.note);
+        // Added here to a note: under the tab open on its page, however it came (the paperclip, a drop, a paste, the camera, a
+        // recording, Explorer), every one of which comes through here (decision 299). Never one fetched, whose tab its list says;
+        // and a file kept again keeps the tab it had.
+        String[] open=tabOpen;
+        if(changed&&file.held==Branch.Kind.PAGE&&open!=null&&open[0].equals(file.note)&&!open[1].isEmpty())
+            db.execSQL("INSERT OR IGNORE INTO filetab(id,tab,at) VALUES(?,?,?)",new Object[]{file.id,open[1],Math.max(1L,file.added)});
+    }
+
+    // ---- the tab of its note each file is under (TabFiles; the owner, 2026-10-30; decision 299) ----------------------------
+
+    /**
+     * The note open on this device's page, and the tab open on it as {@link TabFiles#key} keeps it, set by the app whenever
+     * either changes: what a file added to that note is put under. Left as it was when the note is closed, so a file dropped on
+     * its icon later goes under the tab it was last open on.
+     */
+    private volatile String[] tabOpen;
+    void tabOpen(String note,String tab){tabOpen=note==null?null:new String[]{note,tab==null?"":tab};}
+
+    /** The tab each of a note's files is under, by the file's id; a file with none is under the first tab. */
+    Map<String,String> tabsOf(String note) {
+        Map<String,String> found=new HashMap<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT t.id,t.tab FROM filetab t JOIN files f ON f.id=t.id WHERE f.note=?",new String[]{note})) {
+            while(c.moveToNext())found.put(c.getString(0),c.getString(1));
+        }
+        return found;
+    }
+
+    /** One file's tab, empty for the first tab. */
+    String tabOf(String id) {
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT tab FROM filetab WHERE id=?",new String[]{id})){return c.moveToFirst()?c.getString(0):"";}
+    }
+
+    /** A file put under another tab here (Move to tab…): decided now, so it is what its note's list says from now on. */
+    void tabFile(String id,String tab) {
+        getWritableDatabase().execSQL("INSERT OR REPLACE INTO filetab(id,tab,at) VALUES(?,?,?)",new Object[]{id,tab==null?"":tab,System.currentTimeMillis()});
+    }
+
+    /**
+     * A note's tabs changed here: each of its files, kept or still waited for, under a tab that is now called something else is
+     * put under that name (see {@link TabFiles#carried}), all at once, so one renamed onto another's old name is not taken twice.
+     *
+     * @return how many files moved, so the note's list goes again only where one did
+     */
+    int retab(String note,Map<String,String> carried) {
+        if(note==null||carried==null||carried.isEmpty())return 0;
+        long now=System.currentTimeMillis();int moved=0;
+        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        try {
+            List<String[]> going=new ArrayList<>();
+            try(Cursor c=db.rawQuery("SELECT k.id,COALESCE(t.tab,'') FROM (SELECT id FROM files WHERE note=? AND held='note' UNION "
+                    +"SELECT id FROM incoming WHERE note=? AND declined=0) k LEFT JOIN filetab t ON t.id=k.id",new String[]{note,note})) {
+                while(c.moveToNext()){String to=carried.get(c.getString(1));if(to!=null)going.add(new String[]{c.getString(0),to});}
+            }
+            for(String[] one:going){db.execSQL("INSERT OR REPLACE INTO filetab(id,tab,at) VALUES(?,?,?)",new Object[]{one[0],one[1],now});moved++;}
+            db.setTransactionSuccessful();
+        } finally {db.endTransaction();}
+        return moved;
     }
 
     /**
@@ -705,6 +778,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         try {
             db.delete("files","id=?",new String[]{id});
             db.delete("reached","id=?",new String[]{id});
+            db.delete("filetab","id=?",new String[]{id});
             if(file!=null&&shelf(file.held))touched(db,file.note);
             // Kept with a note, or with a collection (whose files travel as a note's do), but not on Home, whose go nowhere; or
             // one that came on its own, so a sleeve that set off before they heard does not bring it back.
@@ -777,9 +851,17 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         // "I deleted them all from desktop and added 2 new, on the Pro all of them stayed"; decision 206). A size of nothing
         // and no place to fetch it from: a build before this one names it and does nothing with it.
         Set<String> binned=ids(getReadableDatabase(),"SELECT id FROM files WHERE note=? AND away=2",note);
-        for(Held file:filesOf(keptWith(note),note))
-            all.add(binned.contains(file.id)?new Enclosure.Listed(file.id,file.name,file.kind,0,Enclosure.TAKEN_OUT)
-                :new Enclosure.Listed(file.id,file.name,file.kind,file.bytes,Enclosure.travels(file.bytes)?manifestFor(file.id,address):""));
+        // And the tab each is under, where one was decided (decision 299): said behind its own mark (see Parcel.tabs).
+        Map<String,Object[]> tabs=new HashMap<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT t.id,t.tab,t.at FROM filetab t JOIN files f ON f.id=t.id WHERE f.note=?",new String[]{note})) {
+            while(c.moveToNext())tabs.put(c.getString(0),new Object[]{c.getString(1),c.getLong(2)});
+        }
+        for(Held file:filesOf(keptWith(note),note)) {
+            Enclosure.Listed one=binned.contains(file.id)?new Enclosure.Listed(file.id,file.name,file.kind,0,Enclosure.TAKEN_OUT)
+                :new Enclosure.Listed(file.id,file.name,file.kind,file.bytes,Enclosure.travels(file.bytes)?manifestFor(file.id,address):"");
+            Object[] tab=tabs.get(file.id);
+            all.add(tab==null?one:one.under((String)tab[0],(Long)tab[1]));
+        }
         return all;
     }
 
@@ -818,6 +900,15 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             for(Enclosure.Listed one:files) {
                 here.addAll(ids(db,"SELECT id FROM files WHERE id=?",one.id));
                 declined.addAll(ids(db,"SELECT id FROM incoming WHERE id=? AND (declined=1 OR origin<>?)",one.id,from));
+            }
+            // The tab each is under at their end, where they said one and decided it later than this device last did (decision
+            // 299): kept by the file's id, so one still to be fetched has it when it comes. A list from a build before tabs had
+            // files says none, and changes none.
+            for(Enclosure.Listed one:files) {
+                if(one.tab==null||one.tabAt<=0||!Enclosure.plainId(one.id)||one.takenOut())continue;
+                long had=0;
+                try(Cursor c=db.rawQuery("SELECT at FROM filetab WHERE id=?",new String[]{one.id})){if(c.moveToFirst())had=c.getLong(0);}
+                if(one.tabAt>had)db.execSQL("INSERT OR REPLACE INTO filetab(id,tab,at) VALUES(?,?,?)",new Object[]{one.id,one.tab,one.tabAt});
             }
             Enclosure.Plan plan=Enclosure.plan(files,fromThem,here,waiting,declined);
             for(Enclosure.Listed one:plan.fetch) {
@@ -1061,7 +1152,12 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         // One that came on its own is shown where Settings says (decision 92): found, or made, before the writing. Unless it
         // is a new version of one here (decision 93), which takes its place.
         String shown=null;long replaces=0;
-        try(Cursor c=getReadableDatabase().query("incoming",new String[]{"alone","replaces"},"id=? AND declined=0",new String[]{one.id},null,null,null,"1")){if(c.moveToFirst()&&c.getInt(0)==1){replaces=c.getLong(1);if(replaces==0)shown=sharedWithMe();}}
+        // Never one that is this owner's own, nor one in Temp, which shows in Temp (decision 300): every Temp picture from the
+        // owner's phone was shown in Shared with me as well, a duplicate there. Whose it is, not which device brought it: one of
+        // somebody else's, passed on by a device of mine, is still shared with me.
+        try(Cursor c=getReadableDatabase().query("incoming",new String[]{"alone","replaces","origin","until","owner"},"id=? AND declined=0",new String[]{one.id},null,null,null,"1")){if(c.moveToFirst()&&c.getInt(0)==1){replaces=c.getLong(1);
+            String whose=!c.isNull(4)&&!c.getString(4).isEmpty()?c.getString(4):c.isNull(2)?"":c.getString(2);
+            if(replaces==0&&!mineDevice(whose,"")&&c.getLong(3)<=0)shown=sharedWithMe();}}
         if(replaces>0)return versionArrived(one,part,replaces,plain.length);
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
         try {
@@ -2342,8 +2438,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             steps(db,step.from,step.from+1);
             long[] after=counts(db,step.after);
             String differs=SchemaMigrations.differs(step.counted,before,after);
-            if(differs!=null)throw new IllegalStateException(step.refused+differs
-                +". Nothing was changed; "+SchemaMigrations.stillOpens(old)+" still opens it.");
+            if(differs!=null)throw new IllegalStateException(Say.t("{0}. Nothing was changed; {1} still opens it.",step.refused+differs,SchemaMigrations.stillOpens(old)));
             // Numbers only: never a name or a word of a note.
             android.util.Log.i("Mininotes/Store",step.done+": "+SchemaMigrations.counted(step.counted,after));
             at=step.from+1;
@@ -2671,11 +2766,18 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             c.getString(c.getColumnIndexOrThrow("body")));
     }
 
+    /**
+     * The newest written on this device itself, kept whatever arrives after them: copies from elsewhere, however many,
+     * never push out what was written here (the Pro, 2026-11-04, was handed hundreds in one morning).
+     */
+    static final int OWN_VERSIONS_KEPT=30;
+
     /** The oldest beyond what is kept are dropped: a note's history is long, not endless. */
     private void prune(String note) {
         getWritableDatabase().execSQL(
-            "DELETE FROM versions WHERE note=? AND id NOT IN (SELECT id FROM versions WHERE note=? ORDER BY at DESC LIMIT ?)",
-            new Object[]{note,note,VERSIONS_KEPT});
+            "DELETE FROM versions WHERE note=? AND id NOT IN (SELECT id FROM versions WHERE note=? ORDER BY at DESC LIMIT ?)"
+                +" AND id NOT IN (SELECT id FROM versions WHERE note=? AND source='' ORDER BY at DESC LIMIT ?)",
+            new Object[]{note,note,VERSIONS_KEPT,note,OWN_VERSIONS_KEPT});
     }
 
     /**
@@ -2703,6 +2805,38 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 new String[]{note,String.valueOf(revision),address==null?"":address},null,null,null,"1")){return c.moveToFirst();}
     }
     private static int lines(String text){return text==null?-1:text.isEmpty()?0:text.split("\n",-1).length;}
+
+    /**
+     * What this note said at exactly this revision, kept here as this device's own or as it came from that address; null where
+     * no version is kept at that revision. What a change for that address is made against (decision 320): never the nearest
+     * text before, which {@link #textAt(String,long,String)} falls back to.
+     */
+    String keptAt(String note,long revision,String address) {
+        try(Cursor c=getReadableDatabase().query("versions",new String[]{"body"},"note=? AND revision=? AND (source='' OR source=?)",
+                new String[]{note,String.valueOf(revision),address==null?"":address},null,null,"at DESC","1")) {
+            return c.moveToFirst()?PrivateCode.scrub(c.getString(0)):null;
+        }
+    }
+
+    /**
+     * This device's copy of the text a change was made against, found by its SHA-256 (decision 320): the versions at that
+     * revision from here or from that address first, then what the note says now, then every version kept. Null where none
+     * says it exactly, and then nothing is taken and the whole note is asked for. Found by what it says, not by its number:
+     * two devices count their own revisions, and the same number can name two texts.
+     */
+    String keptAs(String note,long revision,String address,byte[] sha) {
+        java.util.Set<String> tried=new java.util.HashSet<>();
+        try(Cursor c=getReadableDatabase().query("versions",new String[]{"body"},"note=? AND revision=? AND (source='' OR source=?)",
+                new String[]{note,String.valueOf(revision),address==null?"":address},null,null,"at DESC")) {
+            while(c.moveToNext()){String one=PrivateCode.scrub(c.getString(0));if(tried.add(one)&&java.util.Arrays.equals(Delta.sha(one),sha))return one;}
+        }
+        Note now=get(note);
+        if(now!=null){String one=PrivateCode.scrub(now.body==null?"":now.body);if(tried.add(one)&&java.util.Arrays.equals(Delta.sha(one),sha))return one;}
+        try(Cursor c=getReadableDatabase().query("versions",new String[]{"body"},"note=?",new String[]{note},null,null,"at DESC")) {
+            while(c.moveToNext()){String one=PrivateCode.scrub(c.getString(0));if(tried.add(one)&&java.util.Arrays.equals(Delta.sha(one),sha))return one;}
+        }
+        return null;
+    }
 
     /** Whatever a note said when an address was last given it: the text a merge is weighed against. */
     String textAt(String note,long revision) {
@@ -2755,21 +2889,31 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 return new Arriving.Decision(Arriving.What.NEWER,here.body,revision,false);
             }
             // What this phone believes they have, and what they say they had: the older of the two.
-            long baseRevision=Arriving.agreed(here==null?0:lastSeen(id,from),basedOn);
+            long agreedWithThem=here==null?0:lastSeen(id,from);
+            long baseRevision=Arriving.agreed(agreedWithThem,basedOn);
             String base=here==null?null:textAt(id,baseRevision,from);
             // Where the texts came from, asked before what arrived is kept: see Arriving.weigh.
             boolean theyHadMine=here!=null&&history!=null&&history.contains(Arriving.trace(here.body));
-            boolean iHadTheirs=here!=null&&heldHere(id).contains(Arriving.trace(body));
+            java.util.Set<String> held=here==null?java.util.Collections.emptySet():heldHere(id);
+            boolean iHadTheirs=here!=null&&held.contains(Arriving.trace(body));
             Arriving.Decision said=Arriving.weigh(here==null?null:here.body,here==null?0:here.revision,
-                base,baseRevision,body,revision,theyHadMine,iHadTheirs);
+                base,baseRevision,body,revision,theyHadMine,iHadTheirs,agreedWithThem);
+            boolean stale=here!=null&&Arriving.stale(revision,agreedWithThem);
             // How it was weighed, in counts and never in words: what a text that comes back after it was deleted is traced by
             // (the owner's Live note, 2026-10-14). Whether the text agreed on was found at its own revision, or an older one.
             if(here!=null&&said.what!=Arriving.What.NEW)android.util.Log.i("Mininotes/Weigh",said.what+": here "+here.revision
                 +", theirs "+revision+", agreed "+baseRevision+(base==null?" (no text)":exactAt(id,baseRevision,from)?"":" (an older text)")
-                +(theyHadMine?", they held mine":"")+(iHadTheirs?", I held theirs":"")
+                +(theyHadMine?", they held mine":"")+(iHadTheirs?", I held theirs":"")+(stale?", older than what we agreed on":"")
                 +", lines here/base/theirs/result "+lines(here.body)+"/"+lines(base)+"/"+lines(body)+"/"+lines(said.text));
-            // What arrived is kept as it arrived, whether or not it is what the page ends up showing.
-            keepVersion(id,revision,from,title==null?"":title,body==null?"":body);
+            // What this device says now, kept before anything replaces it, where it is not kept already: a text typed
+            // here and replaced by one that arrived was in no version at all (the owner, 2026-11-04).
+            if(here!=null&&said.what!=Arriving.What.OLDER&&!here.body.equals(said.text==null?"":said.text)
+                &&!held.contains(Arriving.trace(here.body)))
+                keepVersion(id,here.revision,"",here.title==null?"":here.title,here.body);
+            // What arrived is kept as it arrived, whether or not it is what the page ends up showing. Not a copy older
+            // than what both already had: the Pro was handed five hundred of those in one morning, and they pushed
+            // the note's own history out of the hundred kept.
+            if(!stale)keepVersion(id,revision,from,title==null?"":title,body==null?"":body);
             if(said.what!=Arriving.What.OLDER) {
                 Note now=here==null?new Note():here;
                 if(here==null){now.id=id;now.book=book;now.theirs=true;now.origin=from;}
@@ -2959,7 +3103,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         // New on Home from another person, it waits in Shared with me; inside something here, it is as that is
         // (decisions 109 and 122). One from this owner's own device stays on Home.
         boolean waits=waitsOnArrival(address,parent);
-        v.put("accepted",waits?0:1);
+        // Shown where it would wait, but accepted at once from somebody accepted without asking (decision 269).
+        v.put("accepted",waits&&!acceptsWithoutAsking(address)?0:1);
         if(waits){String to=sharedWithMe();if(to!=null&&!to.isEmpty())v.put("shown",to);}
         return getWritableDatabase().insert("things",null,v)<0?"":id;
     }
@@ -3216,9 +3361,13 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      */
     private void shownAsShared(SQLiteDatabase db,String table,String id,String from,String parent) {
         if(!waitsOnArrival(from,parent))return;
+        // One in Temp is shown in Temp, waiting there to be accepted, not in Shared with me as well (decision 300).
+        try(Cursor c=db.rawQuery("SELECT until FROM "+table+" WHERE id=?",new String[]{id})){if(c.moveToFirst()&&c.getLong(0)>0)return;}
         String to=sharedWithMe();
-        if(to!=null&&!to.isEmpty())db.execSQL("UPDATE "+table+" SET accepted=0, shown=? WHERE id=?",new Object[]{to,id});
-        else db.execSQL("UPDATE "+table+" SET accepted=0 WHERE id=?",new Object[]{id});
+        // From somebody whose things are accepted without asking (decision 269): put where Accept would put it, accepted.
+        int accepted=acceptsWithoutAsking(from)?1:0;
+        if(to!=null&&!to.isEmpty())db.execSQL("UPDATE "+table+" SET accepted=?, shown=? WHERE id=?",new Object[]{accepted,to,id});
+        else db.execSQL("UPDATE "+table+" SET accepted=? WHERE id=?",new Object[]{accepted,id});
     }
 
     /** Whether a code taken up here offered this thing, by its sender's id or its id here. */
@@ -3408,6 +3557,61 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         }
         where.getSharedPreferences("settings",Context.MODE_PRIVATE).edit().putString(BLOCKED,next.toString()).apply();
     }
+
+    /**
+     * Whether what this address sends is accepted without asking (decision 269): its switch on, on this device, and not blocked.
+     * One of my own devices never asks anyway (decision 109), and is not asked about here.
+     */
+    boolean acceptsWithoutAsking(String address) {
+        if(address==null||address.isEmpty())return false;
+        Set<String> kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE).getStringSet(WithoutAsking.KEY,new HashSet<String>());
+        return WithoutAsking.takes(kept,address,senderBlocked(address));
+    }
+
+    /** The switch on a person's page, turned on or off here; kept in this device's settings, never sent (decision 269). */
+    void acceptWithoutAsking(String address,boolean on) {
+        android.content.SharedPreferences kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
+        synchronized(WITHOUT_ASKING) {
+            Set<String> next=WithoutAsking.set(kept.getStringSet(WithoutAsking.KEY,new HashSet<String>()),address,on);
+            if(next!=null)kept.edit().putStringSet(WithoutAsking.KEY,next).apply();
+        }
+    }
+
+    /**
+     * Whether to offer the switch right after Accept was pressed by hand for something from this address: somebody paired here,
+     * not mine, not blocked, not on already, and not told Keep asking before (see {@link WithoutAsking#offer}).
+     */
+    boolean offerWithoutAsking(String address) {
+        if(address==null||address.isEmpty())return false;
+        Contact them=address(address);
+        android.content.SharedPreferences kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
+        return WithoutAsking.offer(kept.getStringSet(WithoutAsking.KEY,new HashSet<String>()),kept.getStringSet(WithoutAsking.KEEP_ASKING,new HashSet<String>()),
+            address,them!=null&&them.paired(),them!=null&&them.mine,senderBlocked(address));
+    }
+
+    /** Keep asking, said to the offer: not offered again for them. Their page still has the switch. */
+    void keepAsking(String address) {
+        android.content.SharedPreferences kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
+        synchronized(WITHOUT_ASKING) {
+            Set<String> next=WithoutAsking.set(kept.getStringSet(WithoutAsking.KEEP_ASKING,new HashSet<String>()),address,true);
+            if(next!=null)kept.edit().putStringSet(WithoutAsking.KEEP_ASKING,next).apply();
+        }
+    }
+
+    /** Off both lists: somebody forgotten here, who if paired again is asked again. */
+    private void forgetWithoutAsking(String address) {
+        android.content.SharedPreferences kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
+        synchronized(WITHOUT_ASKING) {
+            Set<String> on=WithoutAsking.set(kept.getStringSet(WithoutAsking.KEY,new HashSet<String>()),address,false),
+                keep=WithoutAsking.set(kept.getStringSet(WithoutAsking.KEEP_ASKING,new HashSet<String>()),address,false);
+            if(on==null&&keep==null)return;
+            android.content.SharedPreferences.Editor edit=kept.edit();
+            if(on!=null)edit.putStringSet(WithoutAsking.KEY,on);
+            if(keep!=null)edit.putStringSet(WithoutAsking.KEEP_ASKING,keep);
+            edit.apply();
+        }
+    }
+    private static final Object WITHOUT_ASKING=new Object();
 
     /**
      * Everybody who has a thing that waits here, whoever it is from first: who a refusal is said to, and who nothing more of it
@@ -4122,7 +4326,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     /** The first rule whose list of people names this address, for a thing that is still here; null where none does. */
     Sharing.Rule listing(String address) {
         for(Sharing.Rule rule:shares())
-            if(rule.address.equals(address)&&!thingName(kindFor(rule.scope),rule.target).isEmpty())return rule;
+            if(rule.address.equals(address)&&rule.level!=Sharing.Level.GONE&&!thingName(kindFor(rule.scope),rule.target).isEmpty())return rule;
         return null;
     }
 
@@ -4267,6 +4471,13 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         try(Cursor c=getReadableDatabase().query("notes",null,HERE,null,null,null,"updated DESC")) {
             while(c.moveToNext())if(tree.live(tree.aboveIn(c.getString(c.getColumnIndexOrThrow("book")))))return read(c,true);
             return null;
+        }
+    }
+
+    /** Whether a page is stored, as {@link #get} would find it, without reading it. */
+    boolean noteKept(String id) {
+        try(Cursor c=getReadableDatabase().query("notes",new String[]{"id"},"id=?",new String[]{id},null,null,null,"1")) {
+            return c.moveToFirst();
         }
     }
 
@@ -4989,6 +5200,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                     Held made=opening(Branch.Kind.PAGE,copy.id,file.name,file.kind,file.bytes);
                     java.nio.file.Files.copy(fileFor(file.id).toPath(),fileFor(made.id).toPath());
                     keep(made);
+                    // Under the same tab in the copy as in the note (decision 299).
+                    String under=tabOf(file.id);if(!under.isEmpty())tabFile(made.id,under);
                 } catch(Exception notCopied){/* the note goes without that file; the original keeps it */}
             shownWhereItIs(Branch.Kind.PAGE,id);
             done.add(copy.id);
@@ -5340,6 +5553,11 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             // Moved for real: shown where it now is, and nowhere else, as a note is (decision 92).
             v.put("shown","");
             db.update("files",v,"id=?",new String[]{file});
+            // Another note's tabs are not this one's: it goes under the first tab there, or the one open on that note's page.
+            db.delete("filetab","id=?",new String[]{file});
+            String[] open=tabOpen;
+            if(note&&open!=null&&open[0].equals(into)&&!open[1].isEmpty())
+                db.execSQL("INSERT INTO filetab(id,tab,at) VALUES(?,?,?)",new Object[]{file,open[1],now});
             if(one.held!=Branch.Kind.PAGE&&!home(one.note))touched(db,one.note);
             if(collection)touched(db,into);
             db.setTransactionSuccessful();
@@ -5625,10 +5843,10 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             while(c.moveToNext())ids.add(c.getString(0));
         }
         for(String id:ids) {
-            if(get(id)!=null){out.putIfAbsent(id,false);continue;}
+            if(noteKept(id)){out.putIfAbsent(id,false);continue;}
             Held file=file(id);
             if(file==null)continue;
-            if(file.held==Branch.Kind.PAGE&&file.note!=null&&!home(file.note)&&get(file.note)!=null)out.putIfAbsent(file.note,false);
+            if(file.held==Branch.Kind.PAGE&&file.note!=null&&!home(file.note)&&noteKept(file.note))out.putIfAbsent(file.note,false);
             else if(!sharesOn(Sharing.Scope.FILE,id).isEmpty())out.putIfAbsent(id,true);
         }
         return out;
@@ -6230,10 +6448,24 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
 
     /** The revision every note on the shelves is at now, by id. */
     Map<String,Long> revisions() {
+        String at=changes();Kept<Map<String,Long>> kept=keptRevisions;
+        if(kept!=null&&kept.changes.equals(at))return new HashMap<>(kept.value);
         Map<String,Long> now=new HashMap<>();
         for(Outbox.Page page:pagesUnder(Branch.Kind.LIBRARY,Sharing.EVERYTHING))now.put(page.id,page.revision);
-        return now;
+        keptRevisions=new Kept<>(at,now);
+        return new HashMap<>(now);
     }
+
+    /**
+     * What the upkeep round reads from the whole notebook every half minute, kept while nothing is written (decision 278):
+     * every note's revision, and the collections and files on their own owed to anybody. On the Graphene on 0.4.034 the
+     * round's thread used 28 min of a core in 10 h, and on the PC these three were most of a round's 105 ms; each reads only
+     * the notebook, so while {@link #changes} stands they are what they were. {@code changes} is read before the work, so a
+     * write made during it is worked out again next time. Copies go out: nobody changes what is kept.
+     */
+    private record Kept<T>(String changes,T value) {}
+    private volatile Kept<Map<String,Long>> keptRevisions;
+    private volatile Kept<List<Outbox.Wait>> keptCartons,keptSleeves;
 
     /**
      * An answer arrived: that address says it has that page at that revision.
@@ -6297,6 +6529,16 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
 
     /** @param every to everybody each reaches, whatever they are thought to have: what Sync means */
     List<Outbox.Wait> cartonsOwed(Branch.Kind kind,String id,boolean every) {
+        // The round's question, every collection to whoever has not had it, is kept while nothing is written (decision 278).
+        boolean round=kind==Branch.Kind.LIBRARY&&Sharing.EVERYTHING.equals(id)&&!every;
+        String at=round?changes():null;Kept<List<Outbox.Wait>> kept=keptCartons;
+        if(round&&kept!=null&&kept.changes.equals(at))return new ArrayList<>(kept.value);
+        List<Outbox.Wait> owed=cartonsWorkedOut(kind,id,every);
+        if(round)keptCartons=new Kept<>(at,new ArrayList<>(owed));
+        return owed;
+    }
+
+    private List<Outbox.Wait> cartonsWorkedOut(Branch.Kind kind,String id,boolean every) {
         List<Outbox.Wait> owed=new ArrayList<>();
         if(kind==Branch.Kind.PAGE||kind==Branch.Kind.FILE)return owed;
         List<Sharing.Rule> rules=shares();
@@ -6360,7 +6602,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             if(c.moveToFirst()){name=c.getString(0);icon=c.getString(1);tint=c.getInt(2);ordinal=c.getLong(3);image=c.getString(4);}
         }
         Carton.Sent going=new Carton.Sent(collection,name,icon,picture(image),tint,ordinal,steps(up),mayWrite(address,path),
-            said==null?"":said.name(),said==null?"":held.target,said==null?new ArrayList<>():travelling(held.scope,held.target),
+            said==null?"":said.name(),said==null?"":held.target,said==null?new ArrayList<>():travelling(held.scope,held.target,address),
             true,enclosed(collection,address),System.currentTimeMillis());
         // And its strength, and when its colour and its strength were decided (decision 108).
         long[] look=lookOf(Branch.Kind.COLLECTION,collection);
@@ -6475,6 +6717,28 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     }
 
     /**
+     * Where Show where it is takes a thing (decision 281): the note a file is kept in, the folder it is in, Shared with me,
+     * Temp, or Home, as {@link Branch.Kind#PAGE} or {@link Branch.Kind#COLLECTION} with its id, {@link Branch.Kind#SHARED},
+     * {@link Branch.Kind#TEMP} or {@link Branch.Kind#LIBRARY}. Shared with me and Temp are places, not folders: what was only
+     * in one of them was taken to Home, where it is not drawn, and nothing was seen to happen (the owner, 2026-10-29: "when
+     * clicking Show where it is, nothing displayed"). The nearest wins: a note in a folder in Temp is shown in its folder.
+     */
+    record Shown(Branch.Kind kind,String id) {}
+
+    Shown shownAt(Branch.Kind kind,String id) {
+        String in=kind==Branch.Kind.FILE?parentOf("files","note",id):kind==Branch.Kind.PAGE?parentOf("notes","book",id)
+            :parentOf("things","parent",id);
+        if(in!=null&&!home(in)) {
+            if(SHARED.equals(in))return new Shown(Branch.Kind.SHARED,SHARED);
+            if(kind==Branch.Kind.FILE&&get(in)!=null)return new Shown(Branch.Kind.PAGE,in);
+            String name=collectionName(in);
+            if(name!=null&&!name.isEmpty())return new Shown(Branch.Kind.COLLECTION,in);
+        }
+        if(untilOf(kind==Branch.Kind.BOOK?Branch.Kind.COLLECTION:kind,id)>0)return new Shown(Branch.Kind.TEMP,TEMP);
+        return new Shown(Branch.Kind.LIBRARY,Things.HOME);
+    }
+
+    /**
      * The devices paired here whose build has not said it knows files on their own (see {@link Receipt#LOOSE}), by
      * address: a sleeve is never sealed for one of them. See {@link Post#knowsLoose}.
      */
@@ -6501,6 +6765,16 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * @param only one file, or null for every file
      */
     List<Outbox.Wait> sleevesOwed(String only,boolean every) {
+        // The round's question, every file on its own to whoever has not had it, kept as cartons are (decision 278).
+        boolean round=only==null&&!every;
+        String at=round?changes():null;Kept<List<Outbox.Wait>> kept=keptSleeves;
+        if(round&&kept!=null&&kept.changes.equals(at))return new ArrayList<>(kept.value);
+        List<Outbox.Wait> owed=sleevesWorkedOut(only,every);
+        if(round)keptSleeves=new Kept<>(at,new ArrayList<>(owed));
+        return owed;
+    }
+
+    private List<Outbox.Wait> sleevesWorkedOut(String only,boolean every) {
         List<Outbox.Wait> owed=new ArrayList<>();
         Map<String,List<Sharing.Rule>> byFile=new java.util.LinkedHashMap<>();
         for(Sharing.Rule rule:shares())
@@ -6530,7 +6804,10 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             boolean relayed=theirs&&changed==0&&(own.contains(origin)||allMine.contains(origin));
             for(Map.Entry<String,Boolean> reached:sleeveAudience(one.getValue(),id,!owner,gone,own).entrySet()) {
                 boolean ours=own.contains(reached.getKey());
-                if((ours||allMine.contains(reached.getKey()))&&relayed)continue;
+                // Passed on all the same where the device it came from does not count them as its owner's (decision 290): its own
+                // card here is the word for it. The Pro kept five files on Temp from the spare laptop, which did not count the
+                // Graphene or the laptop as its owner's and so never sent them there; the Pro, sure it would, did not either.
+                if((ours||allMine.contains(reached.getKey()))&&relayed&&originCounts(origin,reached.getKey()))continue;
                 if(!ours&&!says&&!wrote)continue;
                 // What they have to have: all of it, or, from a writer to anybody else, what it changed.
                 long floor=ours||says?revision:changed;
@@ -6540,6 +6817,17 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             }
         }
         return owed;
+    }
+
+    /**
+     * Whether the device a thing came from sends it to this other one itself (decision 290): unless its own card here leaves the
+     * other out of its owner's devices, as it is believed to, as before. Only a card that says so makes a device pass it on.
+     */
+    private boolean originCounts(String origin,String to) {
+        Contact from=address(origin),them=address(to);
+        if(from==null||them==null||them.signing==null)return true;
+        Persons.Card card=Post.cardKept(where,Post.fingerprint(from));
+        return card==null||Introducing.lists(card,them.signing);
     }
 
     /** Where a file on its own stands: the device it came from and when, empty for one added here; and each device's state. */
@@ -6591,7 +6879,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             else if(owed.contains(address))state=sleeveReady(id,address)?"Waiting":"Uploading";
             else if(has.contains(address)||got!=null&&got[1]>=revision)state="Has it";
             else if(got!=null&&got[0]>=revision)state="Sent, not confirmed";
-            else if(relayed&&own.contains(address))state=Say.t("Gets it from {0}",fromName);
+            else if(relayed&&own.contains(address)&&originCounts(origin,address))state=Say.t("Gets it from {0}",fromName);
             else state="Waiting";
             out.said.put(address,state);
         }
@@ -6846,8 +7134,9 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 v.put("kind",Attachment.kind(sleeve.kind));v.put("bytes",sleeve.bytes);v.put("manifest",sleeve.manifest);v.put("alone",1);
                 v.put("owner",ownerHere);v.put("replaces",0);v.put("until",until);
                 // Shared on its own by another person, it waits to be accepted, coming and once here (decision 109); from one
-                // of my own devices it comes as it always did.
-                v.put("accepted",mineDevice(from,"")?1:0);
+                // of my own devices it comes as it always did, and from somebody accepted without asking as if Accept had been
+                // pressed as it was announced (decision 269).
+                v.put("accepted",mineDevice(from,"")||acceptsWithoutAsking(from)?1:0);
                 db.insertWithOnConflict("incoming",null,v,SQLiteDatabase.CONFLICT_REPLACE);
             }
             db.setTransactionSuccessful();
@@ -6944,12 +7233,28 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     }
 
     /**
+     * Shared with me holds what somebody else shared with this device on its own, and what waits to be accepted, nothing else
+     * (the owner, 2026-10-30: "make sure that thing in Temp and other already shared folder dont fall in there"; decision 300):
+     * what came from one of this owner's own devices, and what is in Temp, which Temp shows, is taken out of it at each start,
+     * as builds before this put it there. Where it lives does not change, only where it is shown. Blocking.
+     */
+    void sharedWithMeTidied() {
+        SQLiteDatabase db=getWritableDatabase();
+        for(String table:new String[]{"files","notes","things"})
+            db.execSQL("UPDATE "+table+" SET shown='' WHERE shown=? AND until>0",new Object[]{SHARED});
+        for(Contact one:addresses())
+            if(one.mine)for(String table:new String[]{"files","notes","things"})
+                db.execSQL("UPDATE "+table+" SET shown='' WHERE shown=? AND origin=?",new Object[]{SHARED,one.address});
+    }
+
+    /**
      * The collection Shared with me that 0.2.026 and 0.2.027 made, become the place (decision 94: "let's have an icon for
      * this folder like for the other Home folders"): what showed in it shows in the place, Settings naming it names the
      * place, and the collection goes where nothing was ever put in it, so there are never two. One somebody put things in
      * is left as a folder of theirs, under its name. Once; nothing where none was made.
      */
     void sharedWithMeBecomesAPlace() {
+        sharedWithMeTidied();
         android.content.SharedPreferences kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
         String made=kept.getString(SHARED_MADE,"");
         if(made==null||made.isEmpty())return;
@@ -7405,7 +7710,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             for(Contact one:mine) {
                 if(!sent.containsKey(Outbox.mark(one.address,page.id)))continue;
                 boolean off=false;
-                for(Sharing.Rule rule:every)if(rule.level==Sharing.Level.GONE&&rule.address.equals(one.address)&&Sharing.covers(rule,path))off=true;
+                // Nor one given less, or nothing, below a folder ("not here", decision 293): a rule on the note would undo it.
+                for(Sharing.Rule rule:every)if((rule.level==Sharing.Level.GONE||rule.here)&&rule.address.equals(one.address)&&Sharing.covers(rule,path))off=true;
                 if(!off)all.add(new Sharing.Rule(Sharing.Scope.PAGE,page.id,one.address,true));
             }
         }
@@ -7898,6 +8204,18 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         return out;
     }
 
+    /**
+     * Temp opened: what it shows is seen, notes and files alike, so none of it says "new" any more (the owner, 2026-10-29:
+     * "the new tag should be removed as soon as I open the temp folder, not that we have to click the elements individually";
+     * decision 286). A folder in Temp keeps saying it while something new is inside it, as a folder anywhere does.
+     */
+    void seenInTemp() {
+        for(Branch one:temporaryShown(System.currentTimeMillis())) {
+            if(one.kind==Branch.Kind.FILE)opened(one.id);
+            else if(one.kind==Branch.Kind.PAGE)seen(one.id);
+        }
+    }
+
     /** Whether anything in Temp is new: what its tile says, as a folder with something new in it says. */
     boolean tempHasNew() {
         List<Branch> in=temporary(System.currentTimeMillis());
@@ -8051,8 +8369,67 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         }
     }
 
+    /**
+     * A note's time in Temp that never comes: it stays in Temp, and its words go instead, once Temp's time has passed since it was
+     * last written (the owner, 2026-10-31: "In temps, we should have the possibility to put there a permanent note thats stays but
+     * it content is delete, put it by default and make it in its menu that it can be turned off"; decision 307). It travels as any
+     * time does, so all the owner's devices agree. A build before this one lists it in Temp and never takes it away.
+     */
+    static final long STAYS=Long.MAX_VALUE;
+    static boolean stays(long until){return until==STAYS;}
+    /**
+     * A thing in Temp until somebody deletes it by hand, its words and all (the owner, 2026-11-02, in a thing's Temporary… box: "an
+     * option 'until I delete it'"; decision 317). Never reached, so never taken, and not STAYS, so a note keeps its words. It travels
+     * as any time does; a build before this one shows it as a time thousands of years away and never takes it either.
+     */
+    static final long KEEPS=Long.MAX_VALUE-1;
+    static boolean keeps(long until){return until==KEEPS;}
+    /** Kept once the notepad was made here, so it is never made again by itself, whatever was done with it after. */
+    static final String NOTEPAD_MADE="notepadMade";
+
+    /** Temp's time here ("Things stay"): minutes, a number on the phone and words on the PC, both read so. */
+    long tempSpan() {
+        android.content.SharedPreferences kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
+        try{return Math.max(1L,kept.getLong("tempMinutes",24*60))*60_000L;}
+        catch(RuntimeException asWords){try{return Math.max(1L,Long.parseLong(kept.getString("tempMinutes","1440")))*60_000L;}catch(RuntimeException none){return 24*3_600_000L;}}
+    }
+
+    /** The notepad's id: the same on every device of one person, so theirs are one note, not one each. */
+    static String notepadId(String person){return UUID.nameUUIDFromBytes(("mininotes notepad "+person).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();}
+
+    /** Made in Temp, staying, the first time this build runs here, unless it came from another device first; never again by itself. */
+    void notepadOnce(String person) {
+        android.content.SharedPreferences kept=where.getSharedPreferences("settings",Context.MODE_PRIVATE);
+        if(kept.getLong(NOTEPAD_MADE,0L)!=0L)return;
+        kept.edit().putLong(NOTEPAD_MADE,System.currentTimeMillis()).apply();
+        notepad(person,true);
+    }
+
+    /** Whether the notepad is here, in Temp and staying. */
+    boolean notepadOn(String person) {
+        Note here=get(notepadId(person));
+        return here!=null&&!here.deleted&&stays(untilOf(Branch.Kind.PAGE,here.id));
+    }
+
+    /**
+     * On: the notepad in Temp and staying, made where it is not here (back from the bin where it is there). Off: an ordinary Temp
+     * note, gone in Temp's time, as anything in Temp is.
+     */
+    void notepad(String person,boolean on) {
+        String id=notepadId(person);Note here=get(id);
+        if(!on){if(here!=null&&!here.deleted&&stays(untilOf(Branch.Kind.PAGE,id)))makeTemporary(Branch.Kind.PAGE,id,System.currentTimeMillis()+tempSpan());return;}
+        if(here==null) {
+            // Never written in yet: not the note last written, which a start opens (latest), until somebody writes in it.
+            Note pad=new Note();pad.id=id;pad.book=Things.HOME;pad.title=Say.t("Notepad");pad.revision=1;pad.updated=0L;
+            save(pad);
+        } else if(here.deleted)restore(Branch.Kind.PAGE,id);
+        makeTemporary(Branch.Kind.PAGE,id,STAYS);
+    }
+
     /** "Gone in 3 days", and the like: how long a temporary thing has, said as a person would. */
     static String goneIn(long until,long now) {
+        if(stays(until))return "Stays in Temp";
+        if(keeps(until))return "Stays until you delete it";
         long left=until-now;
         if(left<=60_000L)return "Gone in a moment";
         long minutes=left/60_000L,hours=left/3_600_000L,days=left/86_400_000L;
@@ -8105,7 +8482,20 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
     }
 
     /** As many as Temp lists, so its count never promises what is not in it, nothing inside what waits included (decision 109). */
-    int temporaryCount(){return temporary(System.currentTimeMillis()).size();}
+    /**
+     * What Temp's card shows: what is temporary, less what is inside a folder that is in Temp itself, temporary with it (decision
+     * 152) and shown inside it. Listed at Temp's top too, a note made in such a folder looked made there (the owner, 2026-10-28:
+     * "When I create a folder in temp and added a note to it, the note was created in the root temp folder"; decision 272).
+     * {@link #temporary} stays whole: sending and the end of Temp's time go by every temporary thing.
+     */
+    List<Branch> temporaryShown(long now) {
+        List<Branch> all=temporary(now),out=new ArrayList<>();
+        Set<String> folders=new HashSet<>();
+        for(Branch one:all)if(one.kind==Branch.Kind.COLLECTION)folders.add(one.id);
+        for(Branch one:all)if(one.parent==null||!folders.contains(one.parent))out.add(one);
+        return out;
+    }
+    int temporaryCount(){return temporaryShown(System.currentTimeMillis()).size();}
 
     /**
      * What is temporary and whose time has come, gone for good here, as the bin's Delete for good takes it. Every device
@@ -8114,6 +8504,12 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * @return how many things went
      */
     int expire(long now) {
+        // A note that stays in Temp is never taken: its words go, a version kept first, once Temp's time has passed since it was last
+        // written (decision 307). Every device does it at the same time, as with the rest, so nothing is sent.
+        List<String> emptied=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT id FROM notes WHERE until=? AND deleted=0 AND body<>'' AND updated<=?",
+            new String[]{String.valueOf(STAYS),String.valueOf(now-tempSpan())})){while(c.moveToNext())emptied.add(c.getString(0));}
+        for(String id:emptied)try{keepVersion(id,"");Note n=get(id);if(n==null)continue;n.body="";n.updated=now;save(n);}catch(RuntimeException notNow){/* next time */}
         List<String[]> due=new ArrayList<>();
         try(Cursor c=getReadableDatabase().rawQuery("SELECT id FROM notes WHERE until>0 AND until<=?",new String[]{String.valueOf(now)})) {
             while(c.moveToNext())due.add(new String[]{Branch.Kind.PAGE.name(),c.getString(0)});
@@ -8196,7 +8592,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         // decision 229): opened, or something put in it. Taken out of Recent as anything is, and back once used again.
         long tempAt=where.getSharedPreferences("settings",Context.MODE_PRIVATE).getLong(TEMP_USED,0L);
         if(tempAt>=since&&taken.getOrDefault(TEMP,0L)<tempAt) {
-            int n=temporary(System.currentTimeMillis()).size();
+            int n=temporaryShown(System.currentTimeMillis()).size();
             found.add(new Object[]{tempAt,new Branch(Branch.Kind.TEMP,TEMP,Sharing.EVERYTHING,"Temp",n<=0?"":n==1?"1 thing":n+" things",0,0,true)});
         }
         found.sort((one,other)->Long.compare((Long)other[0],(Long)one[0]));
@@ -8499,6 +8895,19 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * table rather than deleted, because a row nobody asked to remove is not one to remove quietly, and
      * they are simply not a device you can pick.
      */
+    /**
+     * A word that moves whenever anything in the notebook is written: which connection, and how many rows it has changed
+     * since it opened (SQLite's total_changes). One connection writes and reads here, the PC's and the phone's alike (the
+     * phone's without WAL), so nothing written escapes it. What an upkeep round works out from the whole notebook is kept
+     * while it stands (decision 261). A write that changes nothing does not move it; one rolled back still does.
+     */
+    String changes() {
+        SQLiteDatabase db=getReadableDatabase();
+        try(Cursor c=db.rawQuery("SELECT total_changes()",null)) {
+            return System.identityHashCode(db)+":"+(c.moveToFirst()?c.getLong(0):-1);
+        }
+    }
+
     List<Contact> addresses() {
         List<Contact> known=new ArrayList<>();
         try(Cursor c=getReadableDatabase().query("addresses",null,"TRIM(address)<>''",null,null,null,"added ASC")) {
@@ -8898,7 +9307,23 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         if(getWritableDatabase().insertWithOnConflict("addresses",null,v,SQLiteDatabase.CONFLICT_REPLACE)<0)
             throw new IllegalStateException("Could not save the address");
     }
-    void removeAddress(String address){getWritableDatabase().delete("addresses","address=?",new String[]{address});}
+    void removeAddress(String address) {
+        // A device forgotten here is not offered again with Link because another of mine still lists it (decision 277); paired
+        // again by a code, it is offered as anything paired is (Post.notLinked).
+        Contact them=address(address);
+        if(them!=null&&them.signing!=null&&them.signing.length>0)forgotten(Persons.key(them.signing),true);
+        getWritableDatabase().delete("addresses","address=?",new String[]{address});forgetWithoutAsking(address);
+    }
+    /** The keys of devices forgotten here, as {@link Persons#key} writes them: kept in this device's settings, never sent. */
+    Set<String> forgotten(){return new HashSet<>(where.getSharedPreferences("settings",Context.MODE_PRIVATE).getStringSet(FORGOTTEN,new HashSet<String>()));}
+    void forgotten(String key,boolean in) {
+        if(key==null||key.isEmpty())return;
+        synchronized(WITHOUT_ASKING) {
+            Set<String> now=forgotten();
+            if(in?now.add(key):now.remove(key))where.getSharedPreferences("settings",Context.MODE_PRIVATE).edit().putStringSet(FORGOTTEN,now).apply();
+        }
+    }
+    private static final String FORGOTTEN="forgottenDevices";
 
     /**
      * Remove this person, its first half (decision 163: "off everything I shared with them, out of my people, and they are
@@ -8980,7 +9405,9 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         List<Sharing.Rule> rules=new ArrayList<>();
         // Somebody taken off keeps a row, at GONE, so that an older copy of the list cannot put them back.
         // A membership without that is a membership where removing somebody is undone by the next message.
-        try(Cursor c=getReadableDatabase().query("shares",null,"level>0",null,null,null,"added ASC")) {
+        // And "not here" at GONE is read with the rules, since it is what sets aside a folder's rule (decision 293; see
+        // Sharing.standingOn): what reaches whom is asked of these rules and of nothing else.
+        try(Cursor c=getReadableDatabase().query("shares",null,"level>0 OR here=1",null,null,null,"added ASC")) {
             while(c.moveToNext()){Sharing.Rule one=rule(c);if(one!=null)rules.add(one);}
         }
         return rules;
@@ -9007,7 +9434,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             c.getString(c.getColumnIndexOrThrow("target")),c.getString(c.getColumnIndexOrThrow("address")),
             Sharing.Level.of(c.getInt(c.getColumnIndexOrThrow("level"))),
             c.getLong(c.getColumnIndexOrThrow("changed")),
-            c.getString(c.getColumnIndexOrThrow("who")));
+            c.getString(c.getColumnIndexOrThrow("who")),
+            c.getInt(c.getColumnIndexOrThrow("here"))==1);
     }
 
     /**
@@ -9026,11 +9454,19 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * @param scope   the level it was asked at; written at whatever the thing's rows already say (see {@link #scopeHere})
      */
     void setLevel(Sharing.Scope scope,String target,String address,Sharing.Level level,String name,long changed) {
+        setLevel(scope,target,address,level,name,changed,false);
+    }
+
+    /**
+     * @param here "not here" (decision 293; see Sharing.Rule#here): for this device it stands in place of what a folder above
+     *             or everything gives. Any other decision written over the row is a rule that only adds again.
+     */
+    void setLevel(Sharing.Scope scope,String target,String address,Sharing.Level level,String name,long changed,boolean here) {
         scope=scopeHere(scope,target);
         NoteStore.Contact who=address(address);
         ContentValues v=new ContentValues();
         v.put("scope",scope.name());v.put("target",target);v.put("address",address);
-        v.put("level",level.said());v.put("mine",level.writes()?1:0);
+        v.put("level",level.said());v.put("mine",level.writes()?1:0);v.put("here",here&&scope!=Sharing.Scope.LIBRARY?1:0);
         v.put("changed",changed);v.put("added",System.currentTimeMillis());
         String before=sharedName(scope,target,address);
         // A device never paired here is known by the key its list gave: kept, or a later list naming the same key
@@ -9098,7 +9534,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 ContentValues v=new ContentValues();
                 v.put("scope",scope.name());v.put("target",target);
                 v.put("address",where);
-                v.put("level",one.level.said());v.put("mine",one.level.writes()?1:0);
+                v.put("level",one.level.said());v.put("mine",one.level.writes()?1:0);v.put("here",one.here?1:0);
                 v.put("changed",one.changed);v.put("added",System.currentTimeMillis());
                 v.put("who",one.key);v.put("name",name);
                 db.insertWithOnConflict("shares",null,v,SQLiteDatabase.CONFLICT_REPLACE);
@@ -9136,10 +9572,23 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         return null;
     }
 
-    /** The membership of one thing, as it travels: every device, by key, with when it was decided. */
-    List<Parcel.Member> travelling(Sharing.Scope scope,String target) {
+    /**
+     * The membership of one thing, as it travels: every device, by key, with when it was decided. With no "not here" on it
+     * (decision 293): a list said to nobody in particular, a file's sleeve, is said as a build from before reads it.
+     */
+    List<Parcel.Member> travelling(Sharing.Scope scope,String target){return travelling(scope,target,null);}
+
+    /**
+     * The same, as it goes to one device: an entry that is "not here" is on it only where that device's build has said it reads
+     * one ({@link Receipt#NOT_HERE}). To any other it is left off, so a build from before never takes it for a rule that only
+     * adds; it stays among the devices that read it, and this one goes on keeping it.
+     */
+    List<Parcel.Member> travelling(Sharing.Scope scope,String target,String to) {
         List<Parcel.Member> going=new ArrayList<>();
         if(scope==null)return going;
+        boolean reads=to!=null&&Post.readsNotHere(where,address(to));
+        // Everybody on it, those left off included, so a device of mine left off is not put back by ownDevicesFor below.
+        List<Parcel.Member> all=new ArrayList<>();
         for(Sharing.Rule rule:membership(scope,target)) {
             Contact who=address(rule.address);
             // By the name it has here, or else the one its list came with: a device this one never paired with
@@ -9148,15 +9597,17 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             // And the key to seal for it, where this device has one and it is still on the thing: that is what lets
             // everybody on the list reach everybody else on it (see Linking). Nobody taken off is handed on.
             byte[] seal=who!=null&&who.paired()&&rule.level!=Sharing.Level.GONE?shortened(who.agreement):null;
-            going.add(new Parcel.Member(rule.key.isEmpty()&&who!=null?canonical(who.signing):rule.key,
-                rule.address,name,rule.level.said(),rule.changed,seal));
+            Parcel.Member one=new Parcel.Member(rule.key.isEmpty()&&who!=null?canonical(who.signing):rule.key,
+                rule.address,name,rule.level.said(),rule.changed,seal,rule.here);
+            all.add(one);
+            if(!rule.here||reads)going.add(one);
         }
         // And this phone, which is a member of anything it shares and never appears in its own list: as the weakest
         // decision there is, at what it may do here - Admin only where it is whose the thing is. Every device said Admin
         // until 0.1.040, and a device nothing else was known about was an admin wherever its list went.
         Sharing.Level mine=owns(scope,target)?Sharing.Level.ADMIN:myLevel(scope,target);
         going.add(new Parcel.Member(mySigningKey,myAddress,myName,(mine==null?Sharing.Level.WRITE:mine).said(),1L,myAgreement));
-        going.addAll(ownDevicesFor(going,mine==null?Sharing.Level.WRITE:mine));
+        going.addAll(ownDevicesFor(all,mine==null?Sharing.Level.WRITE:mine));
         return going;
     }
 
@@ -9423,10 +9874,14 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             if(where.trim().isEmpty())continue;
             if(!fromOwner) {
                 Sharing.Rule before=memberHere(scope,here,where,one.key);
+                Sharing.Level was=before==null?null:before.level;
+                // "Not here" decides what they have from above as well (decision 293): an admin through a folder is an admin.
+                if(one.here){Sharing.Rule up=Sharing.above(shares(),pathFor(scope,here),java.util.Collections.singletonList(where),one.key);
+                    if(up!=null&&(was==null||up.level.ordinal()>was.ordinal()))was=up.level;}
                 boolean aboutOwner=ownerMember(where,one.key,whose);
-                if(!Sharing.mayCarry(false,aboutOwner,before==null?null:before.level,Sharing.Level.of(one.level)))continue;
+                if(!Sharing.mayCarry(false,aboutOwner,was,Sharing.Level.of(one.level)))continue;
             }
-            listed.add(new Sharing.Rule(scope,here,where,Sharing.Level.of(one.level),one.changed,one.key));
+            listed.add(new Sharing.Rule(scope,here,where,Sharing.Level.of(one.level),one.changed,one.key,one.here));
             if(!one.name.isBlank())names.put(one.key.isEmpty()?where:one.key,one.name.trim());
         }
         mergeMembership(scope,here,listed,names);
@@ -9490,8 +9945,10 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * above it. Who it reaches is one question; which rule does it is another, and the sheet needs both to
      * say what can be undone here and what has to be undone where it was given.
      */
-    Map<String,Boolean> reaches(Sharing.Scope scope,String target) {
-        List<Sharing.Rule> rules=shares();
+    Map<String,Boolean> reaches(Sharing.Scope scope,String target){return reaches(shares(),scope,target);}
+
+    /** The same, with the rules already read: for asking it of many things at once. */
+    Map<String,Boolean> reaches(List<Sharing.Rule> rules,Sharing.Scope scope,String target) {
         if(scope==Sharing.Scope.LIBRARY||target==null||home(target))return Sharing.audience(rules,new ArrayList<>());
         return Sharing.audience(rules,scope==Sharing.Scope.FILE?filePath(target):pathOf(target));
     }
@@ -9505,15 +9962,73 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * @return the thing, named, or empty when the rule is on this thing or there is none
      */
     String grantedBy(Sharing.Scope scope,String target,String address) {
-        List<String> path=scope==Sharing.Scope.LIBRARY||home(target)?new ArrayList<>():scope==Sharing.Scope.FILE?filePath(target):pathOf(target);
-        for(Sharing.Rule rule:shares()) {
-            if(!rule.address.equals(address))continue;
+        List<String> path=pathFor(scope,target);
+        // Only a rule that stands: none that "not here" sets aside, and never "not here" itself (decision 293).
+        for(Sharing.Rule rule:Sharing.standingOn(shares(),path)) {
+            if(!rule.address.equals(address)||rule.level==Sharing.Level.GONE)continue;
             if(alike(rule.scope,scope)&&rule.target.equals(target))continue;
             if(!Sharing.covers(rule,path))continue;
             if(rule.scope==Sharing.Scope.LIBRARY)return "everything on this phone";
             if(onShelf(rule.scope))return nameOf(rule.target,true)+" folder";
         }
         return "";
+    }
+
+    /** A thing's path as its rules are weighed along: nothing for everything, a file's from where it is kept, else from Home down to it. */
+    List<String> pathFor(Sharing.Scope scope,String target) {
+        if(scope==Sharing.Scope.LIBRARY||target==null||home(target))return new ArrayList<>();
+        return scope==Sharing.Scope.FILE?filePath(target):pathOf(target);
+    }
+
+    /**
+     * What one device may do with one thing, chosen in that thing's Share box, or taken off it ({@code GONE}), decided now (the
+     * owner, 2026-10-30: "this button retirer here, it should also be there for every contact including own devices"; decision
+     * 293). The one way a Share box changes a row: never anybody's bond with everything. Where a folder above or everything
+     * gives them more than was chosen, it is written "not here" (see Sharing.here), which stands in place of that for this
+     * thing and everything inside it; otherwise as a rule of their own, as before, which lifts any "not here". A device of
+     * mine on a thing of mine is the owner as a person, and still has its own say here: the owner chooses it. Refused where
+     * this device has no say in them (Sharing.mayChange), may not give that level, or for a file that has it from its folder,
+     * whose sleeve cannot say "not here".
+     */
+    void decideHere(Sharing.Scope scope,String target,String address,Sharing.Level to,long when) {
+        Contact who=address(address);
+        if(who==null||!who.paired())throw new IllegalStateException("They are no longer in People and devices.");
+        String key=canonical(who.signing),origin=cameFrom(kindFor(scope),target);
+        if(!origin.isEmpty()&&(origin.equals(address)||!key.isEmpty()&&key.equals(keyOf(origin))))throw new IllegalStateException("Nobody can change the owner's role.");
+        boolean owner=owns(scope,target);
+        Sharing.Level mine=owner?null:myLevel(scope,target);
+        List<Sharing.Rule> every=shares();
+        List<String> path=pathFor(scope,target),them=java.util.Collections.singletonList(address);
+        Sharing.Rule now=Sharing.standing(every,path,them,key),up=Sharing.above(every,path,them,key);
+        Sharing.Level has=now==null?Sharing.Level.GONE:now.level,above=up==null||up.level==Sharing.Level.GONE?null:up.level;
+        if(!Sharing.mayChange(owner,mine,has,false))throw new IllegalStateException(to==Sharing.Level.GONE
+            ?"Only its owner can take an admin off, and only its owner or an admin can take anybody off.":"Only its owner can make somebody an admin or change an admin's role.");
+        if(to!=Sharing.Level.GONE&&!mayGive(scope,target).contains(to))
+            throw new IllegalStateException(to==Sharing.Level.ADMIN?"Only its owner can make somebody an admin.":"Only its owner or an admin can share this.");
+        boolean here=Sharing.here(to,above);
+        if(here&&scope==Sharing.Scope.FILE)throw new IllegalStateException("That could not be changed.");
+        Sharing.Rule row=null;
+        for(Sharing.Rule one:membership(scope,target))if(one.address.equals(address)||!key.isEmpty()&&key.equals(one.key))row=one;
+        if(to==Sharing.Level.GONE) {
+            // Nothing to take: not on it, and nothing above gives it to them.
+            if(!here&&(row==null||row.level==Sharing.Level.GONE))return;
+            removeShare(new Sharing.Rule(scope,target,address,Sharing.Level.GONE,when,key),when,here);
+            return;
+        }
+        setLevel(scope,target,address,to,null,when,here);
+        if(scope==Sharing.Scope.FILE)reportFollows(target,address,to,null);
+    }
+
+    /** Every thing with "not here" on it, once each: what goes again to a build that has just said it reads it (decision 293). */
+    List<Groups.Changed> notHereOn() {
+        Map<String,Groups.Changed> on=new java.util.LinkedHashMap<>();
+        try(Cursor c=getReadableDatabase().query("shares",new String[]{"scope","target"},"here=1",null,null,null,"added ASC")) {
+            while(c.moveToNext()) {
+                Sharing.Scope scope;try{scope=Sharing.Scope.valueOf(c.getString(0));}catch(IllegalArgumentException unknown){continue;}
+                on.putIfAbsent(thingAt(scope,c.getString(1)),new Groups.Changed(scope,c.getString(1)));
+            }
+        }
+        return new ArrayList<>(on.values());
     }
 
     List<Sharing.Rule> sharesOn(Sharing.Scope scope,String target) {
@@ -9541,8 +10056,11 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * word they wrote wrote them back in, since whoever sends a thing is written down as having it. And
      * nothing is waited for from them any more.
      */
-    void removeShare(Sharing.Rule rule,long when) {
-        setLevel(rule.scope,rule.target,rule.address,Sharing.Level.GONE,null,when);
+    void removeShare(Sharing.Rule rule,long when){removeShare(rule,when,false);}
+
+    /** @param here "not here" (decision 293): taken away below a folder that gives them the thing, which goes on giving them the rest. */
+    void removeShare(Sharing.Rule rule,long when,boolean here) {
+        setLevel(rule.scope,rule.target,rule.address,Sharing.Level.GONE,null,when,here);
         for(Outbox.Page page:pagesUnder(kindFor(rule.scope),rule.target))
             getWritableDatabase().delete("handed","address=? AND page=?",new String[]{rule.address,page.id});
         getWritableDatabase().delete("handed","address=? AND page=?",new String[]{rule.address,rule.target});
@@ -9744,8 +10262,11 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * rights could be defined at the group level or at the individual group's members level"; decision 103).
      */
     static final class Stands {
-        /** Not on it; their own rights; a group's; taken off by hand though a group of theirs has it; its owner; through what holds it. */
-        static final int NONE=0,OWN=1,GROUP=2,REMOVED=3,OWNER=4,ABOVE=5;
+        /**
+         * Not on it; their own rights; a group's; taken off by hand though a group of theirs has it; its owner; through what holds
+         * it; taken away here though what holds it gives it to them ("Removed here", decision 293).
+         */
+        static final int NONE=0,OWN=1,GROUP=2,REMOVED=3,OWNER=4,ABOVE=5,HERE=6;
         final int how; final Sharing.Level level; final String group;
         /** The rule that stands, for changing it; null where there is none on the thing itself. */
         final Sharing.Rule rule;
@@ -9756,10 +10277,16 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         boolean has(){return how==OWN||how==GROUP||how==OWNER||how==ABOVE;}
     }
 
-    /** Where every paired device stands on one thing, by address: see {@link Stands}. */
+    /**
+     * Where every paired device stands on one thing, by address: see {@link Stands}. Every one of them may be changed on this
+     * thing alone where this device has a say in them (decision 293): through a folder above or everything too, and a device
+     * of mine, which is the owner of a thing of mine only as a person.
+     */
     Map<String,Stands> standsOn(Sharing.Scope scope,String target) {
         Map<String,Stands> all=new HashMap<>();
-        boolean gives=!mayGive(scope,target).isEmpty();
+        boolean gives=!mayGive(scope,target).isEmpty(),owner=owns(scope,target);
+        Sharing.Level mine=owner?null:myLevel(scope,target);
+        List<Sharing.Rule> every=shares();List<String> path=pathFor(scope,target);
         Map<String,Sharing.Rule> rules=new HashMap<>();Map<String,String> from=new HashMap<>();
         try(Cursor c=getReadableDatabase().query("shares",null,scopeIs(scope)+" AND target=?",new String[]{target},null,null,"added ASC")) {
             while(c.moveToNext()){Sharing.Rule rule=rule(c);if(rule==null)continue;rules.put(rule.address,rule);from.put(rule.address,c.getString(c.getColumnIndexOrThrow("grp")));}
@@ -9769,17 +10296,25 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         Map<String,List<Contact>> in=inGroups();
         for(Groups.Given one:givenToGroups())
             if(one.level!=Sharing.Level.GONE&&alike(one.scope,scope)&&one.target.equals(target))for(Contact who:in.getOrDefault(one.group,new ArrayList<>()))wanted.add(who.address);
-        Map<String,Boolean> reaching=reaches(scope,target);
         String origin=cameFrom(kindFor(scope),target),originKey=origin.isEmpty()?"":keyOf(origin);
         for(Contact one:addresses()) {
             if(!one.paired())continue;
-            Sharing.Rule rule=rules.get(one.address);String group=from.getOrDefault(one.address,"");
-            if(rule!=null&&ownerOf(rule)||!origin.isEmpty()&&(origin.equals(one.address)||!originKey.isEmpty()&&originKey.equals(canonical(one.signing))))
+            Sharing.Rule rule=rules.get(one.address);String group=from.getOrDefault(one.address,""),key=canonical(one.signing);
+            // What a folder above or everything gives them, which "not here" on this thing stands in place of.
+            Sharing.Rule up=Sharing.above(every,path,java.util.Collections.singletonList(one.address),key);
+            Sharing.Level above=up==null||up.level==Sharing.Level.GONE?null:up.level;
+            // Whoever it came from is its owner, and only they: a device of mine is the owner of a thing of mine as a person,
+            // and each still has its own say on it here (decision 293; until then it was Owner, with nothing to change).
+            if(!origin.isEmpty()&&(origin.equals(one.address)||!originKey.isEmpty()&&originKey.equals(key)))
                 all.put(one.address,new Stands(Stands.OWNER,null,"",rule,false));
+            else if(rule!=null&&rule.here&&rule.level==Sharing.Level.GONE&&above!=null)
+                all.put(one.address,new Stands(Stands.HERE,null,"",rule,Sharing.mayChange(owner,mine,above,false)));
             else if(rule!=null&&rule.level!=Sharing.Level.GONE)
-                all.put(one.address,new Stands(group.isEmpty()?Stands.OWN:Stands.GROUP,rule.level,group,rule,mayChange(rule)));
-            else if(reaching.containsKey(one.address))
-                all.put(one.address,new Stands(Stands.ABOVE,Boolean.TRUE.equals(reaching.get(one.address))?Sharing.Level.WRITE:Sharing.Level.READ,"",null,false));
+                all.put(one.address,new Stands(group.isEmpty()?Stands.OWN:Stands.GROUP,rule.level,group,rule,
+                    Sharing.mayChange(owner,mine,above!=null&&above.ordinal()>rule.level.ordinal()?above:rule.level,false)));
+            else if(above!=null)
+                // A file's sleeve cannot say "not here", so a file has it from its folder until it is changed there.
+                all.put(one.address,new Stands(Stands.ABOVE,above,"",null,scope!=Sharing.Scope.FILE&&Sharing.mayChange(owner,mine,above,false)));
             else all.put(one.address,new Stands(rule!=null&&group.isEmpty()&&wanted.contains(one.address)?Stands.REMOVED:Stands.NONE,null,"",rule,gives));
         }
         return all;
@@ -9973,6 +10508,72 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             db.setTransactionSuccessful();
         } finally {db.endTransaction();}
         return kept;
+    }
+
+    // ---- what Mininotes did, for the History page (History; decision 305) ------------------------------------------------
+
+    /**
+     * Something that happened, kept as a line. The same thing with the same device again within ten minutes of its line is
+     * that line, its time moved on; lines older than thirty days, and beyond two thousand, are let go. Never throws: the
+     * history is never the reason a note does not go or come.
+     */
+    void happened(History.Kind kind,String thing,String address,long now){happened(kind,thing,address,now,"");}
+
+    /** The same, with the road the last send to that device went (decision 322; see {@link Routes#road}): the line's road now. */
+    void happened(History.Kind kind,String thing,String address,long now,String road) {
+        if(kind==null||address==null||address.isEmpty())return;
+        String what=thing==null?"":thing,how=road==null?"":road;
+        try {
+            SQLiteDatabase db=getWritableDatabase();
+            db.beginTransaction();
+            try {
+                long line=-1,was=0;
+                try(Cursor c=db.rawQuery("SELECT id,at FROM history WHERE kind=? AND thing=? AND address=? ORDER BY at DESC LIMIT 1",
+                    new String[]{kind.code,what,address})){if(c.moveToFirst()){line=c.getLong(0);was=c.getLong(1);}}
+                if(line>=0&&History.together(was,now)) {
+                    if(how.isEmpty())db.execSQL("UPDATE history SET at=?, times=times+1 WHERE id=?",new Object[]{now,line});
+                    else db.execSQL("UPDATE history SET at=?, times=times+1, road=? WHERE id=?",new Object[]{now,how,line});
+                }
+                else {
+                    ContentValues v=new ContentValues();
+                    v.put("at",now);v.put("kind",kind.code);v.put("thing",what);v.put("address",address);v.put("times",1);v.put("road",how);
+                    db.insert("history",null,v);
+                }
+                db.execSQL("DELETE FROM history WHERE at<?",new Object[]{now-History.KEPT});
+                db.execSQL("DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY at DESC LIMIT "+History.MOST+")");
+                db.setTransactionSuccessful();
+            } finally {db.endTransaction();}
+        } catch(RuntimeException notKept){/* the history is a courtesy, never in the way */}
+    }
+
+    /** A line as the page shows it: the line, its thing's name now (empty for a device back), and the device's or person's name. */
+    record HistoryShown(History.Line line,String title,String who) {}
+
+    /**
+     * Every line, newest first, with its thing's name and its device's as they are now. A line whose thing is no longer in the
+     * notebook (deleted for good, or never kept here) or whose device is no longer known says nothing, and is let go.
+     */
+    List<HistoryShown> history() {
+        java.util.Map<String,String> names=new java.util.HashMap<>();
+        for(Contact one:addresses())names.put(one.address,one.name==null?"":one.name);
+        List<HistoryShown> shown=new ArrayList<>();List<Long> gone=new ArrayList<>();
+        try(Cursor c=getReadableDatabase().rawQuery("SELECT h.id,h.at,h.kind,h.thing,h.address,h.times,n.title,n.deleted,f.name,h.road FROM history h "
+            +"LEFT JOIN notes n ON n.id=h.thing LEFT JOIN files f ON f.id=h.thing ORDER BY h.at DESC,h.id DESC",null)) {
+            while(c.moveToNext()) {
+                History.Kind kind=History.Kind.of(c.getString(2));
+                String who=names.get(c.getString(4));
+                // A note in the bin is not shown, and keeps its lines for if it comes back.
+                if(kind!=null&&!kind.file()&&kind!=History.Kind.BACK&&!c.isNull(6)&&c.getInt(7)!=0)continue;
+                String title=kind==null?null:kind==History.Kind.BACK?"":kind.file()?c.getString(8):c.getString(6);
+                if(title==null||who==null){gone.add(c.getLong(0));continue;}
+                shown.add(new HistoryShown(new History.Line(c.getLong(0),c.getLong(1),kind,c.getString(3),c.getString(4),c.getInt(5),c.getString(9)),title,who));
+            }
+        }
+        if(!gone.isEmpty())try {
+            SQLiteDatabase db=getWritableDatabase();
+            for(Long one:gone)db.delete("history","id=?",new String[]{String.valueOf(one)});
+        } catch(RuntimeException notNow){/* let go next time */}
+        return shown;
     }
 
     // ---- brief messages, for the Inbox (Message; decision 145) -----------------------------------------------------------
@@ -10310,9 +10911,15 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 if(note.colourDecided>0)written.put("colourDecided",note.colourDecided);
                 if(note.toneDecided>0)written.put("toneDecided",note.toneDecided);
                 JSONArray files=new JSONArray();
-                for(Held file:filesOf(Branch.Kind.PAGE,note.id))
-                    files.put(new JSONObject().put("id",file.id).put("name",file.name).put("kind",file.kind)
-                        .put("bytes",file.bytes).put("added",file.added));
+                // And the tab each is under, where it is not the first (decision 299); a build from before reads past it.
+                Map<String,String> tabs=tabsOf(note.id);
+                for(Held file:filesOf(Branch.Kind.PAGE,note.id)) {
+                    JSONObject one=new JSONObject().put("id",file.id).put("name",file.name).put("kind",file.kind)
+                        .put("bytes",file.bytes).put("added",file.added);
+                    String tab=tabs.get(file.id);
+                    if(tab!=null&&!tab.isEmpty())one.put("tab",tab);
+                    files.put(one);
+                }
                 if(files.length()>0)written.put("files",files);
                 a.put(written);
             }
@@ -10389,6 +10996,8 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
         JSONArray shelves=things!=null?null:root.optJSONArray("collections"), volumes=things!=null?null:root.optJSONArray("books");
         List<Note> incoming=new ArrayList<>();
         List<Held> arriving=new ArrayList<>();
+        // The tab each note's file is under, by its id here, where the backup says one (decision 299).
+        Map<String,String> tabbed=new HashMap<>();
         // Each note's icon and picture, written once the note is: {id, icon, picture as kept}.
         List<String[]> looks=new ArrayList<>();
         for(int i=0;i<a.length();i++) {JSONObject o=a.getJSONObject(i);Note n=new Note();
@@ -10409,25 +11018,25 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             if(replacing)n.tone=o.optInt("tone",Tint.USUAL);
             if(replacing){n.colourDecided=Math.max(0L,o.optLong("colourDecided",0L));n.toneDecided=Math.max(0L,o.optLong("toneDecided",0L));}
             n.revision=Math.max(0,o.optLong("revision",0));
-            if(n.title.length()>160||n.body.length()>24000||n.notebook.length()>40||n.updated<0)throw new JSONException("Invalid note limits");
+            if(n.title.length()>NoteLimit.TITLE||n.body.length()>NoteLimit.NOTE||n.notebook.length()>40||n.updated<0)throw new JSONException("Invalid note limits");
             incoming.add(n);
             String icon=iconFrom(o.optString("icon","")),image=o.optString("image","");
             if(picture(image)==null)image="";
             if(!icon.isEmpty()||!image.isEmpty())looks.add(new String[]{n.id,icon,image});
             // A file is only a file of the note if its bytes came with the backup: a row pointing at
             // nothing would be a name you can tap and never open.
-            files(o.optJSONArray("files"),n.id,Branch.Kind.PAGE,n.updated,replacing,arriving);
+            files(o.optJSONArray("files"),n.id,Branch.Kind.PAGE,n.updated,replacing,arriving,tabbed);
         }
         // And the files kept with a collection, which stay with it: a collection is not copied by an addition.
         for(int i=0;things!=null&&i<things.length();i++) {
             JSONObject o=things.getJSONObject(i);
             String id=o.optString("id");
             if(id.isEmpty()||!replacing&&there("things",id))continue;
-            files(o.optJSONArray("files"),id,Branch.Kind.COLLECTION,o.optLong("updated",System.currentTimeMillis()),replacing,arriving);
+            files(o.optJSONArray("files"),id,Branch.Kind.COLLECTION,o.optLong("updated",System.currentTimeMillis()),replacing,arriving,tabbed);
         }
         // The files on Home, as copies where the backup is added, as they were where it replaces what is here.
         JSONArray home=root.optJSONArray("home");
-        files(home,Things.HOME,Branch.Kind.COLLECTION,System.currentTimeMillis(),replacing,arriving);
+        files(home,Things.HOME,Branch.Kind.COLLECTION,System.currentTimeMillis(),replacing,arriving,tabbed);
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
         try{
             if(replacing) {
@@ -10465,6 +11074,9 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
                 db.update("notes",v,"id=?",new String[]{look[0]});
             }
             for(Held file:arriving)keep(db,file);
+            long tabsAt=System.currentTimeMillis();
+            for(Map.Entry<String,String> one:tabbed.entrySet())
+                db.execSQL("INSERT OR REPLACE INTO filetab(id,tab,at) VALUES(?,?,?)",new Object[]{one.getKey(),one.getValue(),tabsAt});
             db.setTransactionSuccessful();
         }finally{db.endTransaction();}
         sweep();
@@ -10475,7 +11087,7 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
      * The files a backup lists for one thing, kept only where their bytes came with it: a row pointing at nothing
      * would be a name you can tap and never open. An addition gives each a new id, as it does the notes.
      */
-    private void files(JSONArray kept,String with,Branch.Kind kind,long updated,boolean replacing,List<Held> arriving) throws JSONException {
+    private void files(JSONArray kept,String with,Branch.Kind kind,long updated,boolean replacing,List<Held> arriving,Map<String,String> tabs) throws JSONException {
         for(int f=0;kept!=null&&f<kept.length();f++) {
             JSONObject file=kept.getJSONObject(f);
             String came=Attachment.idOf(Attachment.entry(file.optString("id")));
@@ -10483,7 +11095,10 @@ final class NoteStore extends SQLiteOpenHelper implements Home.Shelf {
             String id=replacing?came:UUID.randomUUID().toString();
             Held own=new Held(id,with,Attachment.named(file.optString("name")),
                 Attachment.kind(file.optString("kind")),landingFor(came).length(),file.optLong("added",updated),kind);
-            if(landingFor(came).renameTo(fileFor(own.id)))arriving.add(own);
+            if(!landingFor(came).renameTo(fileFor(own.id)))continue;
+            arriving.add(own);
+            String tab=file.optString("tab","");
+            if(kind==Branch.Kind.PAGE&&!tab.isEmpty()&&tab.length()<=Sections.NAME_MOST)tabs.put(own.id,tab);
         }
     }
 

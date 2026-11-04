@@ -310,7 +310,7 @@ final class PhoneStamp {
                     if(!row.nftTx().isEmpty())value(Say.t("NFT transaction"),row.nftTx(),Integritas.txpowLink(row.nftTx()));
                 } else if(row.waiting()) {
                     step("…","3. Waiting for Minima",a.INK);
-                    quiet(Say.t("The fingerprint is in a transaction on its way into a block, usually within a few minutes. This phone looks for it, less and less often, even with this box closed, and says when it is there."));
+                    quiet(Say.t("On its way to Minima, usually within a few minutes."));
                     long next=w.nextLook(row.n());long in=next<=0?0:Math.max(0,(next-System.currentTimeMillis()+999)/1000);
                     String looked=row.tries()==0?Say.t("Not looked for yet."):Say.t("Looked for {0} times, last at {1}.",String.valueOf(row.tries()),Integritas.when(row.checked()));
                     body.addView(a.label(looked+"  "+(next<=0?Say.t("Looking now…"):Say.t("Next look in {0} s.",String.valueOf(in))),MainActivity.READING,a.INK));
@@ -584,7 +584,7 @@ final class PhoneStamp {
         final AlertDialog box=a.new Box().setTitle("A note or file in Mininotes").setView(a.scrolling(body)).setNegativeButton("Cancel",null).create();
         final Runnable look=()->{
             final String term=word.getText().toString().trim();
-            a.background.submit(()->term.length()<2?a.store.lately(30):a.store.lookingEverywhere(term),hits->{
+            a.background.submit(()->!SearchTerm.enough(term)?a.store.lately(30):a.store.lookingEverywhere(term),hits->{
                 if(!box.isShowing()||!word.getText().toString().trim().equals(term))return;
                 found.removeAllViews();
                 int shown=0;
@@ -592,8 +592,8 @@ final class PhoneStamp {
                     if(one.kind!=NoteStore.Branch.Kind.PAGE&&one.kind!=NoteStore.Branch.Kind.FILE)continue;
                     found.addView(a.row(one.name.isEmpty()?Say.t("Untitled"):one.name,one.detail,()->{box.dismiss();chosen(a,one);}));shown++;
                 }
-                if(shown==0)found.addView(a.spaced(a.label(term.length()<2?"Nothing here yet.":"Nothing found.",MainActivity.READING,a.MUTED)));
-                else if(term.length()<2)found.addView(a.spaced(a.label("Type a word to find a file as well.",MainActivity.QUIET,a.MUTED)));
+                if(shown==0)found.addView(a.spaced(a.label(!SearchTerm.enough(term)?"Nothing here yet.":"Nothing found.",MainActivity.READING,a.MUTED)));
+                else if(!SearchTerm.enough(term))found.addView(a.spaced(a.label("Type a word to find a file as well.",MainActivity.QUIET,a.MUTED)));
             },e->{found.removeAllViews();found.addView(a.spaced(a.label(MainActivity.READ_FAILED,MainActivity.READING,a.WARN)));});
         };
         final Runnable[] waiting={null};

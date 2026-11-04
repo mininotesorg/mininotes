@@ -43,6 +43,11 @@ final class Joining {
         /** For someone else: the notes, folders and files chosen for them, each at {@link #level}. Empty for nothing yet. */
         final List<NoteStore.Branch> things=new ArrayList<>();
         Sharing.Level level=Sharing.Level.WRITE;
+        /**
+         * For a device of mine: my other devices unticked under Also link it with, by address (decision 268). Every one is
+         * ticked at first, so a device added is linked with all of mine unless one is unticked.
+         */
+        final java.util.Set<String> skip=new java.util.HashSet<>();
 
         /** Where the code said what it is, that; otherwise someone else, the more common. */
         static Choice from(Pairing.Said code){Choice c=new Choice();c.mine=saysMine(code);return c;}
@@ -60,6 +65,25 @@ final class Joining {
         final List<NoteStore.Branch> given=new ArrayList<>();
         /** Things this device may not share at all, and so not given. */
         int refused;
+        /** A device of mine: its address, linked with my other devices but those skipped; null for someone else. */
+        String mine;
+        final java.util.Set<String> skip=new java.util.HashSet<>();
+        /** One of mine chosen for a plain code: told so, which it takes where a card there vouches for this device. */
+        boolean tellMine;
+    }
+
+    /**
+     * My other devices, for Also link it with (decision 268): paired here and mine, but not the one being added, in the order
+     * they are listed. Blocking.
+     *
+     * @param signing the key of the device being added, which may be paired here already; null for none
+     */
+    static List<NoteStore.Contact> otherMine(NoteStore store,byte[] signing) {
+        String key=Persons.key(signing);
+        List<NoteStore.Contact> all=new ArrayList<>();
+        for(NoteStore.Contact one:store.addresses())
+            if(one.mine&&one.paired()&&(key.isEmpty()||!key.equals(Persons.key(one.signing))))all.add(one);
+        return all;
     }
 
     /** The things on Home that may be shared from here: notes, folders and files, the kinds a Share box shares. */
@@ -114,6 +138,7 @@ final class Joining {
     static Kept chosen(NoteStore store,Pairing.Said code,Choice choice) {
         Kept kept=new Kept();
         if(choice.mine) {
+            kept.mine=code.address;kept.skip.addAll(choice.skip);kept.tellMine=!saysMine(code);
             if(choice.everything!=null&&choice.everything!=Sharing.Level.GONE) {
                 store.give(Sharing.Scope.LIBRARY,Sharing.EVERYTHING,code.address,choice.everything,code.name);
                 kept.everything=true;
@@ -134,6 +159,17 @@ final class Joining {
             kept.given.add(one);
         }
         return kept;
+    }
+
+    /**
+     * A device of mine, linked with my other devices too, but those unticked (decision 268); and, where its code did not say it
+     * is mine, told that it is, which it takes where a card there vouches for this device. Kept, and said on the network's
+     * rounds. Blocking.
+     */
+    static void linked(Context where,NoteStore store,Keys keys,Kept kept) {
+        if(kept.mine==null)return;
+        Post.alsoLink(where,store,kept.mine,kept.skip);
+        if(kept.tellMine)Post.linkMine(where,store,keys,store.address(kept.mine));
     }
 
     /** What the choices changed, sent: the groups and what they give, everything, each thing given. How many could not go yet. Blocking. */

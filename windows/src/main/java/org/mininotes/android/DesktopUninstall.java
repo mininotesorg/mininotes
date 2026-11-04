@@ -70,6 +70,8 @@ final class DesktopUninstall {
             remove.add(notebook.toAbsolutePath().normalize());
             // The copies of attachments opened to edit (DesktopOpening), which are copies of notes' files.
             if(localAppData!=null)remove.add(localAppData.toAbsolutePath().normalize().resolve("Mininotes-editing"));
+            // And the copies made to drag files out to Explorer (decision 292).
+            if(localAppData!=null)remove.add(localAppData.toAbsolutePath().normalize().resolve("Mininotes-dragged"));
         }
         return new Plan(app,msi,msi?productCode:"",List.copyOf(remove),!keepNotes);
     }

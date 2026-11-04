@@ -127,11 +127,11 @@ public class DesktopStoreTest {
         }
     }
     @Test public void theReadingRungAndColourStrengthAreKeptAsThePhoneKeepsThem() {
-        // A PC set on the older four sizes lands on the nearest rung of the ten; a new one in the middle.
-        assertEquals(DesktopLook.FIRST,DesktopLook.rung(context));
+        // A PC set on the older four sizes lands on the nearest rung of the ten; a new one at the 4th (decision 309).
+        assertEquals(DesktopLook.FIRST,DesktopLook.rung(context));assertEquals(3,DesktopLook.FIRST);
         context.getSharedPreferences("settings",0).edit().putString("textSize","3").apply();assertEquals(7,DesktopLook.rung(context));
         DesktopLook.keepRung(context,12);assertEquals(9,DesktopLook.rung(context));
-        assertEquals(18f,DesktopLook.size(DesktopLook.FIRST),0.01f);
+        assertEquals(18f,DesktopLook.size(4),0.01f);
         // The usual strength is the one setting the pad had, read as it was left (decision 107); Home's and a place's own are
         // kept beside their colours, and one never given is the usual.
         assertEquals(Tint.FIRST_TONE,DesktopLook.usual(context));

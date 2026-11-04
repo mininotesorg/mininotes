@@ -56,33 +56,28 @@ public class DesktopPersonsTest {
 
         // The phone's card: its own name written down, and the tablet's too - not marked as the owner's here, but
         // listed as theirs by a device that is theirs at both ends. Seen on 0.1.029: it kept its pairing code's name.
+        // The phone counts this PC as its owner's, as a phone of the owner's says: the owner's at both ends.
+        pc.hear(phone.persons(pc,Receipt.PERSONS_MINE));
         Post.Landed took=pc.hear(phone.card(pc,card));
         assertTrue("an open People and devices is drawn again",took.devices);
         assertEquals("Kitchen phone",pc.store.address(PHONE_AT).name);
         assertEquals(7_000,pc.store.address(PHONE_AT).named);
         assertEquals("Graphene test",pc.store.address(TABLET_AT).name);
-        assertFalse("the switch is the owner's to turn",pc.store.address(TABLET_AT).mine);
-        assertEquals("and said under it",Persons.LISTED_AS_YOURS,Post.oneSided(pc.context,pc.store.address(TABLET_AT)));
+        // Listed as theirs by a device that is theirs at both ends: the owner's word, on that device, so the owner's here too
+        // (decision 290; before, the switch was left for the owner to turn here as well, and the devices disagreed).
+        assertTrue("taken as the owner's on the card's word",pc.store.address(TABLET_AT).mine);
+        assertNull("nothing left to say under it",Post.oneSided(pc.context,pc.store.address(TABLET_AT)));
         // One person now, by the id made first; and the PC's own name is its own, whatever a card calls it.
         assertEquals(EARLY,Post.me(pc.context).id);
         assertNotEquals("Old name",Node.deviceHere(pc.context));
 
         // The same card again changes nothing, and asks for nothing to be drawn again.
         assertFalse(pc.hear(phone.card(pc,card)).devices);
-
-        // The tablet counts this PC as its owner's; this PC does not count the tablet. Said under it, with the fix.
         pc.hear(tablet.persons(pc,Receipt.PERSONS_MINE));
-        assertEquals("It counts this PC as one of your devices. Turn My device on here too so names travel.",
-            Post.oneSided(pc.context,pc.store.address(TABLET_AT)));
-        assertNull("yours at both ends",Post.oneSided(pc.context,pc.store.address(PHONE_AT)));
-        // Its own card is not believed while it is nobody's here.
-        Persons.Card fromTablet=Persons.card(owner,tablet.as("Tablet by itself",8_500),List.of(pc.as("Old name",0),phone.as("Kitchen phone",7_000)));
-        assertFalse(pc.hear(tablet.card(pc,fromTablet)).devices);
-        assertEquals("Graphene test",pc.store.address(TABLET_AT).name);
-
-        // Turned on here: nothing more to say, and the next card names it.
-        pc.store.setMine(TABLET_AT,true);
         assertNull(Post.oneSided(pc.context,pc.store.address(TABLET_AT)));
+        assertNull("yours at both ends",Post.oneSided(pc.context,pc.store.address(PHONE_AT)));
+
+        // The next card names it.
         Persons.Card later=Persons.card(owner,phone.as("Kitchen phone",7_000),List.of(pc.as("Old name",0),tablet.as("Graphene",9_000)));
         assertTrue(pc.hear(phone.card(pc,later)).devices);
         assertEquals("Graphene",pc.store.address(TABLET_AT).name);

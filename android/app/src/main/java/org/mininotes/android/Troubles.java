@@ -100,6 +100,28 @@ final class Troubles {
     }
 
     /** The strip's one line: the first trouble, and how many more. */
+    /**
+     * The strip can be closed with its cross (the owner, 2026-10-30: the message at the top "can be removed with a X to close";
+     * decision 296): the troubles it showed then are kept as closed, by who and what, and said no more; a new one opens it
+     * again. Kept only while still there: one put right and back later is said again.
+     */
+    static String key(Trouble t){return t.address()+"|"+t.kind();}
+
+    /** What is still to be said: what was found, less what was closed. */
+    static List<Trouble> open(List<Trouble> found,Set<String> closed) {
+        List<Trouble> out=new ArrayList<>();
+        for(Trouble t:found)if(closed==null||!closed.contains(key(t)))out.add(t);
+        return out;
+    }
+
+    /** What is kept as closed: only what is still found. */
+    static Set<String> stillClosed(List<Trouble> found,Set<String> closed) {
+        Set<String> out=new java.util.LinkedHashSet<>();
+        if(closed==null)return out;
+        for(Trouble t:found)if(closed.contains(key(t)))out.add(key(t));
+        return out;
+    }
+
     static String line(List<Trouble> all) {
         if(all.isEmpty())return "";
         Trouble first=all.get(0);

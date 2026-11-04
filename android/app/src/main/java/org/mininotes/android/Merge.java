@@ -32,8 +32,11 @@ final class Merge {
         Result(String text,boolean clean,int conflicts){this.text=text;this.clean=clean;this.conflicts=conflicts;}
     }
 
-    /** One stretch of the old text that a side replaced: lines {@code [from,to)} became {@code said}. */
-    private static final class Change {
+    /**
+     * One stretch of the old text that a side replaced: lines {@code [from,to)} became {@code said}. Also what a note's change
+     * travels as (see {@link Delta}).
+     */
+    static final class Change {
         final int from,to; final List<String> said;
         Change(int from,int to,List<String> said){this.from=from;this.to=to;this.said=said;}
     }
@@ -153,8 +156,8 @@ final class Merge {
         return c.from==to&&c.from==c.to&&at==to;
     }
 
-    /** What one side did to the old text, as the stretches of it that side replaced. */
-    private static List<Change> changes(List<String> old,List<String> now) {
+    /** What one side did to the old text, as the stretches of it that side replaced, in order and never overlapping. */
+    static List<Change> changes(List<String> old,List<String> now) {
         int[] where=matched(old,now);
         List<Change> made=new ArrayList<>();
         int side=0, at=0;
@@ -206,7 +209,7 @@ final class Merge {
         return where;
     }
 
-    private static List<String> lines(String text) {
+    static List<String> lines(String text) {
         return text.isEmpty()?new ArrayList<>():new ArrayList<>(Arrays.asList(text.split("\n",-1)));
     }
 

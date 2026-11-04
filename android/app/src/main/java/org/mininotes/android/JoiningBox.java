@@ -29,6 +29,8 @@ final class JoiningBox {
     private final Joining.Choice choice;
     private AlertDialog box;private ScrollView scroll;private int step=WHAT;
     private List<Groups.Group> groups=new ArrayList<>();private List<NoteStore.Branch> things=new ArrayList<>();
+    /** My other devices, for Also link it with on a device of mine's share step (decision 268). */
+    private List<NoteStore.Contact> others=new ArrayList<>();
     private boolean choosing,working;private String ended,also;
 
     /** @param chosen the thing whose Share box the code was scanned from: chosen for them already; null for none */
@@ -41,10 +43,11 @@ final class JoiningBox {
     /** Up at once on its first step; the groups and Home's things are read meanwhile. */
     void open() {
         draw();
-        a.background.submit(()->new Object[]{a.store.groups(),Joining.shareable(a.store)},read->{
+        a.background.submit(()->new Object[]{a.store.groups(),Joining.shareable(a.store),Joining.otherMine(a.store,code.signing)},read->{
             @SuppressWarnings("unchecked") List<Groups.Group> g=(List<Groups.Group>)((Object[])read)[0];
             @SuppressWarnings("unchecked") List<NoteStore.Branch> t=(List<NoteStore.Branch>)((Object[])read)[1];
-            groups=g;things=Joining.withChosen(t,choice.things);
+            @SuppressWarnings("unchecked") List<NoteStore.Contact> o=(List<NoteStore.Contact>)((Object[])read)[2];
+            groups=g;things=Joining.withChosen(t,choice.things);others=o;
             if(box!=null&&box.isShowing()&&(step==GROUP||step==SHARE))draw();
         },e->{});
     }
@@ -135,9 +138,12 @@ final class JoiningBox {
 
     /** What it gets: for a device of mine, everything or nothing yet; for someone else, nothing yet or notes and folders chosen. */
     private void share(LinearLayout body) {
+        // Also link it with first, in sight: the owner asked for it to be "clearly proposed" (decision 268).
+        if(choice.mine&&!others.isEmpty())a.alsoLink(body,others,choice.skip,null);
         body.addView(a.part(choice.mine?Say.t("What it gets"):Say.t("What {0} gets",code.name)));
         if(choice.mine) {
-            for(final Sharing.Level level:Arrays.asList(null,Sharing.Level.WRITE,Sharing.Level.READ))
+            // Admin among them again (decision 293).
+            for(final Sharing.Level level:Arrays.asList(null,Sharing.Level.ADMIN,Sharing.Level.WRITE,Sharing.Level.READ))
                 body.addView(a.choice(level==null?Sharing.NOTHING_YET:level.words(),Sharing.everythingDoes(level),choice.everything==level,()->{choice.everything=level;draw();}));
             return;
         }

@@ -55,6 +55,9 @@ public class SharedWordsTest {
     @Test public void filesAndPicturesAreCountedInFrench() {
         assertEquals("Ajout de 2 fichiers…",Given.adding(2));
         assertEquals("3 fichiers ajoutés, 1 non",Given.added(3,null,1));
+        assertEquals("3 fichiers ajoutés dans Accueil, 1 non",Given.added(3,null,1,Say.t("Home")));
+        // What the marks mean, in Settings, in French too (decision 277).
+        for(SyncMark one:SyncMark.values())assertNotEquals(one.meaning(),Say.t(one.meaning()));
         assertEquals("Réduction de 3 images…",Shrink.shrinking(3));
         assertEquals("Réduire 1 image ?",Shrink.asking(1));
         assertEquals("Ana vous a envoyé 3 fichiers",Drop.arrived("Ana",3));
@@ -112,5 +115,46 @@ public class SharedWordsTest {
         assertEquals("3 fichiers",Say.t("3 files"));
         assertTrue(Say.fits("Sending to {0}…","Envoi à Ana…"));
         assertFalse(Say.fits("Sending to {0}…","Enregistré"));
+    }
+
+    /**
+     * Words kept as constants and put on screen from there: WordsEverywhereTest reads the screens' own strings, so these were
+     * never looked for, and See it, on the box that says something waits in Shared with me, stayed English in every language
+     * (the owner, 2026-10-29). Each class's words, in each list.
+     */
+    /** Every place's name, on its tile and as the title of its card when open (decision 291): "Tools" was in no list. */
+    @Test public void everyPlaceIsNamedInEveryLanguage() throws Exception {
+        List<String> missing=new java.util.ArrayList<>();
+        for(String place:new String[]{"Home","Bin","Archive","Temp","Recent","Tools","Favourites",NoteStore.SHARED_WITH_ME,"My notes"})
+            for(String lang:new String[]{"de","es","fa","fr","hi","it","ja","pt","ru","zh"}) {
+                String list;
+                try(java.io.InputStream in=Say.class.getResourceAsStream("/org/mininotes/android/words/"+lang+".json")) {
+                    list=new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
+                }
+                if(!list.contains("\""+place+"\":"))missing.add(lang+": "+place);
+            }
+        assertTrue("not in every language:\n"+String.join("\n",missing),missing.isEmpty());
+        assertEquals("Corbeille",Say.t("Bin"));
+        assertEquals("Outils",Say.t("Tools"));
+    }
+
+    @Test public void wordsKeptAsConstantsAreInEveryLanguage() throws Exception {
+        List<String> missing=new java.util.ArrayList<>();
+        for(Class<?> one:new Class<?>[]{FirstShare.class,Waits.class,Routes.class,Enclosure.class,Relays.class,Parlons.class,Groups.class,Help.class,Shrink.class}) {
+            for(java.lang.reflect.Field f:one.getDeclaredFields()) {
+                if(f.getType()!=String.class||!java.lang.reflect.Modifier.isStatic(f.getModifiers())||!java.lang.reflect.Modifier.isFinal(f.getModifiers()))continue;
+                f.setAccessible(true);String said=(String)f.get(null);
+                // Words a person reads: a capital, then a small letter; not an address, a package, a format or a template.
+                if(said==null||!said.matches("[A-Z][a-z’'].*")||said.matches(".*[/@{}<>=%\\\\].*")||!said.contains(" ")&&said.length()>12)continue;
+                for(String lang:new String[]{"de","es","fa","fr","hi","it","ja","pt","ru","zh"}) {
+                    String list;
+                    try(java.io.InputStream in=Say.class.getResourceAsStream("/org/mininotes/android/words/"+lang+".json")) {
+                        list=new String(in.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
+                    }
+                    if(!list.contains("\""+said.replace("\"","\\\"")+"\":"))missing.add(lang+": "+one.getSimpleName()+"."+f.getName()+" \""+said+"\"");
+                }
+            }
+        }
+        assertTrue("not in every language:\n"+String.join("\n",missing),missing.isEmpty());
     }
 }

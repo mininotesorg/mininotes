@@ -467,7 +467,7 @@ final class DesktopPrivate {
         item(menu,"Put back",()->{shown.putBack(t.id);write();draw();});
         menu.addSeparator();
         item(menu,"Delete for good…",()->{
-            if(!DesktopUi.confirm(d.frame,"Delete for good?","“"+t.name()+"” is deleted for good. This cannot be undone.","Delete for good",true))return;
+            if(!DesktopUi.confirm(d.frame,"Delete for good?",Say.t("“{0}” is deleted for good. This cannot be undone.",t.name()),"Delete for good",true))return;
             shown.deleteForGood(t.id);write();draw();});
         return menu;
     }
@@ -693,7 +693,8 @@ final class DesktopPrivate {
         boolean one=originals.size()==1;
         String named=one?"“"+originals.get(0).getName()+"”":originals.size()+" files";
         if(!DesktopUi.confirm(d.frame,"Move the original to the Recycle Bin?",
-            (one?named+" stays where it was unless you move it.":named+" stay where they were unless you move them.")+" The copy kept here is private.",
+            one?Say.t("“{0}” stays where it was unless you move it. The copy kept here is private.",originals.get(0).getName())
+                :Say.t("{0} files stay where they were unless you move them. The copy kept here is private.",originals.size()),
             one?"Move to Recycle Bin":"Move them",false))return;
         if(!(java.awt.Desktop.isDesktopSupported()&&java.awt.Desktop.getDesktop().isSupported(java.awt.Desktop.Action.MOVE_TO_TRASH))) {
             says.setText(Say.t("Mininotes cannot move it to the Recycle Bin here. Delete it in File Explorer."));return;

@@ -70,7 +70,7 @@ public class DesktopPeopleBoxTest {
                     assertNull(named(in,"addPerson"));assertNull(named(in,"addDevice"));
                     JButton plus=named(in,"peoplePlus");assertNotNull(plus);
                     assertEquals("Add someone or a device",plus.getAccessibleContext().getAccessibleName());
-                    assertNotNull(named(in,"showMyCode"));
+                    assertNull("my code is in My profile, not here (decision 273)",named(in,"showMyCode"));
                     assertNull("no Scan a code button on the list",button(in,"Scan a code or paste a link…"));
                     // Under each person, a chip for each group: in is ticked, not in has a plus. None under a device of mine.
                     assertNotNull(called(in,"Ana is in Friends. Take Ana out of Friends"));

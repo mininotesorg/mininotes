@@ -1,5 +1,5 @@
 plugins { id 'java'; id 'application' }
-version = '0.4.030'
+version = '0.4.053'
 repositories { mavenCentral() }
 java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 application { mainClass = 'org.mininotes.android.Desktop' }
@@ -23,9 +23,9 @@ dependencies {
 
 // Keep the proven store and wire protocol in one place. Only platform names are
 // adapted; generated files are never edited or committed.
-def portable = ['Album','Peek','KeyCard','StampCard','Arriving','AboutMe','Troubles','Assistant','Integritas','Describe','ReadMe','Sections','Translation','Message','Symbols','Face','Say','Attachment','Background','Envelope','Feedback','Find','Hello','HomeMotion',
-    'Merge','Outbox','Pairing','Parcel','Point','Receipt','Reorder','RevisionClock',
-    'SchemaMigrations','SyncStatus','SyncMark','Sha3','Sharing','Tint','Update','Vault','Sealed','Courier','Enclosure','Direct','Nearby','Home','Relays','Given','Drop','DropList','Unsent','Persons','Groups','Parlons','Called','Recording','Linking','NoteLine','Waits','Links','Reading','Writers','Things','Carton','Sleeve','Overview','Grid','Layout','Icons','Thumb','Looks','Marks','Routes','FirstShare','Slots','PrivateSpace','PrivateCode','Shrink','Help','NoteFile','Asking','Said','LineEnds','ArrivalNews','LanguageAsk','WaitingPlace']
+def portable = ['Album','Peek','KeyCard','StampCard','Arriving','AboutMe','Troubles','History','Assistant','Integritas','Describe','ReadMe','Sections','Translation','Message','Symbols','Face','Say','Attachment','Background','Envelope','Feedback','Find','Hello','HomeMotion',
+    'Merge','Delta','Outbox','Pairing','Parcel','Point','Receipt','Reorder','RevisionClock',
+    'SchemaMigrations','SyncStatus','SyncMark','Sha3','Sharing','Tint','Update','Vault','Sealed','Courier','Enclosure','Direct','Nearby','Home','Relays','Given','Drop','DropList','Unsent','Persons','Groups','Parlons','Called','Recording','Linking','NoteLine','Waits','Links','Reading','Writers','Things','Carton','Sleeve','Overview','Grid','Layout','Icons','Thumb','Looks','Marks','Routes','FirstShare','Slots','PrivateSpace','PrivateCode','Shrink','Help','NoteFile','Asking','Said','LineEnds','ArrivalNews','LanguageAsk','WaitingPlace','WithoutAsking','BlankLines','Introducing','NoteLimit','SearchTerm','TabFiles']
 def adapted = ['NoteStore','Post','Node','Invites','Joining']
 def androidSource = file('../android/app/src/main/java/org/mininotes/android')
 def generated = layout.buildDirectory.dir('generated/sources/shared')
@@ -101,6 +101,7 @@ tasks.register('packageInput', Sync) {
     from('../LICENSE'); from('../NOTICE'); from('THIRD-PARTY.txt')
     from('licenses') { into 'licenses' }
     from('../android/maxima-core/NOTICE') { rename { 'MAXIMA-NOTICE.txt' } }
+    from('../android/maxima-core/LICENSE') { rename { 'MAXIMA-LICENSE.txt' } }
     from('fontconfig/fontconfig.properties')
     // The translation engine (docs/TRANSLATION.md), built by tools/build-translation-engine.ps1, beside the app's own files.
     from('../native/build-pc/app') { include 'bergamot.exe'; into 'translate' }

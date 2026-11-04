@@ -47,6 +47,13 @@ final class DesktopPeople {
         Map<String,String> persons=Map.of();
         /** My own devices, each with its bond, or none (decision 189); and whether this PC may give everything (decision 255). */
         Map<String,Sharing.Rule> bonds=Map.of();boolean givesEverything;
+        /** On a person's page: whether what they send is accepted without asking (decision 269). */
+        boolean withoutAsking;
+        /**
+         * The devices of mine another of mine lists and this PC is not linked with, and who in People may be one of mine, by
+         * address (decision 268).
+         */
+        List<Introducing.Offered> offered=List.of();Set<String> maybe=Set.of();
         NoteStore.Contact contact(String address){for(NoteStore.Contact one:contacts)if(one.address.equals(address))return one;return null;}
         Groups.Group group(String id){for(Groups.Group one:groups)if(one.id.equals(id))return one;return null;}
         String groupName(String id){if(Groups.MINE.equals(id))return Groups.MY_DEVICES;Groups.Group one=group(id);return one==null?"a group":one.name;}
@@ -125,7 +132,7 @@ final class DesktopPeople {
         Read r=new Read();NoteStore store=app.store;
         r.contacts=store.addresses();r.groups=store.groups();r.in=store.inGroups();r.through=store.linkedLines();
         r.persons=new HashMap<>();for(NoteStore.Contact one:r.contacts){String p=one.mine?"":store.personOf(one.address);if(!p.isEmpty())r.persons.put(one.address,p);}
-        if(at.kind==LIST)r.blocked=store.blockedSenders();
+        if(at.kind==LIST){r.blocked=store.blockedSenders();r.offered=Post.notLinked(app.context,store,app.keys);r.maybe=Post.maybeMine(app.context,store,r.offered);}
         if(at.kind==LIST||at.kind==PERSON) {
             r.roads=new HashMap<>();
             for(NoteStore.Contact one:r.contacts)if(one.paired()&&(at.kind==LIST||one.address.equals(at.id)))r.roads.put(one.address,Node.seen(one,Post.heardLately(one)));
@@ -141,6 +148,7 @@ final class DesktopPeople {
                 if(who.signing.length>0)try{r.checks.put(who.address,Envelope.code(app.keys.signing().getPublic(),Keys.publicKey(who.signing)));}catch(Exception unreadable){/* no digits for it */}
                 r.shared=store.sharedWith(who.address);
                 if(who.mine){r.bonds=app.ownBonds();r.givesEverything=!store.mayGive(Sharing.Scope.LIBRARY,Sharing.EVERYTHING).isEmpty();}
+                else r.withoutAsking=store.acceptsWithoutAsking(who.address);
             }
             app.parlonsBook=store.parlonsBook();
         }
@@ -159,11 +167,11 @@ final class DesktopPeople {
     private void lay(Level at,Read r) {
         JPanel body=DesktopUi.column();JComponent more=null;String title=at.name;JComponent[] buttons={};JComponent last=null;
         switch(at.kind) {
-            // One round + at the foot on the right, where Home has it, and my code quietly at the left (decision 258).
+            // One round + at the foot on the right, where Home has it (decision 258). My code is the first thing in My profile,
+            // and Show my code instead is under the + 's camera: not a third way here (the owner, 2026-10-28; decision 273).
             case LIST: {
                 list(body,r);
-                JButton mine=DesktopUi.quietButton("Show my code…",this::showMine);mine.setName("showMyCode");
-                buttons=new JComponent[]{mine};last=plus();break;
+                last=plus();break;
             }
             case SELF: self(body,r);break;
             case GROUP: {
@@ -206,7 +214,8 @@ final class DesktopPeople {
         // Apart from the others by a gap, and the box at least as wide as the foot, so no two buttons ever touch (the owner,
         // 2026-10-16: "the buttons are not touching each other").
         if(last!=null){JPanel end=DesktopUi.actions(last);end.setBorder(BorderFactory.createEmptyBorder(0,16,0,0));foot.add(end,BorderLayout.EAST);}
-        if(foot.getParent()!=null)foot.getParent().setVisible(buttons.length>0);
+        // Shown while it holds anything: People and devices has only its round + since decision 273.
+        if(foot.getParent()!=null)foot.getParent().setVisible(buttons.length>0||last!=null);
         laid=at;holder.revalidate();holder.repaint();
         if(box.isDisplayable()){int need=foot.getPreferredSize().width+box.getInsets().left+box.getInsets().right+48;
             if(box.getWidth()>0&&box.getWidth()<need)box.setSize(need,box.getHeight());}
@@ -337,11 +346,13 @@ final class DesktopPeople {
         // Each part says what to do when it is empty. Neither has a + of its own: the one round + at the foot adds anybody
         // and any device, and the path after the scan asks which (decision 258).
         section(body,"People");
-        if(others.getComponentCount()==0)DesktopUi.add(body,DesktopUi.spread("Nobody else yet. Press + to connect with someone, or share a note or a folder with them."));
+        if(others.getComponentCount()==0)DesktopUi.add(body,DesktopUi.spread("Nobody else yet."));
         else DesktopUi.add(body,DesktopUi.card(null,others));
         DesktopUi.gap(body,DesktopUi.L);
+        // Devices of mine another of mine lists and this PC is not linked with: here too, with Link (decision 268).
+        for(Introducing.Offered one:r.offered)if(!one.pairedHere)DesktopUi.add(own,offered(one));
         section(body,Groups.MY_DEVICES);
-        if(own.getComponentCount()==0)DesktopUi.add(body,DesktopUi.spread("No other device yet. Press + to connect another device of yours and keep the same notes on both."));
+        if(own.getComponentCount()==0)DesktopUi.add(body,DesktopUi.spread("No other device yet."));
         else DesktopUi.add(body,DesktopUi.card(null,own));
         DesktopUi.gap(body,DesktopUi.L);
         // This device is the one Profile is about: its line goes there, where its name, its code and how it connects are,
@@ -385,13 +396,32 @@ final class DesktopPeople {
         return plus;
     }
     /** My code, for the other device to scan: Profile at Your code, over this box, with ‹ back to it. */
-    private void showMine(){DesktopProfile.open(app,box,TITLE,"Your code");}
+
+    /**
+     * A device of mine another of mine lists, not linked with this PC (decision 268): its name, Not linked here yet, and Link,
+     * which links it here with no code: it takes this PC as mine where the device that listed it lists this PC too.
+     */
+    private JPanel offered(Introducing.Offered one) {
+        String name=one.device.name.isEmpty()?Say.t("Another device"):one.device.name;
+        JButton link=app.button("Link",()->app.linkMine(one.device,this::draw));
+        link.setName("link "+one.key);link.getAccessibleContext().setAccessibleName(Say.t("Link with {0}",name));
+        JPanel line=DesktopUi.row(app.inRound(DesktopUi.person(name,Introducing.NOT_LINKED),one.device.address),link);
+        line.setName("offered "+one.key);
+        return withMenu(line,null,null,link);
+    }
 
     /** One device or person in the list: their round in their colour, their name, how they are reached, and › to their page. */
     private JPanel line(NoteStore.Contact one,Read r) {
         String[] road=r.roads.get(one.address);
         String under=!one.paired()?"Not paired yet":r.through.containsKey(one.address)?r.through.get(one.address):road!=null&&road.length>0?road[0]:null;
-        JPanel line=opens(app.inRound(DesktopUi.person(one.name,under),one.address),one.name,()->go(new Level(PERSON,one.address,one.name)),null);
+        // Paired as a person, and in fact one of mine by another device's word or its own: said, with the one way to say so here.
+        JButton mine=null;
+        if(!one.mine&&r.maybe.contains(one.address)) {
+            under=Introducing.IS_IT_YOURS;
+            mine=app.button(Introducing.THIS_IS_MINE,()->app.thisIsMine(one,this::draw));
+            mine.setName("thisIsMine "+one.address);mine.getAccessibleContext().setAccessibleName(Say.t(Introducing.THIS_IS_MINE)+": "+one.name);
+        }
+        JPanel line=opens(app.inRound(DesktopUi.person(one.name,under),one.address),one.name,()->go(new Level(PERSON,one.address,one.name)),mine);
         // A right-click offers what their page's ⋮ does.
         DesktopMenus.onRightClick(line,e->menuFor(one,false).show(e.getComponent(),e.getX(),e.getY()));
         return line;
@@ -399,13 +429,13 @@ final class DesktopPeople {
 
     /** Groups: making them, and who is in each, My devices first as the one every owner has. */
     private void groupsView(JPanel body,Read r) {
-        DesktopUi.add(body,DesktopUi.row(DesktopUi.spread("A group is the same on all your devices. What is shared with it is shared with everybody in it."),app.button("New group…",this::newGroup)));
+        DesktopUi.add(body,DesktopUi.actions(app.button("New group…",this::newGroup)));
         DesktopUi.gap(body,DesktopUi.S);
         JPanel lines=DesktopUi.column();
         DesktopUi.add(lines,groupLine(r,Groups.MINE,Groups.MY_DEVICES,null));
         for(Groups.Group group:r.groups){DesktopUi.gap(lines,4);DesktopUi.add(lines,groupLine(r,group.id,group.name,group));}
         DesktopUi.add(body,DesktopUi.card(null,lines));
-        if(r.groups.isEmpty()){DesktopUi.gap(body,DesktopUi.M);DesktopUi.add(body,DesktopUi.spread("No group of your own yet. Make one, like Friends or Colleagues, then put people in it."));}
+        if(r.groups.isEmpty()){DesktopUi.gap(body,DesktopUi.M);DesktopUi.add(body,DesktopUi.spread("No group of your own yet."));}
     }
 
     private JPanel groupLine(Read r,String id,String name,Groups.Group group) {
@@ -471,15 +501,15 @@ final class DesktopPeople {
             if(out.isEmpty())DesktopUi.add(list,DesktopUi.spread(in.isEmpty()?"Nobody to add yet. Share a note or a folder with somebody first, or scan their code.":"Everybody is in it already."));
             DesktopUi.add(body,DesktopUi.card("Not in "+name+" yet",list));DesktopUi.gap(body,DesktopUi.S);
         }
-        if(in.isEmpty())DesktopUi.add(body,DesktopUi.spread(mine?"No other device yet. Add my device to keep the same notes on both.":"Nobody in this group yet. Add people to put somebody in it."));
+        if(in.isEmpty())DesktopUi.add(body,DesktopUi.spread(mine?"No other device yet.":"Nobody in this group yet."));
         else {
             JPanel members=DesktopUi.column();
             for(NoteStore.Contact one:in) {
                 // Removed from the group, asked first, with what they lose said by name.
                 JButton remove=mine?null:app.button("Remove",()->{
                     List<String> loses=new ArrayList<>();for(NoteStore.Shared has:r.shared)loses.add(has.said());
-                    if(!DesktopUi.confirm(box,"Take "+one.name+" out of "+name+"?",(loses.isEmpty()?"Nothing is shared with "+name+" yet, so they lose nothing."
-                        :"They lose what is shared with "+name+": "+String.join(", ",loses)+".")+" What was shared with them on their own stays.","Remove",true))return;
+                    if(!DesktopUi.confirm(box,Say.t("Take {0} out of {1}?",one.name,name),loses.isEmpty()?Say.t("Nothing is shared with {0} yet, so they lose nothing. What was shared with them on their own stays.",name)
+                        :Say.t("They lose what is shared with {0}: {1}. What was shared with them on their own stays.",name,String.join(", ",loses)),"Remove",true))return;
                     put(one,group,false);});
                 if(remove!=null)remove.getAccessibleContext().setAccessibleName("Remove "+one.name+" from "+name);
                 DesktopUi.add(members,withMenu(opens(app.inRound(DesktopUi.person(one.name,null),one.address),one.name,()->go(new Level(PERSON,one.address,one.name)),remove),
@@ -489,14 +519,13 @@ final class DesktopPeople {
         }
         DesktopUi.gap(body,DesktopUi.L);
         section(body,"Shared with this group");
-        if(mine){DesktopUi.add(body,DesktopUi.spread("Your devices keep the same notes already. This is what was also shared with them as a group."));DesktopUi.gap(body,DesktopUi.S);}
         if(r.shared.isEmpty())DesktopUi.add(body,DesktopUi.spread(mine?"Nothing is shared with them as a group yet.":"Nothing is shared with this group yet. Share a note or a folder and pick the group."));
         else {
             JPanel things=DesktopUi.column();
             for(NoteStore.Shared one:r.shared) {
                 java.util.function.Consumer<Sharing.Level> choose=to->app.groupWork(Say.t(to==Sharing.Level.GONE?"Removing {0}…":"Sharing with {0}…",name),
                     ()->app.store.shareWithGroup(one.scope,one.target,at.id,to),to==Sharing.Level.GONE?Say.t("Removed {0} from {1}",name,one.name):Say.t("Shared with {0}: {1}",name,Say.t(to.words())),this::draw);
-                DesktopUi.add(things,DesktopUi.row(thing(one,null,name),one.mayChange?app.roleButton(one.level,one.give,choose,name):Desktop.roleShown(one.level.words(),one.level.does()+" Only its owner or an admin can change this.")));
+                DesktopUi.add(things,DesktopUi.row(thing(one,null,name),one.mayChange?app.roleButton(one.level,one.give,choose,name):Desktop.roleShown(one.level.words(),Say.t("{0} Only its owner or an admin can change this.",Say.t(one.level.does())))));
             }
             DesktopUi.add(body,DesktopUi.card(null,things));
         }
@@ -535,6 +564,8 @@ final class DesktopPeople {
     }
 
     private void mine(NoteStore.Contact who,boolean yes) {
+        // Turned on, the other device is told too, and takes this PC as mine where a card there vouches for it (decision 268).
+        if(yes){app.thisIsMine(who,()->{draw();app.refresh();});return;}
         say(yes?Say.t("Counting {0} as my device…",who.name):Say.t("No longer counting {0} as my device…",who.name));
         app.disk.submit(()->{app.store.setMine(who.address,yes);return null;},done->{say(yes?Say.t("{0} is one of my devices",who.name):Say.t("{0} is not one of my devices",who.name));draw();app.refresh();},app::failed);
     }
@@ -556,7 +587,7 @@ final class DesktopPeople {
 
     /** Forget, as the phone's does: off the list you pick from, nothing unshared. Asked first. */
     private void forget(NoteStore.Contact who,boolean onPage) {
-        if(!DesktopUi.confirm(box,"Forget this device?",who.name+"\n\nAnything already shared with it stays shared; this only removes it from the list you pick from.","Forget",true))return;
+        if(!DesktopUi.confirm(box,"Forget this device?",who.name+"\n\n"+Say.t("Anything already shared with it stays shared; this only removes it from the list you pick from."),"Forget",true))return;
         app.disk.submit(()->{app.store.removeAddress(who.address);return null;},done->{say(Say.t("Forgotten"));if(onPage)back();else draw();},app::failed);
     }
 
@@ -567,13 +598,12 @@ final class DesktopPeople {
         round=Desktop.roundOf(named);DesktopUi.add(card,named);
         // Their colour right under the name, on the page, not in a menu (the owner, 2026-10-17: "the colour should be shown
         // beside the name at the top ... not optimal to have a menu there with only these 2 elements"): the dots for somebody
-        // else, chosen here; for one of your own devices, which writes as you, said, and set in Profile.
+        // else, chosen here; for one of your own devices, which writes as you, nothing: it is set in Profile (decision 302).
         JPanel colour=new JPanel(new BorderLayout());colour.setOpaque(false);
         DesktopUi.gap(card,8);DesktopUi.add(card,colour);
         app.inkRow(who.address,(you,row)->{
             colour.removeAll();
-            if(you)colour.add(DesktopUi.quiet(Say.t("One of your devices. It writes in your colour, which you set in Profile.")));
-            else{colour.add(DesktopUi.quiet("Writing colour"),BorderLayout.NORTH);colour.add(row,BorderLayout.CENTER);}
+            if(!you){colour.add(DesktopUi.quiet("Writing colour"),BorderLayout.NORTH);colour.add(row,BorderLayout.CENTER);}
             colour.revalidate();colour.repaint();
         });
         // How it is reached, one line the width of the card (decision 97); why only one end counts it as the owner's; the
@@ -595,6 +625,13 @@ final class DesktopPeople {
         {JButton[] face={null};face[0]=app.button("Choose…",()->app.faceMenu(face[0],who.address,who.name));
             DesktopUi.gap(card,4);DesktopUi.add(card,DesktopUi.row(DesktopUi.body("Picture"),DesktopUi.footer(face[0])));}
         if(who.paired()){DesktopUi.gap(card,4);DesktopUi.add(card,DesktopUi.row(DesktopUi.body("Files"),DesktopUi.footer(app.button("Send files…",()->DesktopDrops.send(app,List.of(),who.address)))));}
+        // What they send, accepted without asking or not (decision 269): off unless turned on here, kept on this PC only.
+        if(who.paired()&&!who.mine) {
+            JCheckBox unasked=DesktopUi.toggle(Say.t(WithoutAsking.SWITCH),r.withoutAsking);unasked.setName("withoutAsking");
+            unasked.addActionListener(e->app.withoutAsking(who.address,who.name,unasked.isSelected(),this::draw));
+            DesktopUi.gap(card,4);DesktopUi.add(card,DesktopUi.switchRow(WithoutAsking.SWITCH,unasked));
+            DesktopUi.add(card,DesktopUi.note(WithoutAsking.under(who.name)));
+        }
         JButton address=app.button("Show  ›",()->{
             // The whole address, wrapped and selectable, its code beside it, and one button to copy it.
             JPanel shown=DesktopUi.column();
@@ -647,7 +684,7 @@ final class DesktopPeople {
                 // Whose it is, said as Owner; a role this PC may change, dropping down to what it may give; any other said.
                 JComponent role=one.owner?Desktop.roleShown(Sharing.OWNER,Sharing.OWNER_DOES)
                     :one.mayChange?app.roleButton(one.level,one.give,choose,who.name)
-                    :Desktop.roleShown(one.level.words(),one.level.does()+" Only its owner or an admin can change this.");
+                    :Desktop.roleShown(one.level.words(),Say.t("{0} Only its owner or an admin can change this.",Say.t(one.level.does())));
                 String under=one.group.isEmpty()?null:"through "+r.groupName(one.group);
                 if(one.owner||!one.mayChange)under=(under==null?"":under+"  ·  ")+Sharing.fixed(one.owner,who.name);
                 DesktopUi.add(things,DesktopUi.row(thing(one,under,who.name),role));
@@ -751,7 +788,7 @@ final class DesktopPeople {
         }
         // Nothing said where everybody is in a group: the groups above say it (the owner, 2026-10-13).
         if(people.getComponentCount()==0&&others==0)DesktopUi.add(body,DesktopUi.spread(r.contacts.isEmpty()?"No devices paired yet. Scan another device's code, or show them yours."
-            :"Nobody else yet. Scan their code, or show them yours."));
+            :"Nobody else yet."));
         else if(people.getComponentCount()>0)DesktopUi.add(body,DesktopUi.card(null,people));
         DesktopUi.gap(body,DesktopUi.L);
         section(body,"Groups");
@@ -797,33 +834,38 @@ final class DesktopPeople {
 
     /**
      * Where one person stands on the thing, beside their name: the rights they have, As the group under a group that gives
-     * it to them, Removed where they were taken off by hand, or Add. Where this PC may change it, it drops down to the rights
-     * it may give, As the group where a group of theirs has the thing, and Remove; where it may not, the words alone.
+     * it to them, Removed where they were taken off by hand, Removed here where what holds it gives it to them, or Add. Where
+     * this PC may change it, it drops down to the rights it may give, As the group where a group of theirs has the thing, and
+     * Remove; where it may not, the words alone. A device of mine and somebody through a folder too: what is chosen here is
+     * for this thing alone, never a bond with everything (the owner, 2026-10-30, of a device of mine under My devices: "this
+     * button retirer here, it should also be there for every contact including own devices"; decision 293).
      *
      * @param under the group whose people this line is among; null under People
      */
     private JComponent standing(Read r,NoteStore.Contact who,String under) {
         NoteStore.Stands stands=r.stands.get(who.address);
         if(stands==null)return DesktopUi.quiet("Not paired yet");
-        // One of my own devices: what it may do with everything, changed here, not Owner with nothing to change (decision 189).
-        if(who.mine&&r.bonds.containsKey(who.address))return app.ownDeviceRole(who.address,who.name,r.bonds.get(who.address),!r.give.isEmpty(),this::draw);
         if(stands.how==NoteStore.Stands.OWNER)return Desktop.roleShown(Sharing.OWNER,Sharing.OWNER_DOES);
-        if(stands.how==NoteStore.Stands.ABOVE)return Desktop.roleShown(stands.level.words(),stands.level.does()+" Through the folder it is in. Change this where it was shared.");
-        String said=stands.how==NoteStore.Stands.OWN?stands.level.words():stands.how==NoteStore.Stands.REMOVED?Groups.REMOVED:stands.how==NoteStore.Stands.NONE?Groups.ADD
-            :stands.group.equals(under)?Groups.AS_GROUP:"Through "+r.groupName(stands.group);
-        if(!stands.may)return stands.level==null?DesktopUi.quiet(stands.how==NoteStore.Stands.REMOVED?said:" "):Desktop.roleShown(said,stands.level.does()+" Only its owner or an admin can change this.");
+        boolean above=stands.how==NoteStore.Stands.ABOVE,here=stands.how==NoteStore.Stands.HERE;
+        if(above&&!stands.may)return Desktop.roleShown(stands.level.words(),Say.t("{0} Through the folder it is in. Change this where it was shared.",Say.t(stands.level.does())));
+        if(here&&!stands.may)return Desktop.roleShown(Sharing.REMOVED_HERE,Sharing.REMOVED_HERE_DOES);
+        String said=stands.how==NoteStore.Stands.OWN||above?stands.level.words():here?Sharing.REMOVED_HERE:stands.how==NoteStore.Stands.REMOVED?Groups.REMOVED
+            :stands.how==NoteStore.Stands.NONE?Groups.ADD:stands.group.equals(under)?Groups.AS_GROUP:Say.t("Through {0}",r.groupName(stands.group));
+        if(!stands.may)return stands.level==null?DesktopUi.quiet(stands.how==NoteStore.Stands.REMOVED?said:" "):Desktop.roleShown(said,Say.t("{0} Only its owner or an admin can change this.",Say.t(stands.level.does())));
         // Whether a group of theirs has the thing: only then is there a group to follow.
         boolean follows=false;for(String group:r.groupsOf(who.address))follows|=r.given.containsKey(group);
         boolean canFollow=follows;
-        JButton set=new JButton(Say.t(said)+"  ▾");set.setFocusPainted(false);
-        if(stands.level!=null)set.setToolTipText(Say.t(stands.level.does()));
-        set.getAccessibleContext().setAccessibleName(stands.has()?"What "+who.name+" may do: "+said:stands.how==NoteStore.Stands.REMOVED?who.name+" was removed":"Share with "+who.name);
+        JButton set=new JButton(Say.t(said)+"  ▾");set.setFocusPainted(false);set.setName("standing "+who.name);
+        if(stands.level!=null)set.setToolTipText(above?Say.t(Sharing.CHANGED_HERE,Say.t(stands.level.does())):Say.t(stands.level.does()));
+        else if(here)set.setToolTipText(Say.t(Sharing.REMOVED_HERE_DOES));
+        set.getAccessibleContext().setAccessibleName(stands.has()?"What "+who.name+" may do: "+said:stands.how==NoteStore.Stands.REMOVED||here?who.name+" was removed":"Share with "+who.name);
         set.addActionListener(e->{
             JPopupMenu menu=new JPopupMenu();
             List<Sharing.Level> shown=new ArrayList<>(r.give);
-            if(stands.how==NoteStore.Stands.OWN&&!shown.contains(stands.level)){shown.add(stands.level);shown.sort((a,b)->b.ordinal()-a.ordinal());}
+            boolean ticks=stands.how==NoteStore.Stands.OWN||above;
+            if(ticks&&!shown.contains(stands.level)){shown.add(stands.level);shown.sort((a,b)->b.ordinal()-a.ordinal());}
             for(Sharing.Level level:shown) {
-                boolean now=stands.how==NoteStore.Stands.OWN&&level==stands.level;
+                boolean now=ticks&&level==stands.level;
                 JRadioButtonMenuItem one=new JRadioButtonMenuItem(DesktopUi.roleLine(level.words(),level.does()),now);
                 one.setEnabled(r.give.contains(level)||now);one.getAccessibleContext().setAccessibleName(level.words()+". "+level.does());
                 one.addActionListener(a->{if(!now)own(who,stands,level);});menu.add(one);
@@ -836,17 +878,20 @@ final class DesktopPeople {
                 menu.add(as);
             }
             if(stands.has()){menu.addSeparator();item(menu,"Remove",()->{
-                if(DesktopUi.confirm(box,"Remove "+who.name+"?","They stop getting changes. Their copy stays on their device, and they are told.","Remove",true))own(who,stands,Sharing.Level.GONE);});}
+                if(DesktopUi.confirm(box,Say.t("Remove {0}?",who.name),Say.t(Sharing.REMOVE_HERE_SAYS),"Remove",true))own(who,stands,Sharing.Level.GONE);});}
             menu.show(set,0,set.getHeight());});
         return set;
     }
 
-    /** Rights of their own for one person on the thing, or taken off it (GONE): saved, the box drawn again, then sent. */
+    /**
+     * What one person may do with the thing alone, or taken off it (GONE): saved, the box drawn again, then sent. Through a
+     * folder above or everything, less than that is "not here" (NoteStore.decideHere, decision 293).
+     */
     private void own(NoteStore.Contact who,NoteStore.Stands stands,Sharing.Level to) {
-        boolean first=stands.rule==null||stands.rule.level==Sharing.Level.GONE,off=to==Sharing.Level.GONE;
+        boolean first=!stands.has(),off=to==Sharing.Level.GONE;
         say(first?Say.t("Sharing with {0}…",who.name):off?Say.t("Removing {0}…",who.name):Say.t("Updating access…"));
         app.disk.submit(()->{
-            if(first)app.store.give(scope(),target.id,who.address,to,null);else app.store.decide(stands.rule,to,System.currentTimeMillis());
+            app.store.decideHere(scope(),target.id,who.address,to,System.currentTimeMillis());
             return null;
         },done->{draw();
             app.network.submit(()->{Post.changed(app.context,app.store,app.keys,target.kind,target.id);Post.removedAgain(app.context,app.store,app.keys);return null;},

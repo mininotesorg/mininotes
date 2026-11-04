@@ -50,6 +50,27 @@ public class BackgroundTest {
         deliverOneResult();
         assertEquals("still working",later.get());
     }
+    @Test public void whatThePersonDoesGoesAheadOfABacklogThatArrived() throws Exception {
+        // A long inbox queued, one message at a time, then the page's save and its way back: those run next, not last.
+        List<String> order=Collections.synchronizedList(new ArrayList<>());
+        CountDownLatch started=new CountDownLatch(1);
+        background.submitLater(()->{started.countDown();held.await();order.add("arrived 0");return null;},done->{},e->{});
+        assertTrue(started.await(5,TimeUnit.SECONDS));
+        for(int i=1;i<=50;i++){final int n=i;background.submitLater(()->order.add("arrived "+n),done->{},e->{});}
+        background.submit(()->order.add("save"),done->{},e->{});
+        background.submit(()->order.add("back"),done->{},e->{});
+        held.countDown();
+        assertTrue(background.flush(5000));
+        List<String> first;
+        synchronized(order){first=new ArrayList<>(order.subList(0,3));}
+        assertEquals(List.of("arrived 0","save","back"),first);
+        // And the backlog still all runs, in its own order.
+        for(int wait=0;wait<100&&order.size()<53;wait++)Thread.sleep(20);
+        assertEquals(53,order.size());
+        assertEquals("arrived 1",order.get(3));
+        assertEquals("arrived 50",order.get(52));
+    }
+
     @Test public void flushWaitsForQueuedWorkToReachStorage() {
         AtomicBoolean written=new AtomicBoolean();
         background.submit(()->{Thread.sleep(150);return written.getAndSet(true);},done->{},e->fail("Unexpected failure: "+e));

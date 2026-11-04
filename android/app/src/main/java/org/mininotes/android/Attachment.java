@@ -47,6 +47,16 @@ final class Attachment {
         return said.length()>120?ANYTHING:said;
     }
 
+    /**
+     * The type a file is sent to another app as (decision 280). A text file said to be text, a .md or a .txt, went into
+     * WhatsApp as its words in a message, not as the file (the owner, 2026-10-29): a chat app reads "text/" as words to
+     * send. Said to be a file like any other, it goes as the file. Every other kind is said as it is.
+     */
+    static String sentAs(String given) {
+        String said=kind(given);
+        return said.regionMatches(true,0,"text/",0,5)?ANYTHING:said;
+    }
+
     /** How big it is, said the way a person would say it. */
     static String size(long bytes) {
         if(bytes<0)return "0 bytes";

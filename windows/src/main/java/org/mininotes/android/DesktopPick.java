@@ -57,7 +57,7 @@ final class DesktopPick {
         JFileChooser pick=new JFileChooser(start().toFile());pick.setDialogTitle(Say.t(title));pick.setSelectedFile(start().resolve(name).toFile());
         if(pick.showSaveDialog(owner)!=JFileChooser.APPROVE_OPTION||pick.getSelectedFile()==null)return null;
         Path got=pick.getSelectedFile().toPath();
-        if(Files.exists(got)&&!DesktopUi.confirm(window(owner),"Replace file?","A file called "+got.getFileName()+" is already there. Replace it?","Replace",true))return null;
+        if(Files.exists(got)&&!DesktopUi.confirm(window(owner),"Replace file?",Say.t("A file called {0} is already there. Replace it?",got.getFileName()),"Replace",true))return null;
         remember(got);return got;
     }
 

@@ -138,6 +138,51 @@ final class Waits {
     /** The box a press on an amber mark opens: its title, and the one thing to press. */
     static final String TITLE="Waiting to go", SEND="Send now";
 
+    /** One device in the box an amber mark opens: its name, its own mark, and in a few words what it still lacks. */
+    record Row(String name,SyncMark mark,String state) {}
+
+    /**
+     * The box as rows, one a device, as New lists things (the owner, 2026-11-01, of the sentences {@link #lines} makes: "we should
+     * see clearly and simply what are the devices waiting for it, a bit structured like the Nouveau window"; decision 312). The
+     * same devices in the same order as the sentences, the one needing something most first; the state says each thing it
+     * lacks in two to four words, joined by a dot. Empty where nothing is known to wait, as {@link #lines} is.
+     */
+    static List<Row> rows(List<Device> devices,int notes) {
+        List<Row> stuck=new ArrayList<>(),update=new ArrayList<>(),owed=new ArrayList<>(),files=new ArrayList<>(),kept=new ArrayList<>(),
+            sent=new ArrayList<>(),asking=new ArrayList<>(),locked=new ArrayList<>();
+        for(Device one:devices) {
+            Where at=one.where();boolean unnamed=one.name()==null||one.name().isBlank();
+            String name=unnamed?Say.t("A paired device"):one.name();
+            List<String> said=new ArrayList<>();
+            if(at!=null&&at.waitsLocked())said.add(Say.t("Locked · takes it in when opened"));
+            else if(at!=null) {
+                if(at.stuck())said.add(Say.t("Not heard from for more than three days"));
+                if(at.update()>0)said.add(Say.t("Needs to update Mininotes"));
+                if(at.owed()>0)said.add(notes<=1?Say.t("Your changes"):at.owed()==1?Say.t("Changes to 1 note"):Say.t("Changes to {0} notes",at.owed()));
+                if(at.lacking()>0)said.add(at.lacking()==1?Say.t("1 file to confirm"):Say.t("{0} files to confirm",at.lacking()));
+            }
+            if(one.kept()>0)said.add(one.kept()==1?Say.t("1 answer waiting"):Say.t("{0} answers waiting",one.kept()));
+            boolean nothingElse=said.isEmpty()&&at!=null;
+            if(nothingElse&&at.asking()>0)said.add(Say.t("Waiting for them to accept"));
+            else if(nothingElse&&!at.confirmed())said.add(Say.t("Sent · waiting for them to confirm"));
+            if(said.isEmpty())continue;
+            SyncMark mark=at==null?SyncMark.WAITING:at.mark();
+            // Only answers kept here, for a device that has everything: still something waiting to go to it.
+            if(mark==SyncMark.GONE)mark=SyncMark.WAITING;
+            Row row=new Row(name,mark,String.join(" · ",said));
+            if(at!=null&&at.waitsLocked())locked.add(row);
+            else if(at!=null&&at.stuck())stuck.add(row);
+            else if(at!=null&&at.update()>0)update.add(row);
+            else if(at!=null&&at.owed()>0)owed.add(row);
+            else if(at!=null&&at.lacking()>0)files.add(row);
+            else if(one.kept()>0)kept.add(row);
+            else if(at!=null&&at.asking()>0)asking.add(row);
+            else sent.add(row);
+        }
+        List<Row> out=new ArrayList<>(stuck);out.addAll(update);out.addAll(owed);out.addAll(files);out.addAll(kept);out.addAll(sent);out.addAll(asking);out.addAll(locked);
+        return out;
+    }
+
     /** The whole of the box: one line a device, or what the screen is waiting for where no device is. */
     static String said(List<Device> devices,int notes) {
         List<String> all=lines(devices,notes);

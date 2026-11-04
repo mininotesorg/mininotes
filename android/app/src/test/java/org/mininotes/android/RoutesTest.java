@@ -33,6 +33,23 @@ public class RoutesTest {
         assertNull(Routes.last(OTHER));
     }
 
+    @Test public void theRoadOfTheLastSendIsKeptForHistory() {
+        // Decision 322: by key, whichever way it is written; the relays that took it, host and port.
+        Routes.forgetAll();
+        String key="0x30819F300D06092A864886F70D010101050003818D0030818902818100AB";
+        assertEquals("",Routes.roadTo(key));
+        Routes.went(key,Routes.Way.RELAY,java.util.List.of("70.34.244.170:9501","203.0.113.9:9001"),1_000);
+        assertEquals("relay 70.34.244.170:9501 203.0.113.9:9001",Routes.roadTo(key.toLowerCase(java.util.Locale.ROOT)));
+        Routes.went(key,Routes.Way.DOOR,2_000);
+        assertEquals("door",Routes.roadTo(key));
+        Routes.went(key,Routes.Way.HOME,3_000);
+        assertEquals("home",Routes.roadTo(key));
+        Routes.went(key,Routes.Way.RELAY,java.util.List.of(),4_000);
+        assertEquals("relay",Routes.roadTo(key));
+        Routes.forgetAll();
+        assertEquals("",Routes.roadTo(key));
+    }
+
     @Test public void keptAndTakenBackAfterARestart() {
         Routes.went(KEY,Routes.Way.HOME,5_000);Routes.went(OTHER,Routes.Way.RELAY,6_000);
         String kept=Routes.kept();

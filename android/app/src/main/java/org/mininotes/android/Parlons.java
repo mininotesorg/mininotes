@@ -47,6 +47,8 @@ final class Parlons {
 
     /** The button that contacts them, and the one that asks for their address where there is none yet. */
     static final String CONTACT="Chat on Parlons!", ADD="Add their Parlons! address…";
+    /** Beside Copy wherever a file is: copied, and Parlons! opened to paste it in a chat (decision 280). */
+    static final String SEND="Send with Parlons!";
     /** What an address field shows before anything is in it: the shape of one, nobody's. */
     static final String HINT="Mx\u2026@\u2026";
 

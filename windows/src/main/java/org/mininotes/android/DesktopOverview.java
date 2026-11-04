@@ -81,7 +81,7 @@ final class DesktopOverview extends JComponent {
         public boolean getScrollableTracksViewportWidth(){return getParent() instanceof JViewport v&&v.getWidth()>=getPreferredSize().width;}
         public boolean getScrollableTracksViewportHeight(){return true;}
     }
-    private final DesktopUi.Text none=DesktopUi.note("Nothing opened lately. The notes and folders you open are here, the newest first.",420,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f));
+    private final DesktopUi.Text none=DesktopUi.note("Nothing opened lately.",420,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f));
     /** How many cards at most: what was lately in hand, not a second list of everything. */
     private static final int MOST=20;
     private Component before;

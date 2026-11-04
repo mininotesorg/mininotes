@@ -261,6 +261,27 @@ final class PhoneLock {
         } catch(IOException full){android.util.Log.w("Mininotes/Lock","could not keep an arriving message: "+full.getMessage());}
     }
 
+    /** What waits in the inbox, oldest first: each to be taken in on its own with {@link #takeInOne}. */
+    static File[] waiting(Context c) {
+        File[] waiting=file(c,INBOX).listFiles();
+        if(waiting==null)return new File[0];
+        Arrays.sort(waiting);
+        return waiting;
+    }
+
+    /**
+     * One message that waited, taken in, then let go: deleted only once it has landed, so one cut short by the app
+     * stopping is still there next time. Null where it said nothing for the screen.
+     */
+    static Post.Landed takeInOne(Context c,NoteStore store,Keys keys,File one) {
+        if(!one.isFile())return null;
+        Post.Landed said=null;
+        try{said=Post.arrived(c,store,keys,read(one));}
+        catch(Exception unreadable){/* not one of ours after all */}
+        one.delete();
+        return said;
+    }
+
     /** Everything that waited, taken in, oldest first. Blocking; returns what landed, for the screen to say. */
     static java.util.List<Post.Landed> takeIn(Context c,NoteStore store,Keys keys) {
         java.util.List<Post.Landed> landed=new java.util.ArrayList<>();

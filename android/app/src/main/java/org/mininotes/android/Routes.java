@@ -55,10 +55,42 @@ final class Routes {
         try{return them!=null&&nearNow.test(them);}catch(RuntimeException notNow){return false;}
     }
 
+    /**
+     * By identity key, the road the last send that was taken went, as History keeps it on the line of what reached that device
+     * (decision 322): {@code door}, {@code home}, or {@code relay} and the relays that took it, host and port, a space between.
+     * Only while the app runs: the device's answer comes within moments of the send.
+     */
+    private static final Map<String,String> ROAD=new ConcurrentHashMap<>();
+
+    /** The road as History keeps it. */
+    static String road(Way way,java.util.List<String> relays) {
+        if(way==null)return "";
+        if(way==Way.DOOR)return "door";
+        if(way==Way.HOME)return "home";
+        StringBuilder out=new StringBuilder("relay");
+        if(relays!=null)for(String one:relays)if(one!=null&&!one.isBlank())out.append(' ').append(one.trim());
+        return out.toString();
+    }
+
+    /** The road of the last send to a device that was taken, as {@link #road} writes it; empty where none is known. */
+    static String roadTo(String identity) {
+        String said=identity==null||identity.trim().isEmpty()?null:ROAD.get(keyOf(identity));
+        return said==null?"":said;
+    }
+
+    /** A send taken through relays, with the relays that took it (host and port; none where the transport placed it). */
+    static void went(String identity,Way way,java.util.List<String> relays,long at) {
+        if(identity==null||identity.trim().isEmpty()||way==null)return;
+        if(ROAD.size()>=MOST&&!ROAD.containsKey(keyOf(identity)))ROAD.clear();
+        ROAD.put(keyOf(identity),road(way,relays));
+        went(identity,way,at);
+    }
+
     /** A send taken by the road it went. */
     static void went(String identity,Way way,long at) {
         if(identity==null||identity.trim().isEmpty()||way==null)return;
         String key=keyOf(identity);
+        if(way!=Way.RELAY)ROAD.put(key,road(way,null));
         if(LAST.size()>=MOST&&!LAST.containsKey(key))LAST.clear();
         Last was=LAST.put(key,new Last(way,at));
         java.util.function.Consumer<String> to=keep;
@@ -97,7 +129,7 @@ final class Routes {
     }
 
     /** Everything let go of: a test, or a notebook that is not this one any more. */
-    static void forgetAll(){LAST.clear();keptAt=0;}
+    static void forgetAll(){LAST.clear();ROAD.clear();keptAt=0;}
 
     // ---- what People and devices says ------------------------------------------------------------------------
 

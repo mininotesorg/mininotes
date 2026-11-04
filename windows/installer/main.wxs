@@ -4,7 +4,8 @@
   in it: the installer's pages are Mininotes' own (MininotesUI, in the Fragment at the end) in place of jpackage's
   (JpUI). Decision 237, the owner, 2026-10-24: "When we launch the msi execution, can we display our logo there, where
   is the one displayed coming from? The general licence there, is it coming from fsf directly, is it a generic one, why
-  do we need that? When we click finish we should have the option to launch the app."
+  do we need that? When we click finish we should have the option to launch the app." The same Fragment holds the
+  desktop shortcut, made only when Create a desktop shortcut is left ticked (decision 259).
 
   Why the whole file and not overrides.wxi: jpackage 17 includes overrides.wxi above <Product>, where WiX takes no
   element but a Fragment after the Product, so it can only define variables; and without a licence jpackage 17 makes
@@ -156,9 +157,48 @@
     <SetProperty Id="WixShellExecTarget" Value="[INSTALLDIR]Mininotes.exe" After="CostFinalize" Sequence="ui" />
     <CustomAction Id="MininotesLaunch" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" Return="ignore" />
 
+    <!-- Create a desktop shortcut, ticked, on its own page between Welcome and Ready to install (decision 259, the owner,
+         2026-10-26: "we should have the option to create a desktop icon when installing on windows"). Ticked because
+         that is what most installers do, and what every Mininotes MSI before it did without asking (jpackage's
+         win-shortcut, which build.ps1 no longer passes). The Start menu entry is there either way.
+
+         The answer is kept for the next install: Software\Mininotes\Installer, DesktopShortcut, in the person's own part
+         of the registry, "yes" or "no". An update the app makes itself runs the MSI with /qb, which shows no pages, so
+         it takes the answer kept; an install with nothing kept, a first one or one over an older Mininotes, takes
+         ticked. Sequence first: decided by the pages when they are shown, by the line below when they are not.
+         MININOTES_DESKTOP_SHORTCUT=0 on msiexec's command line installs none. -->
+    <Property Id="MININOTES_DESKTOP_SHORTCUT" Secure="yes" />
+    <Property Id="MININOTES_DESKTOP_KEPT" Secure="yes">
+      <RegistrySearch Id="MininotesDesktopKept" Root="HKCU" Key="Software\Mininotes\Installer" Name="DesktopShortcut" Type="raw" />
+    </Property>
+    <SetProperty Id="MININOTES_DESKTOP_SHORTCUT" Value="1" After="AppSearch" Sequence="first">NOT MININOTES_DESKTOP_SHORTCUT AND MININOTES_DESKTOP_KEPT &lt;&gt; "no"</SetProperty>
+
+    <!-- The shortcut, for this person alone, on their own desktop, and the answer kept, each the key of its component as
+         Windows asks of anything put in a person's own folders. Removed with Mininotes, and before a newer MSI puts its
+         own in place (jpackage's RemoveExistingProducts, in the part above). -->
+    <DirectoryRef Id="TARGETDIR">
+      <Directory Id="DesktopFolder" Name="Desktop" />
+    </DirectoryRef>
+    <DirectoryRef Id="DesktopFolder">
+      <Component Id="MininotesDesktopShortcut" Guid="{5B8E2F4C-7D1A-4E36-9C0B-2A6F8D3E1C57}">
+        <Condition>MININOTES_DESKTOP_SHORTCUT = "1"</Condition>
+        <Shortcut Id="MininotesDesktopShortcut" Name="Mininotes" Description="Mininotes, a paper pad for the people close to you"
+                  Target="[INSTALLDIR]Mininotes.exe" WorkingDirectory="INSTALLDIR" />
+        <RegistryValue Root="HKCU" Key="Software\Mininotes\Installer" Name="DesktopShortcut" Type="string" Value="yes" KeyPath="yes" />
+      </Component>
+      <Component Id="MininotesNoDesktopShortcut" Guid="{C3A71E09-4B5D-4F82-8E6A-91D0B7F2A4E8}">
+        <Condition>MININOTES_DESKTOP_SHORTCUT &lt;&gt; "1"</Condition>
+        <RegistryValue Root="HKCU" Key="Software\Mininotes\Installer" Name="DesktopShortcut" Type="string" Value="no" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+    <FeatureRef Id="DefaultFeature">
+      <ComponentRef Id="MininotesDesktopShortcut" />
+      <ComponentRef Id="MininotesNoDesktopShortcut" />
+    </FeatureRef>
+
     <!-- No licence page: the GPL asks nobody to accept it to install or run a copy (it only sets terms for passing it on
-         and changing it), so the pages are Welcome, Ready to install, then Finish. LICENSE ships with the source and is
-         shown in the app. Otherwise the same as WiX's WixUI_InstallDir, less its licence and folder pages: the folder
+         and changing it), so the pages are Welcome, Shortcuts (decision 259), Ready to install, then Finish. LICENSE
+         ships with the source and is shown in the app. Otherwise the same as WiX's WixUI_InstallDir, less its licence and folder pages: the folder
          is fixed by build.ps1, never the notebook's own (decision 235). -->
     <UI Id="MininotesUI">
       <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
@@ -179,10 +219,30 @@
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="MininotesLaunch" Order="1">WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish>
       <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999">1</Publish>
 
-      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg">NOT Installed</Publish>
+      <!-- The desktop shortcut's page (decision 259), in WiX's own layout: the banner, a title and a line under it, the
+           one choice, then Back, Next and Cancel. -->
+      <Dialog Id="MininotesShortcutDlg" Width="370" Height="270" Title="[ProductName] Setup" NoMinimize="yes">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Shortcuts" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Mininotes will be in the Start menu. It can be on your desktop too." />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+        <Control Id="DesktopShortcut" Type="CheckBox" X="20" Y="60" Width="330" Height="17" Property="MININOTES_DESKTOP_SHORTCUT" CheckBoxValue="1" Text="Create a desktop shortcut" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="WelcomeDlg">1</Publish>
+        </Control>
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
+          <Publish Event="NewDialog" Value="VerifyReadyDlg">1</Publish>
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg">1</Publish>
+        </Control>
+      </Dialog>
+
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="MininotesShortcutDlg">NOT Installed</Publish>
       <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg">Installed AND PATCH</Publish>
 
-      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="1">NOT Installed</Publish>
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MininotesShortcutDlg" Order="1">NOT Installed</Publish>
       <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2">Installed AND NOT PATCH</Publish>
       <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2">Installed AND PATCH</Publish>
 

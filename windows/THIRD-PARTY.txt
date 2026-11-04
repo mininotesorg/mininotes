@@ -1,8 +1,8 @@
 Mininotes for Windows includes these dependencies:
 
 Maxima transport core — eurobuddha/maxima, commit
-6e001754428623b891bc582b05fe505c1f96f37c. Redistributed with the author's
-permission. See MAXIMA-NOTICE.txt and the root NOTICE.
+6e001754428623b891bc582b05fe505c1f96f37c. MIT License, copyright (c) 2026
+eurobuddha. See MAXIMA-LICENSE.txt, MAXIMA-NOTICE.txt and the root NOTICE.
 
 SQLite JDBC 3.53.4.0 with SQLite3 Multiple Ciphers — Willena (fork of Xerial's), Apache License 2.0;
 SQLite is public domain; SQLite3 Multiple Ciphers is MIT. It keeps the notebook encrypted when a password is set.

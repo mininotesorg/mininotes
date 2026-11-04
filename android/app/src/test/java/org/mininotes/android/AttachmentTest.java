@@ -4,6 +4,16 @@ import static org.junit.Assert.*;
 
 public class AttachmentTest {
 
+    @Test public void aTextFileIsSentAsAFileNotAsWords() {
+        assertEquals(Attachment.ANYTHING,Attachment.sentAs("text/markdown"));
+        assertEquals(Attachment.ANYTHING,Attachment.sentAs("text/plain"));
+        assertEquals(Attachment.ANYTHING,Attachment.sentAs("Text/Plain"));
+        assertEquals("application/pdf",Attachment.sentAs("application/pdf"));
+        assertEquals("image/jpeg",Attachment.sentAs("image/jpeg"));
+        assertEquals(Attachment.ANYTHING,Attachment.sentAs(null));
+        assertEquals(Attachment.ANYTHING,Attachment.sentAs(""));
+    }
+
     @Test public void aNameIsTheLastPartOfWhateverTheOtherAppSaid() {
         assertEquals("scan.pdf",Attachment.named("scan.pdf"));
         assertEquals("scan.pdf",Attachment.named("/storage/emulated/0/Download/scan.pdf"));

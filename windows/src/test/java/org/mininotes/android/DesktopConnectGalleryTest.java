@@ -46,7 +46,7 @@ public class DesktopConnectGalleryTest {
                     assertNull("no + by People",named(in,"addPerson"));assertNull("no + by My devices",named(in,"addDevice"));
                     JButton plus=named(in,"peoplePlus");assertNotNull("the one round +",plus);
                     assertEquals("Add someone or a device",plus.getAccessibleContext().getAccessibleName());
-                    assertNotNull("my code, quietly",named(in,"showMyCode"));
+                    assertNull("my code is in My profile, not here (decision 273)",named(in,"showMyCode"));
                     // At the foot, on the right, as Home's.
                     java.awt.Point at=SwingUtilities.convertPoint(plus,0,0,people.getRootPane());
                     assertTrue("at the right",at.x+plus.getWidth()>people.getRootPane().getWidth()-80);

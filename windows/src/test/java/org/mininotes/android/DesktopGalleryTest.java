@@ -435,6 +435,13 @@ public class DesktopGalleryTest {
             menuShot(pad,"48-menu-file",()->rightClick(tile(pad.home.grid,"beach.jpg"),30,30));
             // What went from here, and what is still coming, now there is no drop box: ⋯ → Sent files (decision 20).
             dialog(pad,"48b-sent-files",()->DesktopDrops.sentFiles(pad));
+            // What Mininotes did, from Sync and sharing (decision 305): a day of lines and the day before.
+            NoteStore.Note trip=new NoteStore.Note();trip.book=Things.HOME;trip.title="Trip plan";trip.body="Synthetic trip plan";store.save(trip);
+            long now=System.currentTimeMillis();
+            store.happened(History.Kind.BACK,"","MxGallery2@127.0.0.1:9002",now-26*3_600_000L);
+            store.happened(History.Kind.NOTE_CAME,trip.id,"MxGallery@127.0.0.1:9001",now-50*60_000L);
+            store.happened(History.Kind.NOTE_REACHED,trip.id,"MxGallery2@127.0.0.1:9002",now-2*60_000L);
+            dialog(pad,"48c-history",()->DesktopHistory.open(pad));
             // More favourites than the dock has room for: the rest in the Favourites collection, first on Home (decision 3).
             NoteStore.Note packing=new NoteStore.Note();packing.book=Things.HOME;packing.title="Packing list";packing.body="Synthetic packing list";store.save(packing);
             NoteStore.Shelf errands=store.addCollection("Errands");

@@ -85,6 +85,8 @@ final class Symbols {
         put("temporary","alarm-clock");
         put("temp","timer");
         put("things stay","calendar-clock");
+        // A note that stays in Temp, its words going instead (decision 307).
+        put("stays in temp","eraser");
         put("send what is in temp","radio-tower");
         put("who it goes to","user-round-cog");
         put("sync","refresh-cw");
@@ -108,7 +110,8 @@ final class Symbols {
         put("writing colour","brush");
         put("show who wrote","pen-line");
         put("versions","clock-arrow-down");
-        put("history","clock-arrow-down");
+        // What Mininotes did, its own symbol: no longer Versions' (decision 305).
+        put("history","scroll-text");
         put("undo","undo-2");
         put("copy","copy");
         // README in Show on Home wears the icon the note itself wears (decision 214).
@@ -210,6 +213,9 @@ final class Symbols {
         put("remove from mininotes","file-minus");
         put("which version to keep","files");
         put("show in explorer","folder-open");
+        // New's right click (decision 298): where a new thing lives, and no longer new.
+        put("show where it is","map-pin");
+        put("mark as seen","check");
         put("find it","file-search");
         put("keep it inside only","link-2-off");
         // The menu pinned open on the right of Recent (the owner, 2026-10-13).

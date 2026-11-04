@@ -52,7 +52,8 @@ public class DesktopUninstallTest {
         assertEquals("Windows removes the app; nothing else goes",List.of(),kept.remove());assertFalse(kept.notes());
 
         DesktopUninstall.Plan all=DesktopUninstall.plan(installed,true,CODE,notes,true,false,local,home);
-        assertEquals(List.of(notes.toAbsolutePath().normalize(),local.toAbsolutePath().normalize().resolve("Mininotes-editing")),all.remove());
+        assertEquals(List.of(notes.toAbsolutePath().normalize(),local.toAbsolutePath().normalize().resolve("Mininotes-editing"),
+            local.toAbsolutePath().normalize().resolve("Mininotes-dragged")),all.remove());
 
         assertThrows("not listed by Windows: Settings, Apps is said",IllegalStateException.class,()->DesktopUninstall.plan(installed,true,"",notes,true,true,local,home));
         assertThrows(IllegalStateException.class,()->DesktopUninstall.plan(installed,true,"Mininotes",notes,true,true,local,home));

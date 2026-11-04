@@ -16,6 +16,8 @@ final class DesktopTroubles extends JPanel {
     private final Desktop d;
     private final JLabel words=new JLabel();
     private List<Troubles.Trouble> shown=List.of();
+    /** Everything found last time, closed or not: what tells a new trouble, which is tried again at once. */
+    private List<Troubles.Trouble> lastFound=List.of();
     private final javax.swing.Timer soon,round;
     private boolean looking;
 
@@ -29,7 +31,12 @@ final class DesktopTroubles extends JPanel {
         words.setIconTextGap(8);
         add(words,BorderLayout.CENTER);
         JButton what=DesktopUi.button(Say.t("What to do"),this::open);
-        JPanel right=new JPanel(new FlowLayout(FlowLayout.RIGHT,0,0));right.setOpaque(false);right.add(what);add(right,BorderLayout.EAST);
+        // And a cross that closes it until something new is wrong (decision 296; see Troubles.open).
+        JButton close=new JButton("✕");close.setFocusPainted(false);close.setToolTipText(Say.t("Close"));
+        close.getAccessibleContext().setAccessibleName(Say.t("Close"));
+        close.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
+        close.addActionListener(e->closeAll());
+        JPanel right=new JPanel(new FlowLayout(FlowLayout.RIGHT,6,0));right.setOpaque(false);right.add(what);right.add(close);add(right,BorderLayout.EAST);
         soon=new javax.swing.Timer(2000,e->look());soon.setRepeats(false);
         round=new javax.swing.Timer(60_000,e->look());round.start();
     }
@@ -50,16 +57,36 @@ final class DesktopTroubles extends JPanel {
         d.disk.submit(()->Troubles.of(d.store),found->{
             looking=false;
             boolean fresh=false;
-            for(Troubles.Trouble t:found){boolean seen=false;for(Troubles.Trouble s:shown)if(s.address().equals(t.address())&&s.kind()==t.kind())seen=true;fresh|=!seen;}
-            shown=found;
-            if(found.isEmpty()){if(isVisible()){setVisible(false);revalidate();}return;}
-            String line=Troubles.line(found);
+            for(Troubles.Trouble t:found){boolean seen=false;for(Troubles.Trouble s:lastFound)if(s.address().equals(t.address())&&s.kind()==t.kind())seen=true;fresh|=!seen;}
+            // What was closed with the cross is said no more while it lasts (decision 296); a new trouble opens the strip again.
+            lastFound=found;
+            java.util.Set<String> closed=Troubles.stillClosed(found,closed());keepClosed(closed);
+            shown=Troubles.open(found,closed);
+            if(shown.isEmpty()){if(isVisible()){setVisible(false);revalidate();}if(fresh&&!d.offline&&!found.isEmpty())tryAgain();return;}
+            String line=Troubles.line(shown);
             words.setText(line+"  ·  "+Say.t("Mininotes keeps trying"));words.getAccessibleContext().setAccessibleName(line);
             if(!isVisible()){setVisible(true);revalidate();}
             repaint();
             // Put right by the app where it can (the owner: "it should be rectified by the app directly"): tried again now.
             if(fresh&&!d.offline)tryAgain();
         },e->looking=false);
+    }
+
+    /** The cross: what is said now, closed, and the strip gone until something new is wrong. */
+    private void closeAll() {
+        java.util.Set<String> closed=new java.util.LinkedHashSet<>(closed());
+        for(Troubles.Trouble t:shown)closed.add(Troubles.key(t));
+        keepClosed(closed);shown=List.of();setVisible(false);revalidate();
+    }
+    private java.util.Set<String> closed() {
+        String kept=d.context.getSharedPreferences("settings",0).getString("troublesClosed","");
+        java.util.Set<String> out=new java.util.LinkedHashSet<>();for(String one:kept.split("\n"))if(!one.isEmpty())out.add(one);
+        return out;
+    }
+    private void keepClosed(java.util.Set<String> closed) {
+        String now=String.join("\n",closed);
+        if(!now.equals(d.context.getSharedPreferences("settings",0).getString("troublesClosed","")))
+            d.context.getSharedPreferences("settings",0).edit().putString("troublesClosed",now).apply();
     }
 
     private void tryAgain(){d.network.submit(()->{Post.again(d.context,d.store,d.keys);return null;},done->{},e->{});}

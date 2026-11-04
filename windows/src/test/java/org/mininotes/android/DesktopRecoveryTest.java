@@ -16,7 +16,7 @@ public class DesktopRecoveryTest {
     @Test public void boundariesAndCountsAreSeparateAndNothingInvalidBecomesANote(){
         NoteStore.Note n=note("");n=DesktopEdits.save(store,n,"t".repeat(160),"x".repeat(24000));assertEquals(24000,store.get(n.id).body.length());
         var title=DesktopRecovery.save(store,n,"t".repeat(161),n.body,null,null);assertTrue(title.draft().reason().contains("Title has 161"));
-        var body=DesktopRecovery.save(store,n,n.title,"x".repeat(24001),null,null);assertTrue(body.draft().reason().contains("Note text has 24001"));
+        var body=DesktopRecovery.save(store,n,n.title,"x".repeat(24001),null,null);assertTrue(body.draft().reason().contains("Note text has 24,001"));
         assertEquals(160,store.get(n.id).title.length());assertEquals(24000,store.get(n.id).body.length());assertEquals(2,DesktopRecovery.all(store).size());
         assertTrue(store.backup().contains("mininotes.v1"));assertFalse(store.backup().contains("desktop-writing"));
     }

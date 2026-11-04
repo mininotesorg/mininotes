@@ -74,6 +74,10 @@ public class GivenTest {
         assertEquals("3 files added",Given.added(3,"c.pdf",0));
         assertEquals("2 files added, 1 not",Given.added(2,"b.pdf",1));
         assertEquals("Nothing was added",Given.added(0,null,2));
+        // Where they went is part of the sentence, not glued after it (decision 263's leftover on the PC).
+        assertEquals("map.png added to “Groceries”",Given.added(1,"map.png",0,"“Groceries”"));
+        assertEquals("2 files added to Home, 1 not",Given.added(2,"b.pdf",1,"Home"));
+        assertEquals("photo.jpg added",Given.added(1,"photo.jpg",0,null));
     }
 
     @Test public void theRefusedAreNamedWithTheirReason() {

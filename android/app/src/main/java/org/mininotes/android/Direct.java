@@ -247,7 +247,8 @@ final class Direct {
      */
     static MaximaSender.Result send(MaximaNode node,Contact them,String application,byte[] data,Leave home,boolean helpers) throws Exception {
         String lan=node.lanAddressFor(them.publicKey);
-        for(String one:firstTries(lan,new ArrayList<>(them.addresses),them.publicKey)) {
+        List<String> first=firstTries(lan,new ArrayList<>(them.addresses),them.publicKey);
+        for(String one:first) {
             try {
                 MaximaSender.Result said=node.sendRaw(one,application,data,LEASH,MaximaSender.READ_TIMEOUT_MS);
                 if(said!=null&&said.isOk()){WENT.incrementAndGet();if(one.equals(lan))opened(them.publicKey,lan);Routes.went(them.publicKey,Routes.Way.DOOR,System.currentTimeMillis());return said;}
@@ -262,10 +263,55 @@ final class Direct {
             catch(Exception notThere){/* the relays */}
         }
         if(!helpers)throw new IllegalStateException(WAITS);
-        MaximaSender.Result said=node.sendToContact(them,application,data);
-        // Kept for People and devices (decision 96): which road the last thing taken went by.
-        if(said!=null&&said.isOk())Routes.went(them.publicKey,Routes.Way.RELAY,System.currentTimeMillis());
+        // Every address but the doors just tried, a copy to each as the transport does it, so it is known which relays took
+        // it (decision 322: History says so). An address with no host of its own is the transport's to place: then it goes
+        // as it always did, the relays not named.
+        if(!plain(them.addresses)) {
+            MaximaSender.Result said=node.sendToContact(them,application,data);
+            // Kept for People and devices (decision 96): which road the last thing taken went by.
+            if(said!=null&&said.isOk())Routes.went(them.publicKey,Routes.Way.RELAY,List.of(),System.currentTimeMillis());
+            return said;
+        }
+        List<String> took=new ArrayList<>();
+        MaximaSender.Result said=everyCopy(node,them,application,data,first,took);
+        // Every address failed: the transport asks the device's directory where it is now, and tries once more.
+        if(said==null&&node.mlsLookup(them))said=everyCopy(node,them,application,data,first,took);
+        if(said==null)throw new IllegalStateException(NO_WAY+them.name);
+        boolean door=false;List<String> relays=new ArrayList<>();
+        for(String one:took)if(isDirect(one,them.publicKey))door=true;else relays.add(host(one));
+        if(door)WENT.incrementAndGet();
+        Routes.went(them.publicKey,door&&relays.isEmpty()?Routes.Way.DOOR:Routes.Way.RELAY,relays,System.currentTimeMillis());
         return said;
+    }
+
+    /** What the transport says where no address took it, word for word: Unsent reads it as not reached, and says that. */
+    static final String NO_WAY="no reachable address for ";
+
+    /** Whether every address names its host and port, so it can be dialled as it is. */
+    static boolean plain(Collection<String> addresses) {
+        if(addresses==null||addresses.isEmpty())return false;
+        for(String one:addresses) {
+            int at=one==null?-1:one.indexOf('@');
+            int colon=at<0?-1:one.indexOf(':',at+1);
+            if(at<=0||colon<=at+1||colon>=one.length()-1)return false;
+        }
+        return true;
+    }
+
+    /**
+     * A copy to every address but those already tried, one after another with the transport's own wait: the first that took
+     * it is the answer, and every one that did is added to {@code took}. Null where none did.
+     */
+    private static MaximaSender.Result everyCopy(MaximaNode node,Contact them,String application,byte[] data,List<String> tried,List<String> took) {
+        MaximaSender.Result first=null;
+        for(String one:new LinkedHashSet<>(them.addresses)) {
+            if(tried.contains(one)||took.contains(one))continue;
+            try {
+                MaximaSender.Result said=node.sendRaw(one,application,data,LEASH,MaximaSender.READ_TIMEOUT_MS);
+                if(said!=null&&said.isOk()){took.add(one);if(first==null)first=said;}
+            } catch(Exception notThere){/* the next */}
+        }
+        return first;
     }
 
     /**

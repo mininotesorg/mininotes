@@ -92,6 +92,29 @@ public class CarriedOnceTest {
         assertEquals(1,held.size());assertEquals(Courier.hex(page(second)),held.get(0).page);
     }
 
+    @Test public void aTryThatThrowsWaitsItsTurnLikeAnyOther() throws Exception {
+        // Decision 303 (Graphene, 2026-10-31): a thing held for a sleeping PC, its every try throwing, brought again at every
+        // round for six hours. Counted whether it went or threw, it waits its turn.
+        Device writer=new Device("writer"),carrier=new Device("carrier"),away=new Device("away");
+        carrier.pair(WRITER,"Writer",writer);carrier.pair(AWAY,"Away",away);
+        carrier.heardCarries(away);
+        String id=UUID.randomUUID().toString(),awayKey=Courier.hex(away.fingerprint());
+        byte[] note=Envelope.seal(page(id),4,1,"note".getBytes(),writer.keys.signing(),away.keys.agreement().getPublic());
+        carrier.hear(left(writer,carrier,away,id,4,Courier.NOTE,note));
+        NoteStore.Carried held=carrier.store.carried(awayKey).get(0);
+        assertTrue(Courier.due(held.tried,held.tries,System.currentTimeMillis()));
+        for(int round=0;round<5;round++) {
+            NoteStore.Carried now=carrier.store.carried(awayKey).get(0);
+            if(!Courier.due(now.tried,now.tries,System.currentTimeMillis()))continue;
+            assertFalse(Post.bringOne(carrier.store,now,()->{throw new java.io.IOException("nobody there");}));
+        }
+        held=carrier.store.carried(awayKey).get(0);
+        assertEquals("five rounds a moment apart: tried once",1,held.tries);
+        assertFalse("and not due again at once",Courier.due(held.tried,held.tries,System.currentTimeMillis()));
+        assertTrue(Post.bringOne(carrier.store,held,()->{}));
+        assertEquals("one that went is counted too",2,carrier.store.carried(awayKey).get(0).tries);
+    }
+
     @Test public void answersAreHeldOncePerDeviceThatLeftThem() throws Exception {
         Device writer=new Device("writer"),other=new Device("other"),carrier=new Device("carrier"),away=new Device("away");
         carrier.pair(WRITER,"Writer",writer);carrier.pair(OTHER,"Other",other);carrier.pair(AWAY,"Away",away);

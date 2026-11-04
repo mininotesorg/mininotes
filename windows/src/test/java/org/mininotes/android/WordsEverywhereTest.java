@@ -29,7 +29,11 @@ public class WordsEverywhereTest {
     /** The calls that put words on a screen, on either app. */
     static final String CALLS="Say\\.t|IOException|IllegalStateException|IllegalArgumentException|item|heading|label|line|row|tapRow|toast|alert|under|part|setTitle|setMessage|setText|setToolTipText|button|primary|danger|quiet|body|note|spread|setPositiveButton|setNegativeButton|setNeutralButton|dimRow|wakeRow|confirm|confirmOr|ask|busy|busyDone|busySay|plain|switchRow|toggle|section|adds|chip|card|tell|roleShown|person|says|noteSays|failed";
     private static final String LIT="\"(?:[^\"\\\\\\n]|\\\\.)*\"";
-    private static final Pattern CALL=Pattern.compile("\\b(?:"+CALLS+")\\s*\\(\\s*((?:"+LIT+"|[^,(){};\"]+|\\([^()]*\\))(?:\\s*\\+\\s*(?:"+LIT+"|[^,(){};\"+]+|\\([^()]*\\)))*)");
+    /*
+     * What a call is handed: a literal, a name or a bracket, then more of them, each after a +. A name stops before a +, as
+     * every later part does: it once ran on through it, so name+" is here" was read as the name alone and never checked.
+     */
+    private static final Pattern CALL=Pattern.compile("\\b(?:"+CALLS+")\\s*\\(\\s*((?:"+LIT+"|[^,(){};\"+]+|\\([^()]*\\))(?:\\s*\\+\\s*(?:"+LIT+"|[^,(){};\"+]+|\\([^()]*\\)))*)");
 
     static Map<String,String> list(String code) throws Exception {
         try(var in=Files.newInputStream(WORDS.resolve(code+".json"))){return Say.read(in);}
@@ -57,9 +61,13 @@ public class WordsEverywhereTest {
             Matcher m=CALL.matcher(text);
             // Overlapping, so a call inside another's brackets, button(Say.t("…")), is read too.
             for(int from=0;from<text.length()&&m.find(from);from=m.start()+1) {
-                String said=template(m.group(1));
-                if(said==null||!onScreen(said)||listed(english,said))continue;
-                missing.putIfAbsent(said,source.getFileName().toString());
+                List<String> saids=new ArrayList<>();saids.add(template(m.group(1)));
+                // A choice, ok?"Saved "+name:"Not saved", is two phrases: each side read as one.
+                saids.addAll(choices(text.substring(m.start(1),until(text,m.start(1),','))));
+                for(String said:saids) {
+                    if(said==null||!onScreen(said)||listed(english,said))continue;
+                    missing.putIfAbsent(said,source.getFileName().toString());
+                }
             }
         }
         StringBuilder all=new StringBuilder();for(var one:missing.entrySet())all.append(one.getKey()).append("   (").append(one.getValue()).append(")\n");
@@ -135,6 +143,17 @@ public class WordsEverywhereTest {
         assertTrue(glued.size()+" sentences in shared classes are English glued to a name or a number, which stays English in every language:\n"
             +String.join("\n",glued),glued.isEmpty());
     }
+    @Test public void theScreenCallsAreReadWhateverComesFirst() {
+        // A name first, then words: once read as the name alone.
+        Matcher m=CALL.matcher("toast(carried.name+\" is on Home now\");");
+        assertTrue(m.find());assertEquals("{0} is on Home now",template(m.group(1)));
+        // Each side of a choice.
+        assertEquals(List.of("Share “{0}” with them?","Stop sharing “{0}”?"),
+            choices("starts?\"Share “\"+moved.name+\"” with them?\":\"Stop sharing “\"+moved.name+\"”?\""));
+        assertTrue(choices("Say.t(\"Saved\")").isEmpty());
+        assertEquals(List.of("Waiting"),choices("ready?Say.t(\"Ready\"):\"Waiting\""));
+    }
+
     @Test public void theGuardFindsGluedSentences() {
         assertEquals(List.of("\" could not reach \""),glued("return what+\" could not reach \"+who;").stream().map(one->one[1]).toList());
         assertTrue(glued("return Say.t(\"{0} could not reach {1}\",what,who);").isEmpty());
@@ -220,6 +239,29 @@ public class WordsEverywhereTest {
         // The dots of a box, and an arrow, are added to a listed phrase by Say.t.
         for(String end:List.of("…","  ›","  ▾"))if(said.endsWith(end)&&english.contains(said.substring(0,said.length()-end.length())))return true;
         return false;
+    }
+
+    /**
+     * The phrases of a choice handed to a screen, cond?a:b, each side as {@link #template} reads it, where each side is only
+     * words and names glued with +; none where there is no choice at the top of it, or a side is more than that.
+     */
+    static List<String> choices(String argument) {
+        List<String> parts=new ArrayList<>();int depth=0,start=0;boolean asked=false;
+        for(int i=0;i<argument.length();i++) {
+            char c=argument.charAt(i);
+            if(c=='"'||c=='\''){i=literalEnd(argument,i)-1;continue;}
+            if(c=='('||c=='[')depth++;else if(c==')'||c==']')depth--;
+            else if(depth==0&&(c=='?'||c==':')){if(c=='?')asked=true;if(asked){parts.add(argument.substring(start,i));start=i+1;}}
+        }
+        if(!asked)return List.of();
+        parts.add(argument.substring(start));
+        List<String> out=new ArrayList<>();
+        for(String side:parts.subList(1,parts.size())) {
+            String one=side.trim();
+            if(!one.matches("(?s)(?:"+LIT+"|[\\w.]+(?:\\(\\))?|\\s*\\+\\s*)+"))continue;
+            out.add(template(one));
+        }
+        return out;
     }
 
     /** What the sources hand a screen, as the phrase Say.t looks for: words in quotes as they are, anything else a {n}. */

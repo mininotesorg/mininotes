@@ -45,7 +45,7 @@ final class DesktopUpdate {
         catch(InterruptedException e){Thread.currentThread().interrupt();throw new IOException("The check was stopped.");}
         catch(IOException offline){throw new IOException("GitHub could not be reached. Check the connection and try again.");}
         if(said.statusCode()==404)throw new IOException("No version for Windows has been published on GitHub yet.");
-        if(said.statusCode()!=200)throw new IOException("GitHub did not answer the check (HTTP "+said.statusCode()+").");
+        if(said.statusCode()!=200)throw new IOException(Say.t("GitHub did not answer the check (HTTP {0}).",said.statusCode()));
         String version=Update.read(said.body().lines().findFirst().orElse(""));
         if(version.isEmpty())throw new IOException("GitHub's answer was not a version.");
         return version;
@@ -88,13 +88,77 @@ final class DesktopUpdate {
         Path zip=Files.createTempFile("mininotes-update-",".zip");
         try {
             download(url,version,zip,percent);
-            Path staged=app.resolveSibling("."+app.getFileName()+".next");
+            Path staged=staged(app);
             delete(staged);Files.createDirectories(staged);
             unzip(zip,staged);
             Path opened=staged.resolve("Mininotes");
             if(!Files.isRegularFile(opened.resolve("Mininotes.exe")))throw new IOException("The download is not a Mininotes build.");
+            // Which version waits there, so a start that finds it still there can say which update did not finish.
+            Files.writeString(staged.resolve(STAGED_VERSION),Update.read(version),StandardCharsets.UTF_8);
             return opened;
         } finally {Files.deleteIfExists(zip);}
+    }
+
+    // ---- an update that did not finish (decision 264) -----------------------------------------------------------------
+
+    /** Where a newer version is opened beside this app until it is put in place: ".Mininotes.next" beside "Mininotes". */
+    static Path staged(Path app){return app.resolveSibling("."+app.getFileName()+".next");}
+    /** The file beside the staged copy saying which version it is. */
+    static final String STAGED_VERSION="version.txt";
+    /**
+     * What the update's script leaves beside this app when it could not put the new version in place, or Windows' installer
+     * did not install it: the version it was. Removed by the next start, which says so.
+     */
+    static Path failedMark(Path app){return app.resolveSibling("."+app.getFileName()+".update-failed");}
+
+    /**
+     * The update that did not finish, found at a start: the version it was to, empty where that cannot be told (a copy
+     * left by a build before 0.4.031, which wrote no version), or null for none. The update that could not move its own
+     * folder (decision 260) started the old copy again without a word, and the next start downloaded it again, for ever:
+     * it is said once now. Found by the script's mark, or by the new copy still waiting beside this app: a swap that
+     * worked moved it out, leaving its folder empty for the few seconds before the script removes it. Not an update to
+     * this version or an older one, which is done or overtaken and only left over.
+     */
+    static String unfinished(Path app,String running) {
+        if(app==null)return null;
+        String version=null;
+        Path mark=failedMark(app);
+        if(Files.isRegularFile(mark))version=readVersion(mark);
+        else if(Files.isRegularFile(staged(app).resolve("Mininotes").resolve("Mininotes.exe")))version=readVersion(staged(app).resolve(STAGED_VERSION));
+        if(version==null)return null;
+        return version.isEmpty()||Update.newer(version,running)?version:null;
+    }
+    private static String readVersion(Path file) {
+        // Windows PowerShell writes UTF-8 with its byte-order mark first, which is no part of a version.
+        try{return Files.isRegularFile(file)?Update.read(Files.readString(file,StandardCharsets.UTF_8).replace(String.valueOf((char)0xFEFF),"").trim()):"";}
+        catch(IOException|RuntimeException unreadable){return "";}
+    }
+
+    /** What an update left beside this app, gone, so it is said once: the mark, and a copy the next update downloads again. */
+    static void forgetUnfinished(Path app) throws IOException {
+        if(app==null)return;
+        Files.deleteIfExists(failedMark(app));
+        delete(staged(app));
+    }
+
+    /** What the start says about it: which update, that this version is unchanged, and the two ways on. */
+    static String unfinishedSaid(String version,String running) {
+        return version==null||version.isEmpty()
+            ?Say.t("An update did not finish, so this is still v{0}. Click to update again, or install the MSI from the releases page.",running)
+            :Say.t("The update to v{0} did not finish, so this is still v{1}. Click to update again, or install the MSI from the releases page.",version,running);
+    }
+
+    /** The version a fetched update is of: the installer's in its name, an unzipped copy's in the file beside it. */
+    static String versionOf(Path opened) {
+        String name=opened.getFileName().toString();
+        if(name.toLowerCase(java.util.Locale.ROOT).endsWith(".msi"))return Update.read(name.replaceFirst("(?i)^Mininotes-Windows-","").replaceFirst("(?i)\\.msi$",""));
+        Path parent=opened.toAbsolutePath().getParent();
+        return parent==null?"":readVersion(parent.resolve(STAGED_VERSION));
+    }
+
+    /** The line of a script that leaves the mark: the version it failed to put in place, for the next start to say. */
+    private static String markFailed(Path app,String version) {
+        return "Set-Content -LiteralPath '"+ps(failedMark(app))+"' -Value '"+version.replace("'","''")+"' -Encoding UTF8 -ErrorAction SilentlyContinue";
     }
 
     /**
@@ -118,7 +182,7 @@ final class DesktopUpdate {
         String expected=sum.statusCode()==200?Update.digest(sum.body()):"";
         if(expected.isEmpty())throw new IOException("The release has no checksum for this version, so nothing was installed.");
         HttpResponse<InputStream> got=HTTP.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofMinutes(10)).GET().build(),HttpResponse.BodyHandlers.ofInputStream());
-        if(got.statusCode()!=200)throw new IOException("The release has no Windows build for "+version+" (HTTP "+got.statusCode()+").");
+        if(got.statusCode()!=200)throw new IOException(Say.t("The release has no Windows build for {0} (HTTP {1}).",version,got.statusCode()));
         long size=got.headers().firstValueAsLong("content-length").orElse(-1);
         MessageDigest sha=MessageDigest.getInstance("SHA-256");
         try(InputStream in=got.body();OutputStream out=Files.newOutputStream(to)) {
@@ -159,15 +223,17 @@ final class DesktopUpdate {
         if(opened.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".msi"))return run(installScript(app,opened,waitFor,start),"mininotes-update-");
         String stamp=Long.toString(System.currentTimeMillis());
         Path old=app.resolveSibling("."+app.getFileName()+".old-"+stamp);
+        // Either way it fails, the mark is left first, so the old copy, started again, says the update did not finish (decision 264).
+        String failed=markFailed(app,versionOf(opened));
         String script=String.join("\r\n",
             "$ErrorActionPreference='Stop'",
             "$app='"+ps(app)+"';$new='"+ps(opened)+"';$old='"+ps(old)+"';$staged='"+ps(opened.getParent())+"';$start=$"+start,
             "try{Wait-Process -Id "+waitFor+" -Timeout 120 -ErrorAction SilentlyContinue}catch{}",
             // Files of a program that has just closed can stay locked for a moment; a few tries.
             "$moved=$false;for($i=0;$i -lt 20 -and -not $moved;$i++){try{Move-Item -LiteralPath $app -Destination $old;$moved=$true}catch{Start-Sleep -Milliseconds 500}}",
-            "if(-not $moved){if($start){Start-Process -FilePath (Join-Path $app 'Mininotes.exe')};exit 1}",
+            "if(-not $moved){"+failed+";if($start){Start-Process -FilePath (Join-Path $app 'Mininotes.exe')};exit 1}",
             "try{Move-Item -LiteralPath $new -Destination $app;if($start){Start-Process -FilePath (Join-Path $app 'Mininotes.exe')}}",
-            "catch{if(Test-Path -LiteralPath $app){Remove-Item -LiteralPath $app -Recurse -Force};Move-Item -LiteralPath $old -Destination $app;if($start){Start-Process -FilePath (Join-Path $app 'Mininotes.exe')};exit 1}",
+            "catch{if(Test-Path -LiteralPath $app){Remove-Item -LiteralPath $app -Recurse -Force};Move-Item -LiteralPath $old -Destination $app;"+failed+";if($start){Start-Process -FilePath (Join-Path $app 'Mininotes.exe')};exit 1}",
             "Start-Sleep -Seconds 5;Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue;Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue",
             "");
         return run(script,"mininotes-update-");
@@ -187,6 +253,8 @@ final class DesktopUpdate {
             "Start-Sleep -Milliseconds 800",
             // Its answer kept: 0 installed, 3010 installed and Windows wants a restart some time, anything else not installed.
             "$code=1;try{$done=Start-Process -FilePath '"+ps(msiexec())+"' -ArgumentList '"+install(msi).replace("'","''")+"' -Wait -PassThru;$code=$done.ExitCode}catch{}",
+            // Not installed (1602 is the person cancelling it): the mark, so the next start says so (decision 264).
+            "if($code -ne 0 -and $code -ne 3010){"+markFailed(app,versionOf(msi))+"}",
             "if($start){Start-Process -FilePath (Join-Path $app 'Mininotes.exe')}",
             "Remove-Item -LiteralPath (Split-Path -Parent $msi) -Recurse -Force -ErrorAction SilentlyContinue",
             "exit $code","");
@@ -199,14 +267,27 @@ final class DesktopUpdate {
     static Path msiexec(){return Path.of(System.getenv().getOrDefault("SystemRoot","C:\\Windows"),"System32","msiexec.exe");}
 
     /** A script written to a file and started now, hidden: what the update, the restart and the uninstall each run. */
-    static Process run(String script,String prefix) throws IOException {
+    static Process run(String script,String prefix) throws IOException{return shell(script,prefix).start();}
+
+    /**
+     * How {@link #run} starts a script: PowerShell, hidden, in the folder the script was written to.
+     *
+     * <p>That folder, not this app's own: a program started without one works in the folder of the program that started
+     * it, and Mininotes works in its own folder whenever Explorer or a shortcut opened it (a shortcut's Start in is that
+     * folder, and so is a double-click). Windows does not let a folder some program works in be moved or deleted, so the
+     * script held its own app folder, and every move of it failed: an unzipped copy was never replaced, the old one was
+     * opened again, and nothing said so (a user's report, 2026-10-26; decision 260). Only a Mininotes started from
+     * somewhere else, as the owner's was, updated.
+     */
+    static ProcessBuilder shell(String script,String prefix) throws IOException {
         Path file=Files.createTempFile(prefix,".ps1");
         // With the byte-order mark: Windows PowerShell reads a file without one in the old code page, and a
         // folder with an accent in its name would be a different folder.
         Files.writeString(file,"\ufeff"+script,StandardCharsets.UTF_8);
         String shell=Path.of(System.getenv().getOrDefault("SystemRoot","C:\\Windows"),"System32","WindowsPowerShell","v1.0","powershell.exe").toString();
         return new ProcessBuilder(shell,"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",file.toString())
-            .redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+            .directory(file.toAbsolutePath().getParent().toFile())
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD).redirectError(ProcessBuilder.Redirect.DISCARD);
     }
 
     /** This Mininotes started again once it has closed: the same hidden way an update starts it (decision 160). */

@@ -43,6 +43,13 @@ travels sealed end to end over the Minima network, or straight from device to de
 
 Newest first. Each version is the same on the phone and the PC unless it says otherwise.
 
+### 0.4.031
+
+- On the PC, an update now takes even when Mininotes was opened from a shortcut, and one that does not finish says
+  so at the next start. The installer can put Mininotes on your desktop.
+- Less work in the background: what the devices owe each other is worked out again only when something changed.
+- More of the app's sentences are in your language.
+
 ### 0.4.030
 
 - *People and devices* has one round + that opens the camera: scan the other device's code, then say what it is (one
@@ -672,8 +679,8 @@ it too, but whatever you pass on, changed or not, goes with its source code unde
 are in [NOTICE](NOTICE).
 
 The Maxima transport inside the app is the core of [eurobuddha/maxima](https://github.com/eurobuddha/maxima), vendored
-unmodified with its author's permission and credited in NOTICE. It is theirs, and is not under the GPL; its own
-repository does not yet carry a licence.
+unmodified with its author's permission and credited in NOTICE. It is theirs, and is not under the GPL; it is under
+its author's MIT License.
 
 <!-- not in the app -->
 

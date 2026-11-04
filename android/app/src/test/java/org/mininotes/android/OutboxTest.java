@@ -135,15 +135,27 @@ public class OutboxTest {
         assertTrue(Outbox.due(handed,at(),at(),T0+60*MINUTE).isEmpty());
     }
 
+    @Test public void aDeviceNotHeardLatelyIsTriedAQuarterOfAnHourApart() {
+        // Decision 301: quick for a device that is there, slow for one that is not; it is sent everything when it is heard.
+        assertEquals(MINUTE,Outbox.againAfter(1,true));
+        assertEquals(15*MINUTE,Outbox.againAfter(1,false));
+        assertEquals(15*MINUTE,Outbox.againAfter(9,false));
+        Outbox.Handed went=new Outbox.Handed("MxQuietFixture@1","page",3,0L,4);
+        java.util.Map<String,Long> current=java.util.Map.of("page",3L);
+        assertEquals("heard lately: due after two minutes",1,Outbox.due(List.of(went),new java.util.HashMap<>(),current,3*MINUTE).size());
+        assertTrue("not heard lately: not yet",Outbox.due(List.of(went),new java.util.HashMap<>(),current,3*MINUTE,java.util.Set.of("MxQuietFixture@1")).isEmpty());
+        assertEquals(1,Outbox.due(List.of(went),new java.util.HashMap<>(),current,16*MINUTE,java.util.Set.of("MxQuietFixture@1")).size());
+    }
+
     @Test public void theWaitsGrowAndThenSettle() {
         assertEquals(MINUTE,Outbox.againAfter(0));
         assertEquals(MINUTE,Outbox.againAfter(1));
         assertEquals(2*MINUTE,Outbox.againAfter(2));
-        assertEquals(4*MINUTE,Outbox.againAfter(3));
-        assertEquals(8*MINUTE,Outbox.againAfter(4));
-        assertEquals(15*MINUTE,Outbox.againAfter(5));
+        assertEquals("never longer than two minutes (decision 294)",2*MINUTE,Outbox.againAfter(3));
+        assertEquals(2*MINUTE,Outbox.againAfter(4));
+        assertEquals(2*MINUTE,Outbox.againAfter(5));
         assertEquals("a phone back after a month is still owed what it missed",
-            15*MINUTE,Outbox.againAfter(5000));
+            2*MINUTE,Outbox.againAfter(5000));
     }
 
     @Test public void aClockThatWentBackwardsDoesNotPostponeItForEver() {

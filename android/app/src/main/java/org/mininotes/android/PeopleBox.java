@@ -58,8 +58,15 @@ final class PeopleBox {
         List<NoteStore.Shared> shared=new ArrayList<>();
         /** Senders blocked on this phone, each {address, name}. */
         List<String[]> blocked=new ArrayList<>();
+        /**
+         * The devices of mine another of mine lists and this phone is not linked with, and who in People may be one of mine,
+         * by address (decision 268).
+         */
+        List<Introducing.Offered> offered=new ArrayList<>();Set<String> maybe=new HashSet<>();
         /** On the page of a device of mine: its bond with everything, or null for none yet (decision 255). */
         Sharing.Rule bond;
+        /** On a person's page: theirs, where what they send is accepted without asking (decision 269). */
+        Set<String> withoutAsking=new HashSet<>();
         /** Share with: what this phone may give, the groups the thing is given to, and where everybody stands on it. */
         List<Sharing.Level> give=new ArrayList<>();Map<String,Groups.Given> given=new HashMap<>();Map<String,NoteStore.Stands> stands=new HashMap<>();
         NoteStore.Contact contact(String address){for(NoteStore.Contact one:contacts)if(one.address.equals(address))return one;return null;}
@@ -117,7 +124,12 @@ final class PeopleBox {
         if(levels.isEmpty())return;
         final int mine=++asked;final Level at=top();
         if(laid==at&&scroll!=null)at.scroll=scroll.getScrollY();
-        a.background.submit(()->read(at),got->{if(mine==asked&&open)lay(at,got);},e->a.alert(MainActivity.READ_FAILED));
+        // On its own worker, and how long it waited and took said in the log (decision 297): it once took half a minute to open.
+        final long asked0=System.currentTimeMillis();final long[] began={0};
+        (a.reading!=null?a.reading:a.background).submit(()->{began[0]=System.currentTimeMillis();return read(at);},got->{
+            long done=System.currentTimeMillis();
+            if(done-asked0>1500)android.util.Log.i("Mininotes/People","opened slowly: waited "+(began[0]-asked0)+" ms, read in "+(done-began[0])+" ms");
+            if(mine==asked&&open)lay(at,got);},e->a.alert(MainActivity.READ_FAILED));
     }
     /** Down one level, the place in this one kept for coming back. */
     private void go(Level to){if(scroll!=null)top().scroll=scroll.getScrollY();laid=null;levels.add(to);draw();}
@@ -131,7 +143,7 @@ final class PeopleBox {
         Read r=new Read();NoteStore store=a.store;
         r.contacts=store.addresses();r.groups=store.groups();r.in=store.inGroups();r.through=store.linkedLines();
         for(NoteStore.Contact each:r.contacts){String p=each.mine?"":store.personOf(each.address);if(!p.isEmpty())r.persons.put(each.address,p);}
-        if(at.kind==LIST)r.blocked=store.blockedSenders();
+        if(at.kind==LIST){r.blocked=store.blockedSenders();r.offered=Post.notLinked(a,store,a.keys());r.maybe=Post.maybeMine(a,store,r.offered);}
         // Whether each device is reached directly, and which road the last thing to it went by (decision 96).
         if(at.kind==LIST||at.kind==PERSON)
             for(NoteStore.Contact one:r.contacts)if(one.paired()&&(at.kind==LIST||one.address.equals(at.id)))r.roads.put(one.address,Node.seen(one,Post.heardLately(one)));
@@ -145,6 +157,7 @@ final class PeopleBox {
                 if(who.signing.length>0)try{r.checks.put(who.address,Envelope.code(a.keys().signing().getPublic(),Keys.publicKey(who.signing)));}catch(Exception unreadable){/* no digits for it */}
                 r.shared=store.sharedWith(who.address);
                 if(who.mine)r.bond=a.bondOf(who.address);
+                else if(store.acceptsWithoutAsking(who.address))r.withoutAsking.add(who.address);
             }
             a.parlonsBook=store.parlonsBook();
         }
@@ -371,10 +384,18 @@ final class PeopleBox {
           }
         }
         // Each part says what to do when it is empty.
-        if(others==0)body.addView(a.under("Nobody else yet. Tap + to connect with someone, or share a note or a folder with them."));
+        if(others==0)body.addView(a.under("Nobody else yet."));
         body.addView(a.part(Groups.MY_DEVICES));
         for(NoteStore.Contact one:r.contacts)if(one.mine){mine++;body.addView(device(one,r));}
-        if(mine==0)body.addView(a.under("No other device yet. Tap + to connect another device of yours and keep the same notes on both."));
+        // Devices of mine another of mine lists and this phone is not linked with: here too, with Link (decision 268).
+        for(final Introducing.Offered one:r.offered) {
+            if(one.pairedHere)continue;
+            mine++;
+            final String name=one.device.name.isEmpty()?Say.t("Another device"):one.device.name;
+            View link=a.tap(Say.t("Link"),Say.t("Link with {0}",name),MainActivity.READING,a.ACCENT,v->a.linkMine(one.device,null));
+            body.addView(a.personLook(a.lineWith(name,Introducing.NOT_LINKED,link),name));
+        }
+        if(mine==0)body.addView(a.under("No other device yet."));
         // This device is the one Profile is about: its line goes there, where its name, its code and how it connects are,
         // over this box, which is still here when Profile is left (the owner: "it should bring to the profile page ... and
         // from the profile page, we should be able to go back to people and devices").
@@ -406,13 +427,12 @@ final class PeopleBox {
      * The one round +, Home's, at the foot on the right, where Home has it (the owner, 2026-10-25: "let's have just one big +
      * button similar to what we have on the home page ... not start with a branch Personnes or Appareils"; decision 258). It
      * replaces the + by People and the + by My devices (decision 106): the camera opens at once, and what was scanned is asked
-     * after. My code, for the other device to scan, quietly at the left of the same foot.
+     * after.
      */
     private View foot() {
         android.widget.FrameLayout foot=new android.widget.FrameLayout(a);
-        TextView mine=a.tap("Show my code","Show my code",MainActivity.QUIET,a.MUTED,v->a.myAddress());
-        mine.setGravity(Gravity.CENTER_VERTICAL);mine.setMinHeight(a.dp(48));mine.setPadding(a.dp(4),0,a.dp(12),0);mine.setTag("showMyCode");
-        foot.addView(mine,new android.widget.FrameLayout.LayoutParams(-2,-2,Gravity.START|Gravity.CENTER_VERTICAL));
+        // My code is the first thing in My profile, and Show my code instead is under the + 's camera: not a third way here
+        // (the owner, 2026-10-28; decision 273).
         TextView plus=a.roundPlus("Add someone or a device",v->a.scanFromPeople());plus.setTag("peoplePlus");
         android.widget.FrameLayout.LayoutParams place=new android.widget.FrameLayout.LayoutParams(a.dp(56),a.dp(56),Gravity.END|Gravity.CENTER_VERTICAL);
         place.setMargins(0,a.dp(8),a.dp(4),a.dp(8));
@@ -424,7 +444,13 @@ final class PeopleBox {
     private View device(final NoteStore.Contact one,Read r) {
         String[] road=r.roads.get(one.address);
         String under=!one.paired()?"Not paired yet":r.through.containsKey(one.address)?r.through.get(one.address):road!=null&&road.length>0&&road[0]!=null?road[0]:"";
-        LinearLayout entry=entry(one.name,under,()->go(new Level(PERSON,one.address,one.name)),null);
+        // Paired as a person, and in fact one of mine by another device's word or its own: said, with the one way to say so here.
+        View yes=null;
+        if(!one.mine&&r.maybe.contains(one.address)) {
+            under=Say.t(Introducing.IS_IT_YOURS);
+            yes=a.tap(Say.t(Introducing.THIS_IS_MINE),Say.t(Introducing.THIS_IS_MINE)+": "+one.name,MainActivity.QUIET,a.ACCENT,v->a.thisIsMine(one,null));
+        }
+        LinearLayout entry=entry(one.name,under,()->go(new Level(PERSON,one.address,one.name)),yes);
         // Held, as a right-click on the PC: whether it is a device of mine, then Forget, last.
         entry.setOnLongClickListener(v->{a.heldMenu(v,one.mine?"My device":null,"My device",(Runnable)()->mine(one,!one.mine),
             null,one.mine?"Forget":"Remove this person…",(Runnable)()->a.forgetAddress(one));return true;});
@@ -436,8 +462,7 @@ final class PeopleBox {
         body.addView(a.toDo("New group","+",this::newGroup));
         body.addView(groupEntry(r,Groups.MINE,Groups.MY_DEVICES,null));
         for(Groups.Group group:r.groups)body.addView(groupEntry(r,group.id,group.name,group));
-        body.addView(a.under(r.groups.isEmpty()?"No group of your own yet. Make one, like Friends or Colleagues, then put people in it."
-            :"A group is the same on all your devices. What is shared with it is shared with everybody in it."));
+        if(r.groups.isEmpty())body.addView(a.under("No group of your own yet."));
     }
 
     private View groupEntry(Read r,final String id,final String name,final Groups.Group group) {
@@ -493,8 +518,8 @@ final class PeopleBox {
 
     /** Somebody put in a group or taken out of it, at once, said on the strip from start to end. */
     private void put(final NoteStore.Contact who,final Groups.Group group,final boolean in) {
-        a.groupWork((in?"Putting "+who.name+" in ":"Taking "+who.name+" out of ")+group.name+"…",
-            ()->a.store.putInGroup(group.id,who.address,in),in?who.name+" is in "+group.name:who.name+" is out of "+group.name,this::draw);
+        a.groupWork(in?Say.t("Putting {0} in {1}…",who.name,group.name):Say.t("Taking {0} out of {1}…",who.name,group.name),
+            ()->a.store.putInGroup(group.id,who.address,in),in?Say.t("{0} is in {1}",who.name,group.name):Say.t("{0} is out of {1}",who.name,group.name),this::draw);
     }
 
     // ---- a group's page ---------------------------------------------------------------------------------------
@@ -508,16 +533,16 @@ final class PeopleBox {
             // Removed from the group, asked first, with what they lose said by name.
             View remove=mine?null:a.tap("Remove","Remove "+one.name+" from "+name,MainActivity.QUIET,a.INK,v->{
                 List<String> loses=new ArrayList<>();for(NoteStore.Shared has:r.shared)loses.add(has.said());
-                a.new Box().setTitle("Take "+one.name+" out of "+name+"?")
-                    .setMessage((loses.isEmpty()?"Nothing is shared with "+name+" yet, so they lose nothing.":"They lose what is shared with "+name+": "+String.join(", ",loses)+".")
-                        +" What was shared with them on their own stays.")
+                a.new Box().setTitle(Say.t("Take {0} out of {1}?",one.name,name))
+                    .setMessage(loses.isEmpty()?Say.t("Nothing is shared with {0} yet, so they lose nothing. What was shared with them on their own stays.",name)
+                        :Say.t("They lose what is shared with {0}: {1}. What was shared with them on their own stays.",name,String.join(", ",loses)))
                     .setPositiveButton("Remove",(d,w)->put(one,group,false)).setNegativeButton("Cancel",null).show();});
             LinearLayout member=entry(one.name,"",()->go(new Level(PERSON,one.address,one.name)),remove);
             member.setOnLongClickListener(v->{if(remove!=null)a.heldMenu(v,null,"Their page",(Runnable)()->go(new Level(PERSON,one.address,one.name)),null,"Remove",(Runnable)remove::performClick);
                 else a.heldMenu(v,null,"Their page",(Runnable)()->go(new Level(PERSON,one.address,one.name)));return true;});
             body.addView(a.person(member,one.name,one.address));
         }
-        if(in.isEmpty())body.addView(a.under(mine?"No other device yet. Add my device to keep the same notes on both.":"Nobody in this group yet. Add people to put somebody in it."));
+        if(in.isEmpty())body.addView(a.under(mine?"No other device yet.":"Nobody in this group yet."));
         if(mine)body.addView(a.tapRow("Add my device…",()->a.addMyDevice(null)));
         else {
             // Whoever is not in it yet, dropped down under the members: a tap adds, and the list stays for the next one.
@@ -532,7 +557,7 @@ final class PeopleBox {
                     if(one.mine||!one.paired()||r.groupsOf(one.address).contains(at.id))continue;
                     out++;
                     LinearLayout line=line(one.name,a.tap("Add","Add "+one.name+" to "+name,MainActivity.QUIET,a.INK,v->put(one,group,true)));
-                    line.setOnLongClickListener(v->{a.heldMenu(v,null,"Add to "+name,(Runnable)()->put(one,group,true),"Their page",(Runnable)()->go(new Level(PERSON,one.address,one.name)));return true;});
+                    line.setOnLongClickListener(v->{a.heldMenu(v,null,Say.t("Add to {0}",name),(Runnable)()->put(one,group,true),"Their page",(Runnable)()->go(new Level(PERSON,one.address,one.name)));return true;});
                     line.setPadding(a.dp(12),a.dp(4),0,a.dp(4));
                     body.addView(a.person(line,one.name,one.address));
                 }
@@ -540,7 +565,6 @@ final class PeopleBox {
             }
         }
         body.addView(a.part("Shared with this group"));
-        if(mine)body.addView(a.under("Your devices keep the same notes already. This is what was also shared with them as a group."));
         for(final NoteStore.Shared one:r.shared) {
             final java.util.function.Consumer<Sharing.Level> share=to->{
                 final boolean off=to==Sharing.Level.GONE;
@@ -607,7 +631,7 @@ final class PeopleBox {
         entry.addView(words,new LinearLayout.LayoutParams(0,-2,1));
         // Their round, in their colour, before the name: a tap gives them another here (decision 69).
         card.addView(a.person(entry,who.name,who.address));
-        // Their colour right under the name, chosen here; for one of your own devices, which writes as you, said (decision 185).
+        // Their colour right under the name, chosen here; for one of your own devices, which writes as you, nothing (decisions 185, 302).
         final LinearLayout colour=a.column();card.addView(colour);
         a.inkRowFor(who.address,row->{colour.removeAllViews();colour.addView(row,new LinearLayout.LayoutParams(-1,-2));});
         // How it is reached, one line across the block (decision 97); why only one end counts it as the owner's; the six
@@ -630,6 +654,11 @@ final class PeopleBox {
         body.addView(faceRow[0]);
         // Files straight to them, as from Send files, without choosing them again (decision 146).
         if(who.paired())body.addView(a.tapRow("Send files…",()->a.sendFilesTo(who.address)));
+        // What they send, accepted without asking or not (decision 269): off unless turned on here, kept on this phone only.
+        if(who.paired()&&!who.mine) {
+            body.addView(a.switchRow(WithoutAsking.SWITCH,r.withoutAsking.contains(who.address),on->a.withoutAsking(who.address,who.name,on,this::draw)));
+            body.addView(a.under(WithoutAsking.under(who.name)));
+        }
         // The groups they are in, a switch each (decision 100): on puts them in, and whatever the group has is theirs.
         if(!who.mine&&who.paired()&&!r.groups.isEmpty()) {
             body.addView(a.part("Groups"));
@@ -655,6 +684,8 @@ final class PeopleBox {
     }
 
     private void mine(final NoteStore.Contact who,final boolean yes) {
+        // Turned on, the other device is told too, and takes this phone as mine where a card there vouches for it (decision 268).
+        if(yes){a.thisIsMine(who,this::draw);return;}
         final int job=a.busy(yes?"Counting "+who.name+" as my device…":"No longer counting "+who.name+" as my device…");
         a.background.submit(()->{a.store.setMine(who.address,yes);return null;},
             done->{a.busyDone(job,yes?who.name+" is one of my devices":who.name+" is not one of my devices");draw();a.refresh();},
@@ -715,11 +746,22 @@ final class PeopleBox {
      * Nothing goes on in silence.
      */
     private void rights(final Sharing.Scope scope,final String target,final NoteStore.Contact who,final Sharing.Rule rule,final Sharing.Level to,final Runnable drawn) {
+        rights(scope,target,who,rule,to,drawn,null);
+    }
+
+    /**
+     * @param stands where they stand on the thing, from its Share with: then the choice is for this thing alone, whoever they
+     *               are and however they have it, "not here" where a folder above or everything gives more (NoteStore.decideHere,
+     *               decision 293); null on a person's page, where it is their own rule on it
+     */
+    private void rights(final Sharing.Scope scope,final String target,final NoteStore.Contact who,final Sharing.Rule rule,final Sharing.Level to,final Runnable drawn,
+                        final NoteStore.Stands stands) {
         final long now=System.currentTimeMillis();
-        final boolean first=rule==null||rule.level==Sharing.Level.GONE,off=to==Sharing.Level.GONE;
-        final int job=a.busy(first?"Sharing with "+who.name+"…":off?"Removing "+who.name+"…":"Changing what "+who.name+" may do…");
+        final boolean first=stands!=null?!stands.has():rule==null||rule.level==Sharing.Level.GONE,off=to==Sharing.Level.GONE;
+        final int job=a.busy(first?Say.t("Sharing with {0}…",who.name):off?Say.t("Removing {0}…",who.name):Say.t("Changing what {0} may do…",who.name));
         a.background.submit(()->{
-            if(first)a.store.give(scope,target,who.address,to,who.name);else a.store.decide(rule,to,now);
+            if(stands!=null)a.store.decideHere(scope,target,who.address,to,now);
+            else if(first)a.store.give(scope,target,who.address,to,who.name);else a.store.decide(rule,to,now);
             return null;
         },done->{
             drawn.run();a.refresh();
@@ -727,7 +769,7 @@ final class PeopleBox {
             // where it is the open note.
             if(!off){a.sendAfterSharing(scope,target,job,who.name);return;}
             // Taken off: they are told by the same road as leaving, so their copy becomes their own; then everybody else.
-            a.busySay(job,"Telling "+who.name+"…");
+            a.busySay(job,Say.t("Telling {0}…",who.name));
             a.network.submit(()->{
                 boolean told=Post.removed(a,a.store,a.keys(),scope,target,who.address,now);
                 a.busySay(job,"Telling the others…");
@@ -735,9 +777,9 @@ final class PeopleBox {
                 return told;
             },told->{
                 a.saidState();a.refresh();a.refreshOwed();
-                a.busyDone(job,told?"Removed "+who.name:"Removed. "+who.name+" is told when their phone is next open.");
-            },e->{a.busyDone(job,null);a.alert("Removed here. "+who.name+" could not be told yet; this phone tells them again by itself.");});
-        },e->{a.busyDone(job,null);a.alert(e instanceof IllegalStateException?e.getMessage()+" Nothing was changed.":"Could not save that. Nothing was changed.");});
+                a.busyDone(job,told?Say.t("Removed {0}",who.name):Say.t("Removed. {0} is told when their phone is next open.",who.name));
+            },e->{a.busyDone(job,null);a.alert(Say.t("Removed here. {0} could not be told yet; this phone tells them again by itself.",who.name));});
+        },e->{a.busyDone(job,null);a.alert(e instanceof IllegalStateException?Say.t("{0} Nothing was changed.",e.getMessage()):"Could not save that. Nothing was changed.");});
     }
 
     // ---- Share with -------------------------------------------------------------------------------------------
@@ -800,7 +842,7 @@ final class PeopleBox {
         // Nothing said where everybody is in a group: the groups above say it (the owner, 2026-10-13: "let's remove the sentence
         // Everybody else is in a group").
         if(alone==0&&others==0)body.addView(a.under(r.contacts.isEmpty()?"No devices paired yet. Scan another device's code, or show them yours."
-            :"Nobody else yet. Scan their code, or show them yours."));
+            :"Nobody else yet."));
         body.addView(a.part("Groups"));
         withGroup(body,r,Groups.MINE,Groups.MY_DEVICES,true);
         for(Groups.Group group:r.groups)withGroup(body,r,group.id,group.name,false);
@@ -829,7 +871,8 @@ final class PeopleBox {
         List<NoteStore.Contact> in=r.in(id);final Groups.Given given=r.given.get(id);final boolean open=!unfolded.contains(id);
         final java.util.function.Consumer<Sharing.Level> share=to->{
             final boolean off=to==Sharing.Level.GONE;
-            a.groupWork((off?"Removing ":"Sharing with ")+name+"…",()->a.store.shareWithGroup(withScope,withTarget,id,to),off?"Removed "+name:"Shared with "+name+" · "+to.words(),this::drawWith);};
+            a.groupWork(off?Say.t("Removing {0}…",name):Say.t("Sharing with {0}…",name),()->a.store.shareWithGroup(withScope,withTarget,id,to),
+                off?Say.t("Removed {0}",name):Say.t("Shared with {0} · {1}",name,Say.t(to.words())),this::drawWith);};
         TextView right=null;
         if(given!=null||!r.give.isEmpty()) {
             final TextView set=a.label(given==null?Groups.ADD+"  ▾":r.give.isEmpty()?given.level.words():given.level.words()+"  ▾",MainActivity.QUIET,a.MUTED);
@@ -869,8 +912,10 @@ final class PeopleBox {
 
     /**
      * Where one person stands on the thing, beside their name: the rights they have, As the group under a group that gives
-     * it to them, Removed where they were taken off by hand, or Add. Where this phone may change it, it drops down to the
-     * rights it may give, As the group where a group of theirs has the thing, and Remove; where it may not, the words alone.
+     * it to them, Removed where they were taken off by hand, Removed here where what holds it gives it to them, or Add. Where
+     * this phone may change it, it drops down to the rights it may give, As the group where a group of theirs has the thing,
+     * and Remove; where it may not, the words alone. A device of mine and somebody through a folder too, each for this thing
+     * alone (the owner, 2026-10-30: "it should also be there for every contact including own devices"; decision 293).
      *
      * @param under the group whose people this line is among; null under People
      */
@@ -878,22 +923,26 @@ final class PeopleBox {
         final NoteStore.Stands stands=r.stands.get(who.address);
         if(stands==null)return quietly("Not paired yet",null);
         if(stands.how==NoteStore.Stands.OWNER)return quietly(Sharing.OWNER,Sharing.OWNER_DOES);
-        if(stands.how==NoteStore.Stands.ABOVE)return quietly(stands.level.words(),stands.level.does()+" Through the folder it is in. Change this where it was shared.");
-        final String said=stands.how==NoteStore.Stands.OWN?stands.level.words():stands.how==NoteStore.Stands.REMOVED?Groups.REMOVED:stands.how==NoteStore.Stands.NONE?Groups.ADD
-            :stands.group.equals(under)?Groups.AS_GROUP:"Through "+r.groupName(stands.group);
-        if(!stands.may)return stands.level==null?quietly(stands.how==NoteStore.Stands.REMOVED?said:"",null):quietly(said,stands.level.does()+" Only its owner or an admin can change this.");
+        final boolean above=stands.how==NoteStore.Stands.ABOVE,here=stands.how==NoteStore.Stands.HERE;
+        if(above&&!stands.may)return quietly(stands.level.words(),Say.t("{0} Through the folder it is in. Change this where it was shared.",Say.t(stands.level.does())));
+        if(here&&!stands.may)return quietly(Sharing.REMOVED_HERE,Sharing.REMOVED_HERE_DOES);
+        final String said=stands.how==NoteStore.Stands.OWN||above?stands.level.words():here?Sharing.REMOVED_HERE:stands.how==NoteStore.Stands.REMOVED?Groups.REMOVED
+            :stands.how==NoteStore.Stands.NONE?Groups.ADD:stands.group.equals(under)?Groups.AS_GROUP:Say.t("Through {0}",r.groupName(stands.group));
+        if(!stands.may)return stands.level==null?quietly(stands.how==NoteStore.Stands.REMOVED?said:"",null):quietly(said,Say.t("{0} Only its owner or an admin can change this.",Say.t(stands.level.does())));
         // Whether a group of theirs has the thing: only then is there a group to follow.
         boolean follows=false;for(String group:r.groupsOf(who.address))follows|=r.given.containsKey(group);
         final boolean follow=follows,grouped=stands.how==NoteStore.Stands.GROUP;
         final TextView set=a.label(said+"  ▾",MainActivity.QUIET,a.MUTED);
         set.setGravity(Gravity.CENTER_VERTICAL|Gravity.END);set.setMinHeight(a.dp(48));set.setPadding(a.dp(12),0,0,0);set.setBackgroundResource(a.touchFeedback());
-        set.setContentDescription(stands.has()?who.name+", "+said+". Tap to change.":stands.how==NoteStore.Stands.REMOVED?who.name+" was removed. Tap to change.":"Share with "+who.name);
-        final Sharing.Level now=stands.how==NoteStore.Stands.OWN?stands.level:null;
+        set.setContentDescription(stands.has()?who.name+", "+said+". Tap to change.":stands.how==NoteStore.Stands.REMOVED||here?who.name+" was removed. Tap to change.":"Share with "+who.name);
+        final Sharing.Level now=stands.how==NoteStore.Stands.OWN||above?stands.level:null;
         final List<Sharing.Level> shown=new ArrayList<>(r.give);
         if(now!=null&&!shown.contains(now)){shown.add(now);java.util.Collections.sort(shown,(x,y)->y.ordinal()-x.ordinal());}
-        final java.util.function.Consumer<Sharing.Level> own=to->rights(withScope,withTarget,who,stands.rule,to,this::drawWith);
+        final java.util.function.Consumer<Sharing.Level> own=to->rights(withScope,withTarget,who,stands.rule,to,this::drawWith,stands);
         final Runnable asGroup=()->{if(!grouped)a.groupWork("Giving "+who.name+" the group's rights…",()->a.store.asTheGroup(withScope,withTarget,who.address),who.name+" has the group's rights",this::drawWith);};
-        final Runnable remove=()->own.accept(Sharing.Level.GONE);
+        // Asked first, as on the PC: this one is taken, and nothing else they have.
+        final Runnable remove=()->a.new Box().setTitle(Say.t("Remove {0}?",who.name)).setMessage(Sharing.REMOVE_HERE_SAYS)
+            .setPositiveButton("Remove",(d,w)->own.accept(Sharing.Level.GONE)).setNegativeButton("Cancel",null).show();
         set.setOnClickListener(v->{
             List<Object> more=new ArrayList<>();
             if(follow){more.add(null);more.add(grouped?"✓  "+Groups.AS_GROUP:Groups.AS_GROUP);more.add(asGroup);}

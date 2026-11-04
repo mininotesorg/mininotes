@@ -18,3 +18,9 @@ tasks.withType(JavaCompile).configureEach {
     // Vendored code, read but not written here: its warnings are upstream's to answer, not this build's.
     options.compilerArgs << '-nowarn'
 }
+// Its MIT licence (eurobuddha, 2026-10-31) asks for the notice in every copy, and a jar or an APK is one: packed beside its
+// classes from here, so the vendored tree itself stays byte for byte as upstream has it.
+tasks.named('processResources') {
+    from('LICENSE') { rename { 'MAXIMA-LICENSE.txt' }; into 'META-INF' }
+    from('NOTICE') { rename { 'MAXIMA-NOTICE.txt' }; into 'META-INF' }
+}

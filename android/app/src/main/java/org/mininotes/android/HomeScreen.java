@@ -968,8 +968,10 @@ final class HomeScreen {
         brand.addView(logo,new LinearLayout.LayoutParams(a.dp(30),a.dp(30)));
         TextView called=a.label(a.getString(R.string.app_name),MainActivity.READING,a.INK);
         called.setTypeface(called.getTypeface(),android.graphics.Typeface.BOLD);called.setSingleLine(true);called.setEllipsize(TextUtils.TruncateAt.END);
-        called.setPadding(a.dp(8),0,0,0);brand.addView(called);
-        brand.setMinimumHeight(a.dp(48));brand.setPadding(a.dp(4),0,a.dp(8),0);
+        // On the icon's side whichever way the language reads: in Farsi the icon is on the right and the name touched it (the
+        // owner, 2026-10-28; decision 274).
+        called.setPaddingRelative(a.dp(8),0,0,0);brand.addView(called);
+        brand.setMinimumHeight(a.dp(48));brand.setPaddingRelative(a.dp(4),0,a.dp(8),0);
         brand.setBackgroundResource(a.borderlessFeedback());
         brand.setContentDescription(Say.t("Mininotes: your Profile"));
         brand.setOnClickListener(v->a.profile());
@@ -1080,6 +1082,8 @@ final class HomeScreen {
             got.put("tone",a.homeTone());
             // How many things wait in the archive and the bin, for the count on each (decision 41).
             // What is temporary and whose time has come goes first, so it is never drawn once more (decision 71).
+            // The notepad in Temp, made once here (decision 307), before Temp is counted.
+            a.store.notepadOnce(Post.me(a).id);
             a.store.expire(System.currentTimeMillis());
             got.put("archived",a.store.awayCount(false));got.put("binned",a.store.awayCount(true));got.put("temp",a.store.temporaryCount());
             // Temp's own mark and whether anything in it is new, for its tile (the owner, 2026-10-14).
@@ -1132,12 +1136,12 @@ final class HomeScreen {
     private void waiting(final NoteStore.Branch line) {
         // A file shared with you, still being fetched (decision 94): nothing to do but know it is coming.
         if(line.id.startsWith(NoteStore.COMING)) {
-            a.new Box().setTitle(line.name).setMessage(line.detail+". It opens here once all of it has come.").setPositiveButton("OK",(d,w)->{}).show();
+            a.new Box().setTitle(line.name).setMessage(Say.t("{0}. It opens here once all of it has come.",line.detail)).setPositiveButton("OK",(d,w)->{}).show();
             return;
         }
         final String address=line.id.startsWith("waiting:")?line.id.substring(8):line.id;
         a.new Box().setTitle(line.name)
-            .setMessage(line.detail+". It comes when their phone is next open, and takes this place on Home.")
+            .setMessage(Say.t("{0}. It comes when their phone is next open, and takes this place on Home.",line.detail))
             .setPositiveButton("Keep waiting",(d,w)->{})
             .setNeutralButton("Stop waiting",(d,w)->a.background.submit(()->{a.store.stopWaiting(address);return null;},done->refresh(),e->a.alert(MainActivity.READ_FAILED)))
             .show();
@@ -1536,8 +1540,9 @@ final class HomeScreen {
         // New: a file that came, or a note somebody else changed, or a folder with one in it, not opened since (the owner,
         // 2026-10-14: "the same everywhere a change hasn't been viewed"). Over the middle of the top edge, clear of the mark.
         if(branch.fresh||branch.updated) {
-            // New from somebody else; ✓ when one of my own devices updated it (decision 220).
-            TextView fresh=a.label(branch.fresh?Say.onNote("new"):"✓",MainActivity.QUIET,a.PAPER);
+            // New from somebody else, and from one of my own devices too: its check mark (decision 220) read as a second sync
+            // mark beside the real one (the owner, 2026-10-29; decision 279).
+            TextView fresh=a.label(Say.onNote("new"),MainActivity.QUIET,a.PAPER);
             fresh.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             fresh.setIncludeFontPadding(false);fresh.setPadding(a.dp(6),a.dp(2),a.dp(6),a.dp(3));
             GradientDrawable pill=new GradientDrawable();pill.setColor(a.ACCENT);pill.setCornerRadius(a.dp(10));
@@ -1941,6 +1946,7 @@ final class HomeScreen {
         // Out to anybody or anywhere, as on a note's attachment (the owner, 2026-10-10): another app, Downloads, a place picked.
         // Copied first, as a note's attachment is (decision 207), so the photo viewer's ⋮ has it too.
         sheet.row("Copy",()->withHeld(file,held->a.copyFile(held.id,held.name)));
+        sheet.row(Parlons.SEND,()->withHeld(file,held->a.sendWithParlons(held.id,held.name,held.kind)));
         sheet.row("Send with another app…",()->withHeld(file,held->a.sendWithApp(held.id,held.name,held.kind)));
         sheet.row("Save on my phone…",()->withHeld(file,held->a.saveCopyOf(held.id,held.name,held.kind)));
         // On Minima: one row, saying how far its stamp is, opening the one window for it (decision 253).
@@ -1954,7 +1960,7 @@ final class HomeScreen {
         // A file in the places a note can be in (decision 87): Favourites, Temp, the archive and the bin.
         sheet.row(starred?"Remove from favourites":"Add to favourites",()->a.background.submit(()->{a.store.keepToHand(NoteStore.Branch.Kind.FILE,file.id,!starred);return null;},
             done->{a.toast(starred?"Not a favourite":"A favourite");a.refresh();},e->a.alert("Could not change that. Nothing was changed.")));
-        sheet.row(until>0?"Temporary · "+NoteStore.goneIn(until,System.currentTimeMillis()).toLowerCase(java.util.Locale.ROOT):"Temporary…",()->a.temporaryBox(file));
+        sheet.row(until>0?Say.t("Temporary · {0}",NoteStore.goneIn(until,System.currentTimeMillis()).toLowerCase(java.util.Locale.ROOT)):"Temporary…",()->a.temporaryBox(file));
         sheet.line();
         sheet.row("Archive",()->a.putAway(file,false));
         sheet.row("Move to bin",()->a.putAway(file,true));
@@ -2069,14 +2075,14 @@ final class HomeScreen {
                 for(final NoteStore.Transfer one:coming) {
                     if(one.state==Drop.ASKING){body.addView(line(one.name,Drop.wants(one.files.size(),one.bytes()),true,()->{box[0].dismiss();a.askAboutSending(one.id);}));continue;}
                     int here=0;for(NoteStore.Loose file:one.files)if(file.here)here++;
-                    body.addView(line(one.name,Drop.files(one.files.size())+" coming, "+here+" here",false,()->{box[0].dismiss();a.askStopComing(one);}));
+                    body.addView(line(one.name,Say.t("{0} coming, {1} here",Drop.files(one.files.size()),here),false,()->{box[0].dismiss();a.askStopComing(one);}));
                 }
                 if(!sent.isEmpty())body.addView(a.part("Sent"));
             }
             for(final NoteStore.Transfer one:sent)
                 body.addView(line(one.name,Drop.files(one.files.size())+"  ·  "+a.when(one.at)+"  ·  "+Drop.state(one.state,one.name,takes.contains(one.address)),
                     false,()->{box[0].dismiss();a.askStopSending(one);}));
-            if(sent.isEmpty()&&coming.isEmpty())body.addView(a.under("Nothing sent from this phone yet. Files go to another device from ⋮ → Send files, or from a file's own menu."));
+            if(sent.isEmpty()&&coming.isEmpty())body.addView(a.under("Nothing sent yet."));
             box[0]=a.new Box().setTitle("Sent files").setView(a.scrolling(body)).create();
             box[0].show();
         },e->a.alert(MainActivity.READ_FAILED));
@@ -2442,7 +2448,7 @@ final class HomeScreen {
                 keepInTools(carried.id,false);
                 final Map<String,Layout.Spot> spots=placeIn!=null&&placeIn.where==Where.HOME?homeMove(placeIn,carried.id,placeAt[0],placeAt[1]):null;
                 if(spots!=null)placesOn(spots);
-                folder.close();a.toast(carried.name+" is on Home now");refresh();return true;
+                folder.close();a.toast(Say.t("{0} is on Home now",carried.name));refresh();return true;
             }
         }
         // What a place only lists - Temp, Recent, Tools - is not moved from there: it stays where it really is.
@@ -2458,12 +2464,7 @@ final class HomeScreen {
             // On Temp: asked for how long (decision 71).
             // Whatever leaves Home for a place leaves its spot empty: the others are kept where they are drawn now (the owner,
             // 2026-10-14: "the spot left behind should stay empty"). An icon never placed by hand took the first free cell.
-            if(does==Grid.Onto.AWAY&&homeGrid(came)&&homeLaid!=null&&homeLaid.spots!=null) {
-                final List<NoteStore.Branch> others=new ArrayList<>();
-                for(NoteStore.Branch one:homeLaid.lines)if(!one.id.equals(carried.id))others.add(one);
-                final Map<String,Layout.Spot> held=new HashMap<>(homeLaid.spots);held.remove(carried.id);
-                a.background.submit(()->{a.store.placeOnPages(others,held);return null;},done->placesOn(held),e->{});
-            }
+            if(does==Grid.Onto.AWAY&&homeGrid(came))holdOthers(carried.id);
             if(does==Grid.Onto.AWAY&&onto.kind==NoteStore.Branch.Kind.TEMP){stale=true;a.intoTemp(carried);}
             else if(does==Grid.Onto.AWAY)away(carried,onto.kind==NoteStore.Branch.Kind.BIN);
             else if(does==Grid.Onto.MERGE)merge(carried,onto,container,inCard);
@@ -2604,6 +2605,20 @@ final class HomeScreen {
      * Let go on the archive or the bin: put away there by the same road its menu takes - said, with Undo in the next menu -
      * and a file on the bin asked about first, as its own Delete asks, since there is no bin for files.
      */
+    /**
+     * Whatever leaves Home for a place leaves its spot empty, the others kept where they are drawn now (decision 168), whichever
+     * way it goes: a drop on the place, its menu, the strip or a file's menu (the owner, 2026-10-31: "When we move an item in the
+     * bin, we should leave the space left empty, not replace the items ordering on the home page"; decision 310). Queued on the
+     * worker before the thing is moved; nothing for a thing that is not on Home.
+     */
+    void holdOthers(String leaving) {
+        if(homeLaid==null||homeLaid.spots==null||!homeLaid.spots.containsKey(leaving))return;
+        final List<NoteStore.Branch> others=new ArrayList<>();
+        for(NoteStore.Branch one:homeLaid.lines)if(!one.id.equals(leaving))others.add(one);
+        final Map<String,Layout.Spot> held=new HashMap<>(homeLaid.spots);held.remove(leaving);
+        a.background.submit(()->{a.store.placeOnPages(others,held);return null;},done->placesOn(held),e->{});
+    }
+
     private void away(NoteStore.Branch carried,boolean bin) {
         a.putAway(carried,bin);
     }
@@ -2660,11 +2675,11 @@ final class HomeScreen {
             final boolean reaches=(Boolean)found[2],theirs=(Boolean)found[3],alone=(Boolean)found[4];
             final Runnable go=()->doInto(moved,dest,destName,destKind,reaches,after,there);
             if(!change.any()){go.run();return;}
-            String where=NoteStore.home(dest)?"Home":"“"+destName+"”";
+            String where=NoteStore.home(dest)?Say.t("Home"):"“"+destName+"”";
             if(moved.kind==NoteStore.Branch.Kind.FILE) {
                 a.new Box().setTitle("This changes who can read it")
-                    .setMessage(a.changeSaid("Moving “"+moved.name+"” into "+where+" changes who receives it.",change,a.castNames(found[1]),
-                        Sharing.fileMoveSaid(alone)))
+                    .setMessage(a.changeSaid(Say.t("Moving “{0}” into {1} changes who receives it.",moved.name,where),change,a.castNames(found[1]),
+                        Say.t(Sharing.fileMoveSaid(alone))))
 
                     .setPositiveButton("Move anyway",(d,w)->go.run())
                     .setOnCancelListener(d->a.refresh()).show();
@@ -2676,9 +2691,9 @@ final class HomeScreen {
             // One of this person's own: asked, never shared or stopped by a move alone (the owner, 2026-10-03: "we should be
             // asked if we want to share").
             boolean starts=!change.gained.isEmpty();
-            a.new Box().setTitle(starts?"Share “"+moved.name+"” with them?":"Stop sharing “"+moved.name+"”?")
-                .setMessage(a.changeSaid(starts?"In "+where+" it would go to more people.":"Out of where it is, it would stop going to some people.",
-                    change,a.castNames(found[1]),starts?"Or only put it there on this phone: nobody new gets it.":"Or only put it there on this phone: it stays shared as it is."))
+            a.new Box().setTitle(starts?Say.t("Share “{0}” with them?",moved.name):Say.t("Stop sharing “{0}”?",moved.name))
+                .setMessage(a.changeSaid(starts?Say.t("In {0} it would go to more people.",where):Say.t("Out of where it is, it would stop going to some people."),
+                    change,a.castNames(found[1]),Say.t(starts?"Or only put it there on this phone: nobody new gets it.":"Or only put it there on this phone: it stays shared as it is.")))
                 .setPositiveButton(starts?"Share it":"Stop sharing",(d,w)->go.run())
                 .setNeutralButton("Only put it here",(d,w)->only.run())
                 .setOnCancelListener(d->a.refresh()).show();
@@ -2745,8 +2760,8 @@ final class HomeScreen {
             final Runnable go=()->doMerge(dropped,onto,inCard,reaches);
             if(!change.any()){go.run();return;}
             a.new Box().setTitle("This changes who can read them")
-                .setMessage(a.changeSaid("Putting “"+dropped.name+"” and “"+onto.name+"” together changes who receives them.",change,a.castNames(found[1]),
-                    "Whoever starts receiving them gets them now. What has already reached somebody stays with them."))
+                .setMessage(a.changeSaid(Say.t("Putting “{0}” and “{1}” together changes who receives them.",dropped.name,onto.name),change,a.castNames(found[1]),
+                    Say.t("Whoever starts receiving them gets them now. What has already reached somebody stays with them.")))
                 .setPositiveButton("Put them together",(d,w)->go.run())
                 .setOnCancelListener(d->a.refresh()).show();
         },e->a.alert(MainActivity.READ_FAILED));

@@ -26,6 +26,8 @@ final class DesktopJoining {
     private JDialog box;private int step=WHAT;
     /** Read off the event thread when the box opens: the groups there are, and what may be shared from Home. */
     private List<Groups.Group> groups=List.of();private List<NoteStore.Branch> things=List.of();
+    /** My other devices, for Also link it with on a device of mine's share step (decision 268). */
+    private List<NoteStore.Contact> others=List.of();
     /** Choose notes or folders, picked on the share step for someone else. */
     private boolean choosing;
     /** At the last step: still working, and how it ended. */
@@ -51,10 +53,11 @@ final class DesktopJoining {
     static void open(Desktop app,Pairing.Said code,String digits,NoteStore.Branch shareTarget,Runnable back) {
         DesktopJoining path=new DesktopJoining(app,code,digits,shareTarget,back);
         path.draw();
-        app.disk.submit(()->new Object[]{app.store.groups(),Joining.shareable(app.store)},read->{
+        app.disk.submit(()->new Object[]{app.store.groups(),Joining.shareable(app.store),Joining.otherMine(app.store,code.signing)},read->{
             @SuppressWarnings("unchecked") List<Groups.Group> g=(List<Groups.Group>)read[0];
             @SuppressWarnings("unchecked") List<NoteStore.Branch> t=(List<NoteStore.Branch>)read[1];
-            path.groups=g;path.things=Joining.withChosen(t,path.choice.things);
+            @SuppressWarnings("unchecked") List<NoteStore.Contact> o=(List<NoteStore.Contact>)read[2];
+            path.groups=g;path.things=Joining.withChosen(t,path.choice.things);path.others=o;
             if(path.box!=null&&path.box.isDisplayable()&&path.step!=WHAT&&path.step!=DONE)path.draw();
         },app::failed);
         DesktopUi.show(path.box,520,560,760);
@@ -157,10 +160,13 @@ final class DesktopJoining {
 
     /** What it gets: for a device of mine, everything or nothing yet; for someone else, nothing yet or notes and folders chosen. */
     private void share(JPanel body) {
+        // Also link it with first, in sight: the owner asked for it to be "clearly proposed" (decision 268).
+        if(choice.mine&&!others.isEmpty()){alsoLink(body,others,choice.skip);DesktopUi.gap(body,12);}
         DesktopUi.add(body,DesktopUi.heading(choice.mine?"What it gets":Say.t("What {0} gets",code.name)));DesktopUi.gap(body,8);
         ButtonGroup group=new ButtonGroup();
         if(choice.mine) {
-            for(Sharing.Level level:Arrays.asList(null,Sharing.Level.WRITE,Sharing.Level.READ))
+            // Admin among them again (decision 293).
+            for(Sharing.Level level:Arrays.asList(null,Sharing.Level.ADMIN,Sharing.Level.WRITE,Sharing.Level.READ))
                 pick(body,group,level==null?Sharing.NOTHING_YET:level.words(),Sharing.everythingDoes(level),choice.everything==level,()->choice.everything=level);
             return;
         }
@@ -194,6 +200,27 @@ final class DesktopJoining {
         DesktopUi.add(body,DesktopUi.row(DesktopUi.body("Rights"),role));
     }
 
+    /**
+     * Also link it with, under what a device of mine gets (the owner, 2026-10-28: "when I link one additional of my devices, it
+     * should be linked to all of my devices or at least it should be clearly proposed to do so"; decision 268): my other
+     * devices, each ticked, unticked to leave it out. Nothing where there is no other. Add my device's box has the same.
+     *
+     * @param skip the addresses unticked, changed as the ticks are
+     */
+    static void alsoLink(JPanel body,List<NoteStore.Contact> others,Set<String> skip) {
+        if(others==null||others.isEmpty())return;
+        DesktopUi.gap(body,DesktopUi.M);
+        DesktopUi.add(body,DesktopUi.heading(Introducing.ALSO_LINK));DesktopUi.gap(body,4);
+        DesktopUi.add(body,DesktopUi.note(Introducing.ALSO_DOES,380,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f)));DesktopUi.gap(body,8);
+        JPanel lines=DesktopUi.column();
+        for(NoteStore.Contact one:others) {
+            JCheckBox tick=DesktopUi.toggle(one.name,!skip.contains(one.address));tick.setName("alsoLink "+one.address);
+            tick.addActionListener(e->{if(tick.isSelected())skip.remove(one.address);else skip.add(one.address);});
+            DesktopUi.add(lines,DesktopUi.switchRow(one.name,tick));
+        }
+        DesktopUi.add(body,DesktopUi.card(null,lines));
+    }
+
     /** Add, or Accept: the last step drawn at once, saying it is adding, and the work done off this thread (see Desktop.joined). */
     private void finish() {
         if(!choice.mine&&!choosing)choice.things.clear();
@@ -205,5 +232,7 @@ final class DesktopJoining {
     }
 
     /** For the pictures (DesktopConnectGalleryTest): the last step as it ends, drawn without pairing or sending anything. */
+    /** For the pictures and the test: the share step of a device of mine, with my other devices given. */
+    void shareForPicture(List<NoteStore.Contact> mine){others=mine;choice.mine=true;step=SHARE;draw();}
     void endedForPicture(boolean mine,String said,String more){choice.mine=mine;working=false;ended=said;also=more;step=DONE;draw();}
 }

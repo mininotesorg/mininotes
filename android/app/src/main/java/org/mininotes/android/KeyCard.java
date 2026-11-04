@@ -21,8 +21,12 @@ final class KeyCard {
     static final byte[] MAGIC={'M','N','K','1'};
     static final int FORMAT=1;
     static final int NAME_MOST=40,VALUE_MOST=2000;
-    /** The keys that may travel, by the name they are kept under (see NoteStore#secret). */
-    static final Set<String> TRAVELS=Set.of("integritas");
+    /**
+     * The keys that may travel, by the name they are kept under (see NoteStore#secret), and the owner's relays (decision 316,
+     * {@link Relays#CARD}): a build before that one reads this card and takes a name it does not know for nothing, so the relays
+     * ride here rather than on a card of their own, which such a build would keep as a note.
+     */
+    static final Set<String> TRAVELS=Set.of("integritas",Relays.CARD);
 
     private KeyCard(){}
 

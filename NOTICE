@@ -14,9 +14,8 @@ under the GPL, version 3 or later; copies taken before then keep the terms they
 were given under.
 
 One part is not under the GPL, and is not this project's to license: the
-Maxima transport in android/maxima-core/, described below. Its author has not
-yet put a licence on it. Until they do, a build of Mininotes contains code that
-is redistributed by permission rather than under a free licence.
+Maxima transport in android/maxima-core/, described below. It is its author's,
+under the MIT License.
 
 app/mds.js is the unmodified Minima MDS JavaScript library, Apache-2.0. Its own
 Apache-2.0 terms apply to it and are not narrowed by this project's conditions.
@@ -45,16 +44,19 @@ https://github.com/eurobuddha/maxima at commit 6e001754428623b891bc582b05fe505c1
 that commit on 2026-09-22). It is what makes this app a Maxima node rather than
 an app asking another app to be one for it. Java 11, no runtime dependencies.
 
-That repository declares no licence, so its author was asked, on 2026-09-21,
-whether Mininotes may be published with this tree inside it and credited to
-them. They answered on 2026-09-22, in a private message: "go for it" (typed
-"fo for it"), "with my blessing", "open source is free although I do appreciate
-you asking". So the tree is redistributed here with its author's permission and
-credit, and nothing more is claimed for it: it is not under this project's
-LICENSE, the GPL is not put on it, and anybody who wants
-the Maxima transport for their own work should take it from its own repository
-and its author rather than from here. The same credit is beside the code, in
-android/maxima-core/NOTICE. See docs/MAXIMA-TRANSPORT.md.
+Copyright (c) 2026 eurobuddha. It is under the MIT License, whose full text is
+in android/maxima-core/LICENSE (copied from that repository at commit
+6c71fbfde539419bf06fe4e096aa9209fbad72a9, "License original Maxima and Parlons
+code under MIT", 2026-10-31), and is packed into every build beside the code as
+MAXIMA-LICENSE.txt. Its author confirmed to this project's owner, on 2026-11-02,
+that the licence covers the commit vendored here. It is not under this
+project's LICENSE, and the GPL is not put on it.
+
+Before that licence existed, the author was asked, on 2026-09-21, whether
+Mininotes may be published with this tree inside it and credited to them, and
+answered on 2026-09-22: "go for it", "with my blessing". That permission is
+kept here as history; the MIT License now governs the tree. The same credit is
+beside the code, in android/maxima-core/NOTICE. See docs/MAXIMA-TRANSPORT.md.
 
 SHA3-256 is not vendored: Android provides none at any version, and rather than
 take a cryptography library for one function, org.mininotes.android.Sha3 is an

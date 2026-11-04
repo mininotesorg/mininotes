@@ -125,7 +125,13 @@ final class Drop {
      *
      * @return {@link #FETCHING}, {@link #ASKING}, or 0 for nothing at all
      */
-    static int arriving(boolean paired,boolean mine){return !paired?0:mine?FETCHING:ASKING;}
+    static int arriving(boolean paired,boolean mine){return arriving(paired,mine,false);}
+
+    /**
+     * The same, with whether they are accepted without asking here (decision 269, {@link WithoutAsking}): then theirs are
+     * fetched at once too, as if Accept had been pressed. Never for a device not paired here.
+     */
+    static int arriving(boolean paired,boolean mine,boolean withoutAsking){return !paired?0:mine||withoutAsking?FETCHING:ASKING;}
 
     /**
      * The answer to an offer that came again, for a sending already settled here: the other device did not hear
@@ -169,6 +175,18 @@ final class Drop {
      */
     static boolean sayBack(long said,long now){return said<=0||now<said||now-said>=SAY_BACK;}
     static final long SAY_BACK=10*60_000L;
+
+    /**
+     * Whether "this device takes files" is said to a device in an upkeep round (decision 262): not to one that took it, this
+     * run or within the day before a restart (see Said), nor within ten minutes of the last try, nor while a device that
+     * could not be reached is left alone ({@link Said#rest}). It was said at every start, and to a device out of reach every
+     * ten minutes for as long as this one ran, on the Graphene 16 times in a run, each logged as not sent.
+     *
+     * @param told when it was last said to them, or 0 for never
+     */
+    static boolean tellNow(long told,boolean took,boolean resting,long now) {
+        return !took&&!resting&&!(told>0&&now>=told&&now-told<Said.TELL_AGAIN);
+    }
 
     /** Whether a sending is tried again now: offered, or its files fetched. The same clock as a note's files. */
     static boolean due(long tried,int tries,long now){return Enclosure.due(tried,tries,now);}

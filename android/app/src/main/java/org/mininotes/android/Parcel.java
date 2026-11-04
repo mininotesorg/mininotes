@@ -44,14 +44,25 @@ final class Parcel {
          * after the list of files, where a build from before stops reading, so it is said only where that list is.
          */
         final byte[] agreement;
+        /**
+         * "Not here" (decision 293; see {@link Sharing.Rule#here}): this entry, for this device, stands in place of what a folder
+         * above the thing or everything gives it. Said behind {@link #HERE_MARK}, and only to a build that has said it reads it
+         * ({@link Receipt#NOT_HERE}): to any other, such an entry is not on the list at all.
+         */
+        final boolean here;
         Member(String key,String address,String name,int level,long changed) {
             this(key,address,name,level,changed,null);
         }
         Member(String key,String address,String name,int level,long changed,byte[] agreement) {
+            this(key,address,name,level,changed,agreement,false);
+        }
+        Member(String key,String address,String name,int level,long changed,byte[] agreement,boolean here) {
             this.key=key==null?"":key;this.address=address==null?"":address;
             this.name=name==null?"":name;this.level=level;this.changed=changed;
-            this.agreement=agreement==null?new byte[0]:agreement;
+            this.agreement=agreement==null?new byte[0]:agreement;this.here=here;
         }
+        /** The same entry, "not here" or not. */
+        Member here(boolean here){return new Member(key,address,name,level,changed,agreement,here);}
     }
 
     /**
@@ -152,6 +163,15 @@ final class Parcel {
          * ink is, and said in the room the rest leaves.
          */
         java.util.List<StampCard.Row> stamps;
+        /**
+         * Only what changed since a revision the receiving device confirmed, in place of the whole text (decision 320; see
+         * {@link Delta}); null for a whole note. Where it is said the body is {@link Delta#IN_TAIL}, and the receiver rebuilds the text before
+         * anything else reads it. After the path, behind {@link Delta#MARK}, and only ever sealed for a device that has said
+         * it reads changes ({@link Receipt#CHANGES}): a build from before would stop at the mark and take the body as it is.
+         */
+        Delta change;
+        /** Whether a change was said at all: said and not read whole is a change refused, never an empty note. */
+        boolean changeSaid;
         Sent(String collection,String collectionName,String book,String bookName,
              String title,String body,boolean writes,java.util.List<Member> members,
              String scope,String target,boolean answer,long basedOn) {
@@ -246,6 +266,20 @@ final class Parcel {
     private static final int UNTIL_MARK=0x4d4e5431;     // "MNT1"
     /** Before the note's own colour and strength, after the path: see {@link Sent#colour}. */
     static final int LOOK_MARK=0x4d4e4c31;      // "MNL1"
+    /**
+     * Before which entries of the list are "not here" (decision 293; see {@link Member#here}), after the look, in a parcel and in
+     * a carton. Never sealed for a build that has not said it reads it, so one from before never meets a mark it stops at
+     * before the stamps that follow.
+     */
+    static final int HERE_MARK=0x4d4e5831;      // "MNX1"
+    /**
+     * Before the tab each file on the list is under (decision 299; see {@link Enclosure.Listed#tab}): the last thing in a
+     * parcel, after its stamps, so a build from before reads the stamps and then stops at a mark it does not know, at the end.
+     * Nothing at all where no file has a tab decided, so such a list is said byte for byte as before.
+     */
+    static final int TABS_MARK=0x4d4e5531;      // "MNU1"
+    /** Room for a tab's name: forty letters ({@link Sections#NAME_MOST}), each up to four bytes. */
+    static final int TAB_MOST=Sections.NAME_MOST*4;
     /** Room for an icon's name in the set, and for a picture: a square thumbnail of at most 32 KB (decision 4). */
     static final int ICON_MOST=64, IMAGE_MOST=32*1024;
 
@@ -253,6 +287,48 @@ final class Parcel {
 
     /** The parcel, with as many of its stamps as an envelope takes after it. */
     static byte[] wrap(Sent sent) throws IOException {return stamped(sent,bare(sent),Envelope.MAX_TEXT);}
+
+    /**
+     * Which tab each file on the list is under, behind {@link #TABS_MARK}: how many files, as many as the list says, then for
+     * each its tab and when that was decided. Empty where there is no list or no path (a parcel with no tail), or no file on
+     * it has a tab decided.
+     */
+    static byte[] tabs(Sent sent) {
+        if(sent.files==null||sent.path==null)return new byte[0];
+        int files=Math.min(sent.files.size(),Enclosure.FILES_MOST);
+        boolean any=false;
+        for(int at=0;at<files;at++)any|=sent.files.get(at).tabAt>0;
+        if(!any)return new byte[0];
+        ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+        try(DataOutputStream out=new DataOutputStream(bytes)) {
+            out.writeInt(TABS_MARK);out.writeInt(files);
+            for(int at=0;at<files;at++) {
+                Enclosure.Listed one=sent.files.get(at);
+                // A name too long for a tab line is no tab's: said as the first tab's.
+                String tab=one.tab==null||one.tab.getBytes(StandardCharsets.UTF_8).length>TAB_MOST?"":one.tab;
+                put(out,tab,TAB_MOST);out.writeLong(one.tab==null?0L:one.tabAt);
+            }
+        } catch(IOException cannot){return new byte[0];}
+        return bytes.toByteArray();
+    }
+
+    /**
+     * The tabs read, their mark read already, onto the list as it was read: whether they read whole. A count that is not the
+     * list's, or a name that does not read, leaves every file as it came, no tab said, as a build from before sent it.
+     */
+    static boolean readTabs(DataInputStream in,java.util.List<Enclosure.Listed> files) throws IOException {
+        if(files==null||in.available()<4)return false;
+        int many=in.readInt();
+        if(many!=files.size())return false;
+        String[] tab=new String[many];long[] when=new long[many];
+        for(int at=0;at<many;at++) {
+            tab[at]=get(in,TAB_MOST);
+            if(in.available()<8)return false;
+            when[at]=in.readLong();
+        }
+        for(int at=0;at<many;at++)if(when[at]>0)files.set(at,files.get(at).under(tab[at],when[at]));
+        return true;
+    }
 
     /** What a parcel says without its stamps. */
     private static byte[] bare(Sent sent) throws IOException {
@@ -332,6 +408,10 @@ final class Parcel {
                 if(sent.until>=0){out.writeInt(UNTIL_MARK);out.writeLong(sent.until);}
                 // Last: a build from before stops at a mark it does not know, and has read everything above by then.
                 if(sent.looks()){out.writeInt(LOOK_MARK);out.writeInt(sent.colour);out.writeInt(sent.tone);out.writeLong(sent.colourDecided);out.writeLong(sent.toneDecided);}
+                writeHeres(out,sent.members,many);
+                // Only what changed (decision 320): in the parcel itself, never cut for room as stamps are, since without it
+                // there is no text.
+                if(sent.change!=null){out.writeInt(Delta.MARK);sent.change.write(out);}
             }
         }
         out.flush();
@@ -347,6 +427,9 @@ final class Parcel {
      */
     static byte[] wrap(Sent sent,int most) throws IOException {
         Sent fitted=fitted(sent,most);
+        // A change rides after the path; a parcel cut down to no path would carry no text at all. The sender
+        // sends the note whole instead, having caught this; no words, since nobody is ever shown them.
+        if(sent.change!=null&&fitted.path==null)throw new IOException();
         return stamped(fitted,bare(fitted),most);
     }
 
@@ -356,10 +439,15 @@ final class Parcel {
      */
     private static byte[] stamped(Sent sent,byte[] parcel,int most) {
         if(sent.files==null||sent.path==null)return parcel;
-        byte[] with=StampCard.with(sent.stamps,most-parcel.length);
-        if(with.length==0)return parcel;
-        byte[] all=java.util.Arrays.copyOf(parcel,parcel.length+with.length);
+        // The files' tabs go last (decision 299), their room kept first: a few bytes a file, saying where each is shown. Where
+        // even they do not fit they are left unsaid, which changes nothing at the far end.
+        byte[] tabs=tabs(sent);
+        if(parcel.length+tabs.length>most)tabs=new byte[0];
+        byte[] with=StampCard.with(sent.stamps,most-parcel.length-tabs.length);
+        if(with.length==0&&tabs.length==0)return parcel;
+        byte[] all=java.util.Arrays.copyOf(parcel,parcel.length+with.length+tabs.length);
         System.arraycopy(with,0,all,parcel.length,with.length);
+        System.arraycopy(tabs,0,all,parcel.length+with.length,tabs.length);
         return all;
     }
 
@@ -385,8 +473,29 @@ final class Parcel {
             files==null?null:sent.history,files==null?null:sent.path,sent.icon,sent.image);
         lighter.ink=sent.ink;lighter.inkAt=sent.inkAt;lighter.until=sent.until;
         lighter.colour=sent.colour;lighter.tone=sent.tone;lighter.colourDecided=sent.colourDecided;lighter.toneDecided=sent.toneDecided;
-        lighter.stamps=sent.stamps;
+        lighter.stamps=sent.stamps;lighter.change=sent.change;lighter.changeSaid=sent.changeSaid;
         return lighter;
+    }
+
+    /**
+     * The same parcel, saying only what changed (decision 320): the body left empty, and the change behind its mark. Nothing
+     * else in it differs from the whole note's, so its list, files, path and look are taken exactly as they always were.
+     */
+    static Sent asChange(Sent sent,Delta change) {
+        Sent going=withText(sent,Delta.IN_TAIL);
+        going.change=change;going.changeSaid=true;
+        return going;
+    }
+
+    /** The same parcel with this text as its body and no change: a change rebuilt into the whole note it stands for. */
+    static Sent withText(Sent sent,String body) {
+        Sent whole=new Sent(sent.collection,sent.collectionName,sent.book,sent.bookName,sent.title,body,sent.writes,
+            sent.members,sent.scope,sent.target,sent.answer,sent.basedOn,sent.carries,sent.files,sent.filesAsOf,
+            sent.history,sent.path,sent.icon,sent.image);
+        whole.ink=sent.ink;whole.inkAt=sent.inkAt;whole.until=sent.until;
+        whole.colour=sent.colour;whole.tone=sent.tone;whole.colourDecided=sent.colourDecided;whole.toneDecided=sent.toneDecided;
+        whole.stamps=sent.stamps;
+        return whole;
     }
 
     /**
@@ -447,6 +556,9 @@ final class Parcel {
                 answer,basedOn,carries,files,asOf,history,path==null?null:path.steps,path==null?"":path.icon,
                 path==null?null:path.image);
             if(path!=null)tail(in,read);
+            // A body that says the change is in the tail is a change, whether or not the tail read that far: refused if it did
+            // not, never taken as the note's words (decision 320).
+            if(Delta.IN_TAIL.equals(body))read.changeSaid=true;
             return read;
         } catch(IOException | IllegalArgumentException broken) {
             // Half a parcel is not a parcel. Nothing partly read is handed back.
@@ -562,9 +674,47 @@ final class Parcel {
                     java.util.List<StampCard.Row> rows=StampCard.with(in);
                     if(rows==null)return;
                     into.stamps=rows;
+                } else if(mark==HERE_MARK) {
+                    if(!readHeres(in,into.members))return;
+                } else if(mark==TABS_MARK) {
+                    // Which tab each file is under (decision 299): see readTabs.
+                    if(!readTabs(in,into.files))return;
+                } else if(mark==Delta.MARK) {
+                    // Only what changed (decision 320). Said and not read whole leaves the change null: refused, and the whole
+                    // note asked for, never the body taken.
+                    into.changeSaid=true;
+                    into.change=Delta.read(in);
+                    if(into.change==null)return;
                 } else return;
             }
         } catch(IOException | IllegalArgumentException damaged){/* unsaid */}
+    }
+
+    /**
+     * Which entries of a list are "not here", behind {@link #HERE_MARK}: how many entries, then a byte each, 1 for "not here".
+     * Nothing at all where none is, so a list without one is said byte for byte as before.
+     */
+    static void writeHeres(DataOutputStream out,java.util.List<Member> members,int many) throws IOException {
+        boolean any=false;
+        for(int at=0;at<many;at++)any|=members.get(at).here;
+        if(!any)return;
+        out.writeInt(HERE_MARK);out.writeInt(many);
+        for(int at=0;at<many;at++)out.writeByte(members.get(at).here?1:0);
+    }
+
+    /**
+     * The same read, its mark read already, into the list as it was read: whether it read whole. A count that is not the list's,
+     * or a byte that is neither 0 nor 1, marks nobody: "not here" that does not read is not said, and the entry stays the rule
+     * that only adds it always was.
+     */
+    static boolean readHeres(DataInputStream in,java.util.List<Member> members) throws IOException {
+        if(in.available()<4)return false;
+        int many=in.readInt();
+        if(many!=members.size()||in.available()<many)return false;
+        boolean[] here=new boolean[many];
+        for(int at=0;at<many;at++){int one=in.readUnsignedByte();if(one>1)return false;here[at]=one==1;}
+        for(int at=0;at<many;at++)if(here[at])members.set(at,members.get(at).here(true));
+        return true;
     }
 
     /** A trace as the bytes it is written in: anything that is not one is written as nothing that matches. */

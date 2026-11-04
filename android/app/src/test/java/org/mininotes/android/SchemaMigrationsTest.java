@@ -553,6 +553,46 @@ public class SchemaMigrationsTest {
         assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP ")||upper.contains("CREATE "));
     }
 
+    @Test public void notHereIsOneColumnEveryRowStartsWithout() {
+        // Decision 293: "not here" on a sharing row, every row already there a rule that only adds (0), nothing else touched.
+        assertTrue(SchemaMigrations.VERSION>=59);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(58,59));
+        for(String sql:new String[]{fresh,step})assertTrue(sql.contains("ALTER TABLE shares ADD COLUMN here INTEGER NOT NULL DEFAULT 0"));
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP ")||upper.contains("CREATE "));
+    }
+
+    @Test public void theTabOfAFileIsATableOfItsOwnThatStartsEmpty() {
+        // Decision 299: every file already kept is under the first tab, by having no line; nothing already there changed.
+        assertTrue(SchemaMigrations.VERSION>=60);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(59,60));
+        for(String sql:new String[]{fresh,step})assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS filetab(id TEXT PRIMARY KEY, tab TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL DEFAULT 0)"));
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP ")||upper.contains("ALTER "));
+    }
+
+    @Test public void theHistoryIsATableOfItsOwnThatStartsEmpty() {
+        // Decision 305: ids and addresses only, never a title; nothing already there changed.
+        assertTrue(SchemaMigrations.VERSION>=61);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(60,61));
+        for(String sql:new String[]{fresh,step}) {
+            assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS history(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, kind TEXT NOT NULL, "
+                +"thing TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '', times INTEGER NOT NULL DEFAULT 1)"));
+            assertTrue(sql.contains("CREATE INDEX IF NOT EXISTS history_at ON history(at)"));
+        }
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP ")||upper.contains("ALTER "));
+    }
+
+    @Test public void theHistoryKeepsHowWhatReachedSomebodyWent() {
+        // Decision 322: one column, empty for every line already there, so they say what they said.
+        assertTrue(SchemaMigrations.VERSION>=62);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(61,62));
+        for(String sql:new String[]{fresh,step})assertTrue(sql.contains("ALTER TABLE history ADD COLUMN road TEXT NOT NULL DEFAULT ''"));
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+
     @Test public void downgradeIsRefusedRatherThanRewritingTheNotebook() {
         try{SchemaMigrations.upgrade(SchemaMigrations.VERSION,1);fail("Accepted a downgrade");}
         catch(IllegalArgumentException expected){assertTrue(expected.getMessage().contains("newer version"));}

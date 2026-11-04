@@ -56,8 +56,7 @@ final class DesktopProfile {
         DesktopUi.gap(you,14);
         // And the colour they see you in, beside the name (the owner, 2026-10-03: "make it easy to pick a writing colour").
         JPanel colour=DesktopUi.column();
-        DesktopUi.add(you,DesktopUi.body("Your colour"));DesktopUi.gap(you,4);DesktopUi.add(you,colour);DesktopUi.gap(you,6);
-        DesktopUi.add(you,DesktopUi.quiet("Everybody sees your round, and your writing, in it."));
+        DesktopUi.add(you,DesktopUi.body("Your colour"));DesktopUi.gap(you,4);DesktopUi.add(you,colour);
         app.inkRow(null,(mine,dots)->{colour.add(dots);colour.revalidate();colour.repaint();});
         DesktopUi.gap(you,14);
         DesktopUi.add(you,DesktopUi.body("This device"));DesktopUi.gap(you,4);DesktopUi.add(you,device);DesktopUi.gap(you,6);DesktopUi.add(you,deviceHelp);
@@ -80,7 +79,8 @@ final class DesktopProfile {
         DesktopUi.gap(you,14);
         JTextField parlons=new JTextField(24);parlons.setName("profileParlons");parlons.putClientProperty("JTextField.placeholderText",Parlons.HINT);
         parlons.getAccessibleContext().setAccessibleName("Your Parlons! address");
-        DesktopUi.Text parlonsHelp=DesktopUi.quiet("Your contacts get it by themselves, so they can chat with you in one tap.");
+        // Blank until a save says how it went: the address goes by itself, so nothing is said before (decision 302).
+        DesktopUi.Text parlonsHelp=DesktopUi.quiet(" ");
         JButton keepParlons=app.button("Save",()->{
             String typed=parlons.getText();
             String kept;try{kept=Parlons.address(typed);}catch(IllegalArgumentException wrong){parlonsHelp.setForeground(DesktopUi.WARN);parlonsHelp.setText(Say.t(wrong.getMessage()));return;}
@@ -180,7 +180,6 @@ final class DesktopProfile {
                 });
                 DesktopUi.add(devices,DesktopUi.switchRow(one.name,on));
             }
-            DesktopUi.add(devices,DesktopUi.note(Say.t("Those switched on receive the key, sealed for them, as soon as they are switched on and whenever it is saved.")));
             devices.revalidate();devices.repaint();
         },app::failed);
         // The lock lives in Security, which the bar shows at all times; here, where it stands and the way there.
@@ -225,7 +224,7 @@ final class DesktopProfile {
         DesktopUi.add(size,DesktopUi.note(Say.t("A line saying what it does, when the pointer rests on a menu entry or a button.")));
         JPanel body=DesktopUi.column();
         // Each part by its heading, for opening at one of them (decision 213): what to show at the top, and what to type in.
-        JPanel[] parts={you,codeCard,connection,people,integritas,size,lock,backup};
+        JPanel[] parts={codeCard,you,connection,people,integritas,size,lock,backup};
         java.util.Map<String,JComponent[]> sections=new java.util.HashMap<>();
         for(int i=0;i<parts.length;i++) {
             JPanel card=part(PARTS[i],ICONS[i],ABOUT[i],parts[i]);DesktopUi.add(body,card);DesktopUi.gap(body,DesktopUi.L);
@@ -236,12 +235,8 @@ final class DesktopProfile {
         sections.put("Describe what each thing does",new JComponent[]{describeRow,describe});
         JPanel foot=new JPanel(new BorderLayout(DesktopUi.M,0));foot.setOpaque(false);foot.add(outcome);
         JScrollPane scroll=DesktopUi.scrolling(body);scroll.setName("profileScroll");
-        // At the top, every part by its name, a link taking the page to it (the owner, 2026-10-21: "for now it is difficult to
-        // find what we are looking for"; decision 231).
-        JButton[] jumps=new JButton[PARTS.length];
-        for(int i=0;i<PARTS.length;i++){JComponent card=sections.get(PARTS[i])[0];jumps[i]=DesktopUi.link(PARTS[i],()->showAt(scroll,body,card,null));jumps[i].setName("profileJump "+PARTS[i]);}
-        JPanel jump=DesktopUi.actions(jumps);jump.setName("profileParts");jump.setAlignmentX(Component.LEFT_ALIGNMENT);
-        body.add(jump,0);body.add(Box.createVerticalStrut(DesktopUi.M),1);
+        // No links to the parts at the top any more: the cards, each with its symbol and name, are found by scrolling, and My
+        // code comes first (the owner, 2026-10-28: "put the code as the first element on the top ... remove the links"; decision 273).
         JDialog dialog=DesktopUi.sheet(over!=null?over:app.frame,"My profile",scroll,foot,false);box[0]=dialog;
         if(backTo!=null)DesktopUi.head(dialog,backTo,dialog::dispose,"My profile",null);
         AtomicBoolean busy=new AtomicBoolean();
@@ -275,11 +270,11 @@ final class DesktopProfile {
      * My profile's parts in their order, each with its symbol and a line saying what it holds (the owner, 2026-10-21: "In the
      * profile page, the sections need to be better delimited and labelled"; decision 231). The phone's are the same words.
      */
-    static final String[] PARTS={"You","Your code","Connection","People and devices",STAMPING,"Text size","Security","Backup"};
-    static final String[] ICONS={"user","qr-code","wifi","users","stamp","type","lock","database-backup"};
+    static final String[] PARTS={"Your code","You","Connection","People and devices",STAMPING,"Text size","Security","Backup"};
+    static final String[] ICONS={"qr-code","user","wifi","users","stamp","type","lock","database-backup"};
     static final String[] ABOUT={
-        "Your name, colour, picture and Parlons! address.",
         "What another device scans to pair with this PC.",
+        "Your name, colour, picture and Parlons! address.",
         "Whether this PC is connected, and its addresses.",
         "The people and devices you share with, and your groups.",
         "Your Integritas account, which stamps notes and files on Minima.",
@@ -328,7 +323,7 @@ final class DesktopProfile {
         if(!permanent.getText().equals(permanentText))permanent.setText(permanentText);
         // Only between the owner's devices there is no relay to count: the address is this PC's door at home.
         state.setText(value.onlyMine?(value.address.isEmpty()?"Only between your devices · not on a network":"Only between your devices · no relay")
-            :value.relays>0?"Connected · "+value.relays+(value.relays==1?" relay":" relays"):"Not connected: no relay has answered");
+            :value.relays==1?Say.t("Connected · 1 relay"):value.relays>1?Say.t("Connected · {0} relays",value.relays):"Not connected: no relay has answered");
         if(!value.pairing.equals(qr.getClientProperty("pairing"))) {
             if(value.pairing.isEmpty()){qr.setIcon(null);qr.setText("<html><div style='width:150px'>"+Say.t(value.onlyMine?"Your code appears here once this PC is on your home network.":"Your code appears here once this PC is connected.")+"</div></html>");}
             else try{qr.setText("");qr.setIcon(new ImageIcon(DesktopQr.draw(Pairing.link(value.pairing),216)));}catch(Exception e){qr.setText(Say.t("Could not draw QR code"));return;}

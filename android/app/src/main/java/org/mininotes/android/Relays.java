@@ -62,6 +62,33 @@ final class Relays {
 
     /** The two ways, the same words on both apps. */
     static final String ONLY_MINE="Only between my devices", HELPERS="Also through helpers when needed";
+
+    // ---- the same on all my devices (decision 316) ----------------------------------------------------------
+
+    /**
+     * The owner's relays and the public switch, taken by every device of theirs where this is on (the owner, 2026-11-02: "we should
+     * have a option to reflect that on all my devices"). On until switched off.
+     */
+    static final String SAME="The same on all my devices";
+    static final String SAME_MEANS="Your relays and the switch above go to your other devices, and a change made on one of them comes here.";
+    static final String SAME_ON="Your relays go to your other devices now", SAME_OFF="The relays here are this device's own now";
+    /** The name the relays travel under on a key card (see KeyCard). */
+    static final String CARD="relays";
+
+    /** The relays as they travel: the public switch on the first line, then one relay a line. */
+    static String toCard(boolean publicOn,List<String> own) {
+        StringBuilder out=new StringBuilder(publicOn?"public on":"public off");
+        for(String one:own)if(parse(one)!=null)out.append('\n').append(parse(one));
+        return out.toString();
+    }
+    /** The public switch a card says, on unless it says off. */
+    static boolean cardPublic(String card){return card==null||!card.startsWith("public off");}
+    /** The relays a card names, each one an address as this device keeps them, at most {@link #MOST}; anything else left out. */
+    static List<String> cardRelays(String card) {
+        if(card==null||card.isEmpty())return new ArrayList<>();
+        String[] lines=card.split("\n");
+        return fromKept(String.join("\n",java.util.Arrays.asList(lines).subList(1,lines.length)));
+    }
     /** The choice as kept: only the word "mine" keeps notes between the owner's devices, so a device that never saw this uses helpers. */
     static boolean onlyMine(String kept){return "mine".equals(kept);}
     static String kept(boolean onlyMine){return onlyMine?"mine":"helpers";}

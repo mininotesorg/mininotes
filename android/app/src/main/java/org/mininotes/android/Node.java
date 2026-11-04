@@ -99,6 +99,19 @@ final class Node {
         if(also==null)hosting(null);
     }
 
+    /** What should go the moment the node is up (decision 304). */
+    private static volatile Runnable onUp;
+
+    /**
+     * Something to do as soon as the node is up, and now if it already is (decision 304): a file added while the node was
+     * starting found it not running and waited for the next round, behind everything the round sends first (a screenshot
+     * shared into a stopped app reached the laptop 95 s later). It must not block: it is run on whichever thread started the node.
+     */
+    static void whenUp(Runnable then) {
+        onUp=then;
+        if(then!=null&&running())try{then.run();}catch(RuntimeException notNow){/* the next round does it */}
+    }
+
     private Node(){}
 
     /**
@@ -744,6 +757,8 @@ final class Node {
                 Thread one=new Thread(work,"mininotes-node-upkeep");one.setDaemon(true);return one;});
         }
         next();
+        Runnable up=onUp;
+        if(up!=null)try{up.run();}catch(RuntimeException notNow){/* the next round does it */}
     }
 
     /** The next round, as far off as whether anybody is looking allows. */
@@ -872,7 +887,8 @@ final class Node {
         synchronized(CHOOSING) {
             List<String> own=new java.util.ArrayList<>(ownRelays(where));
             if(!own.contains(hostPort))own.add(hostPort);
-            where.getSharedPreferences("node",Context.MODE_PRIVATE).edit().putString("relays",Relays.toKept(own)).apply();
+            where.getSharedPreferences("node",Context.MODE_PRIVATE).edit().putString("relays",Relays.toKept(own))
+                .putLong(RELAYS_AT,System.currentTimeMillis()).apply();
         }
         Relays.Choice chosen=chosenNow(where);
         return chosen!=null&&chosen.attached(hostPort);
@@ -883,7 +899,8 @@ final class Node {
         synchronized(CHOOSING) {
             List<String> own=new java.util.ArrayList<>(ownRelays(where));
             own.remove(hostPort);
-            where.getSharedPreferences("node",Context.MODE_PRIVATE).edit().putString("relays",Relays.toKept(own)).apply();
+            where.getSharedPreferences("node",Context.MODE_PRIVATE).edit().putString("relays",Relays.toKept(own))
+                .putLong(RELAYS_AT,System.currentTimeMillis()).apply();
         }
         chosenNow(where);
     }
@@ -891,9 +908,38 @@ final class Node {
     /** The switch: the public relays used as well, or only the owner's. Applied at once where sharing runs. */
     static void publicRelays(Context where,boolean on) {
         synchronized(CHOOSING) {
-            where.getSharedPreferences("node",Context.MODE_PRIVATE).edit().putString("public relays",on?"on":"off").apply();
+            where.getSharedPreferences("node",Context.MODE_PRIVATE).edit().putString("public relays",on?"on":"off")
+                .putLong(RELAYS_AT,System.currentTimeMillis()).apply();
         }
         chosenNow(where);
+    }
+
+    /**
+     * When the relays here were last chosen, here or on another device of the owner's (decision 316): what travels with them, so
+     * a device takes only a newer choice. 0 where nothing was ever chosen, and then nothing is sent.
+     */
+    private static final String RELAYS_AT="relays at";
+    static long relaysAt(Context where){return where.getSharedPreferences("node",Context.MODE_PRIVATE).getLong(RELAYS_AT,0L);}
+
+    /** Whether the relays chosen here go to the owner's other devices, and theirs are taken here. On until switched off. */
+    static boolean relaysSame(Context where){return !"off".equals(where.getSharedPreferences("node",Context.MODE_PRIVATE).getString("relays same","on"));}
+    /** Switched on, what is here is what goes: given a time if it never had one, so there is something to send. */
+    static void relaysSame(Context where,boolean on) {
+        long at=on&&relaysAt(where)==0L?System.currentTimeMillis():relaysAt(where);
+        where.getSharedPreferences("node",Context.MODE_PRIVATE).edit().putString("relays same",on?"on":"off").putLong(RELAYS_AT,at).apply();
+    }
+
+    /**
+     * The relays and the switch chosen on another device of the owner's, taken here as they are there, and applied to the running
+     * node on a thread of its own: attaching takes as long as a relay does, and this is called as the card is read. They were
+     * checked where they were added, so they are not dialled first here.
+     */
+    static void relaysFromMine(final Context where,boolean publicOn,List<String> own,long at) {
+        synchronized(CHOOSING) {
+            where.getSharedPreferences("node",Context.MODE_PRIVATE).edit().putString("relays",Relays.toKept(own))
+                .putString("public relays",publicOn?"on":"off").putLong(RELAYS_AT,at).apply();
+        }
+        new Thread(()->{try{chosenNow(where);}catch(RuntimeException notNow){/* read as the node starts */}},"mininotes-relays").start();
     }
 
     /**

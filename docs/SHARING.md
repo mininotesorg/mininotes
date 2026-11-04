@@ -553,6 +553,8 @@ It used to keep this phone's lines on the page and put the other phone's under V
 
 **Sync on a note sends it whole and asks for it whole**, whatever either phone believes the other has. What pressing Sync means is *make these the same*.
 
+**Only what changed travels, where both are known to hold the same text** (decision 320, 0.4.051). To a build that has said it reads changes (`Receipt.CHANGES`), a note goes as the stretches of lines replaced since the revision that device last confirmed it took, made against this device's exact copy of that revision (`Delta`, `NoteStore.keptAt`). The far end finds its own copy of that text by its SHA-256 (`NoteStore.keptAs`), rebuilds the whole note, checks the result's SHA-256, and from then on weighs it exactly as a whole note. A copy not found, or a result that does not match, takes nothing and asks for the note whole (`Receipt.ASK` naming it). Whole always: the first time, on Sync, under 2 KB, where the change would not be at most half, and to every build that has not said it reads changes.
+
 ## Everything a note has said
 
 Every note keeps its history: what it said, when that was kept, and where it came from — this phone, or the address that sent it. A version is kept when an editing session ends rather than at every keystroke, so the list reads as a history and not as a keystroke log, and a hundred of them are kept per note, which for text is nothing.

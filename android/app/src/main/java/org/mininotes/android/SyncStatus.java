@@ -135,7 +135,8 @@ final class SyncStatus {
             }
             // Named in the list and never paired here: which list, so the round can say where to take them off.
             Sharing.Rule listing=null;
-            for(Sharing.Rule rule:rules)if(rule.address.equals(address)&&Sharing.covers(rule,store.pathOf(id))){listing=rule;break;}
+            // A rule that stands, never "not here" (decision 293).
+            for(Sharing.Rule rule:Sharing.standingOn(rules,store.pathOf(id)))if(rule.address.equals(address)&&rule.level!=Sharing.Level.GONE){listing=rule;break;}
             String listedIn=listing==null?"":store.thingName(NoteStore.kindFor(listing.scope),listing.target);
             out.add(new Person(address,store.nameFor(address),owed.getOrDefault(address,SyncMark.GONE),false,listedIn,listing,waiting));
         }
@@ -188,7 +189,12 @@ final class SyncStatus {
      * What an amber mark is waiting for, in words, for the box a press on it opens: each device the thing reaches,
      * with its writing and its files added up over every note under it (see Waits).
      */
-    static String waits(NoteStore store,NoteStore.Branch.Kind kind,String id) {
+    static String waits(NoteStore store,NoteStore.Branch.Kind kind,String id){return waiting(store,kind,id).said();}
+
+    /** The same, as both the box shows it: the sentences (still what tells a box with nothing to press) and a row a device. */
+    record Waiting(String said,java.util.List<Waits.Row> rows) {}
+
+    static Waiting waiting(NoteStore store,NoteStore.Branch.Kind kind,String id) {
         var pages=store.pagesUnder(kind,id);
         java.util.Map<String,Waits.Where> sum=new java.util.LinkedHashMap<>();
         for(var note:store.whereEach(pages).values())
@@ -213,7 +219,8 @@ final class SyncStatus {
         }
         java.util.List<Waits.Device> devices=new java.util.ArrayList<>();
         for(var one:sum.entrySet())devices.add(new Waits.Device(store.nameFor(one.getKey()),one.getValue(),kept(one.getKey())));
-        return Waits.said(devices,kind==NoteStore.Branch.Kind.PAGE?1:pages.size());
+        int notes=kind==NoteStore.Branch.Kind.PAGE?1:pages.size();
+        return new Waiting(Waits.said(devices,notes),Waits.rows(devices,notes));
     }
 
     /**

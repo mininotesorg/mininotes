@@ -35,7 +35,10 @@ if ($Package) {
         --input (Join-Path $project 'build\package-input') `
         --main-jar "Mininotes-Windows-$version.jar" --main-class org.mininotes.android.Desktop `
         --java-options '-Dsun.awt.fontconfig=$APPDIR\fontconfig.properties' `
-        --add-modules java.base,java.desktop,java.sql,java.logging,java.naming,java.net.http,jdk.crypto.ec,jdk.unsupported
+        --add-modules java.base,java.desktop,java.sql,java.logging,java.naming,java.net.http,jdk.crypto.ec,jdk.unsupported,jdk.localedata `
+        --jlink-options '--strip-native-commands --strip-debug --no-man-pages --no-header-files --include-locales=en,fr,de,es,it,pt,ru,fa,hi,ja,zh'
+    # jdk.localedata, cut to the app's eleven languages: without it every language counted as English does, 21,727 for 21 727
+    # in French (the owner's screenshot, 2026-11-03; decision 319). jpackage's own jlink options are kept with it.
     if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed.' }
     $latest = WorkspacePath (Join-Path $project '..\dist\latest')
     $archived = WorkspacePath (Join-Path $project '..\dist\archive')
@@ -56,17 +59,13 @@ if ($Package) {
     }
     $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  Mininotes-Windows-$version.zip" | Set-Content -Encoding ascii "$archive.sha256"
-    # The app itself, ready to run, beside its zip - one folder, the EXE at its top - and a shortcut to it.
+    # The app itself, ready to run, beside its zip - one folder, the EXE at its top. The shortcut is not moved to it here: a
+    # build is not an install, and Mininotes reopened from the shortcut ran a build nobody had installed, with no backup
+    # before it (the owner, 2026-10-30: "switch to a new version only when you install it"). windows/use.ps1 moves it.
     $app = Join-Path $latest "Mininotes-Windows-$version"
     $app = WorkspacePath $app
     if (Test-Path -LiteralPath $app) { $app = WorkspacePath (Join-Path $latest "Mininotes-Windows-$version-$stamp") }
     Copy-Item (Join-Path $destination 'Mininotes') $app -Recurse
-    $shell = New-Object -ComObject WScript.Shell
-    $link = $shell.CreateShortcut((Join-Path $latest 'Mininotes.lnk'))
-    $link.TargetPath = (Resolve-Path (Join-Path $app 'Mininotes.exe')).Path
-    $link.WorkingDirectory = (Resolve-Path $app).Path
-    $link.Description = "Mininotes for Windows $version"
-    $link.Save()
     # The installer, beside the ZIP (the owner, 2026-10-22: "I installed the app on a second laptop using Mininotes.exe and
     # can't find it in apps, also nothing to uninstall"; decision 235): a real one, in Settings, Apps and uninstalled there.
     # The ZIP stays, the same as before: every PC already running an unzipped copy updates by it, and the website offers it.
@@ -107,13 +106,16 @@ if ($Package) {
             # --win-dir-chooser is there only because jpackage 17 then gives WiX its dialogs (WixUIExtension), which
             # Mininotes' pages are made of; main.wxs leaves out jpackage's pages, so no folder page is ever shown and the
             # folder stays the one --install-dir names.
+            # No --win-shortcut (decision 259, the owner, 2026-10-26: "we should have the option to create a desktop icon
+            # when installing on windows"): it put a desktop shortcut on every PC without asking. main.wxs makes it
+            # instead, when Create a desktop shortcut, ticked, on the installer's Shortcuts page, is left ticked.
             & (Join-Path $jdk 'bin\jpackage.exe') --type msi --app-image (Join-Path $msiImage 'Mininotes') --name Mininotes `
                 --app-version $appVersion --vendor Mininotes --dest $msiOut `
                 --description 'Mininotes, a paper pad for the people close to you' `
                 --icon (Join-Path $project 'build\icons\Mininotes.ico') --about-url 'https://mininotes.org' `
                 --resource-dir $installer --win-dir-chooser `
                 --win-per-user-install --install-dir 'Mininotes App' `
-                --win-menu --win-menu-group Mininotes --win-shortcut --win-upgrade-uuid $upgrade
+                --win-menu --win-menu-group Mininotes --win-upgrade-uuid $upgrade
             if ($LASTEXITCODE -ne 0) { throw 'The Windows installer (MSI) failed.' }
         } finally { $env:PATH = $path; Remove-Item Env:MININOTES_INSTALLER -ErrorAction SilentlyContinue }
         $made = @(Get-ChildItem $msiOut -File -Filter '*.msi')

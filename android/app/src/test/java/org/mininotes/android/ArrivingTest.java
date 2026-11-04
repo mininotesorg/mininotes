@@ -243,4 +243,36 @@ public class ArrivingTest {
         // And the counts first where they can decide.
         assertEquals(Arriving.What.OLDER,Arriving.weigh("Mine, later",5,"Agreed",2,"Agreed",2,true,false).what);
     }
+
+    @Test public void anOldCopyFromTheSameSenderIsNeverMergedBackIn() {
+        // The Pro and the PC both had 5078. A copy the PC sent hours before, at 4900, made against 4577, arrives late:
+        // without the agreement it would be merged against 4577 and bring back the rows changed since.
+        String here="=== Monday ===\nnew first row\nrest";
+        Arriving.Decision said=Arriving.weigh(here,5078,"=== Monday ===\nold first row",4577,
+            "=== Monday ===\nolder first row\nrest",4900,false,false,5078);
+        assertEquals(Arriving.What.OLDER,said.what);
+        assertNull(said.text);
+        assertEquals(5078,said.revision);
+        // At the agreement itself, or past it, it is weighed as before: the same count can name another text.
+        assertEquals(Arriving.What.NEWER,Arriving.weigh("A",5078,"A",5078,"A\nB",5079,false,false,5078).what);
+        assertEquals(Arriving.What.MERGED,Arriving.weigh("A\nX",5079,"A",5078,"A\nY",5080,false,false,5078).what);
+        // Never agreed: nothing is stale.
+        assertFalse(Arriving.stale(3,0));
+        assertTrue(Arriving.stale(3,4));
+        assertFalse(Arriving.stale(4,4));
+    }
+
+    @Test public void twoTextsEachDeviceHeldEndUpTheSameOnBoth() {
+        // A note at revision 20 on two devices, one empty and one with a line, each having held the other's: each
+        // used to take the other's as newer, for ever. Now both keep the same one.
+        Arriving.Decision onA=Arriving.weigh("",20,null,19,"a line",20,true,true);
+        Arriving.Decision onB=Arriving.weigh("a line",20,null,19,"",20,true,true);
+        String a=onA.what==Arriving.What.NEWER?onA.text:"";
+        String b=onB.what==Arriving.What.NEWER?onB.text:"a line";
+        assertEquals(a,b);
+        assertTrue(onA.what==Arriving.What.OLDER^onB.what==Arriving.What.OLDER);
+        // A higher count still wins where each held the other's.
+        assertEquals(Arriving.What.OLDER,Arriving.weigh("mine",21,null,19,"theirs",20,true,true).what);
+        assertEquals(Arriving.What.NEWER,Arriving.weigh("mine",20,null,19,"theirs",21,true,true).what);
+    }
 }

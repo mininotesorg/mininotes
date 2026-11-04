@@ -84,21 +84,74 @@ final class DesktopFileCards extends JPanel {
             // Which are stamped on Minima, and how far, for the mark on their cards (decision 224).
             java.util.Map<String,NoteStore.StampRow> stamped=new java.util.HashMap<>();
             for(NoteStore.Held file:files){List<NoteStore.StampRow> all=app.store.stampsOf(file.id);if(!all.isEmpty())stamped.put(file.id,all.get(0));}
-            return new Object[]{files,thumbs,app.store.fileStates(note,Node.onlyMine(app.context)),lengths,stamped};
+            return new Object[]{files,thumbs,app.store.fileStates(note,Node.onlyMine(app.context)),lengths,stamped,app.store.tabsOf(note)};
         },loaded->{
             if(!showing.equals(note))return;
-            @SuppressWarnings("unchecked") List<NoteStore.Held> files=(List<NoteStore.Held>)loaded[0];
+            @SuppressWarnings("unchecked") List<NoteStore.Held> given=(List<NoteStore.Held>)loaded[0];
             @SuppressWarnings("unchecked") java.util.Map<String,BufferedImage> thumbs=(java.util.Map<String,BufferedImage>)loaded[1];
             @SuppressWarnings("unchecked") java.util.Map<String,String> states=(java.util.Map<String,String>)loaded[2];
             @SuppressWarnings("unchecked") java.util.Map<String,Long> lengths=(java.util.Map<String,Long>)loaded[3];
             @SuppressWarnings("unchecked") java.util.Map<String,NoteStore.StampRow> stamped=(java.util.Map<String,NoteStore.StampRow>)loaded[4];
-            row.removeAll();faces.clear();
-            for(NoteStore.Held file:files)row.add(card(file,thumbs.get(file.id),Say.t(states.getOrDefault(file.id,"")),lengths.getOrDefault(file.id,-1L),stamped.get(file.id)));
+            @SuppressWarnings("unchecked") java.util.Map<String,String> tabs=(java.util.Map<String,String>)loaded[5];
+            // In the order of the note's tabs (the owner, 2026-10-30; decision 299): each tab's files after its name, quietly,
+            // where the note has more than one tab; the open tab's at the start of what is in view.
+            String body=note.equals(app.noteShown())?app.noteNow():"";
+            List<TabFiles.Group<NoteStore.Held>> groups=TabFiles.groups(body,given,f->tabs.get(f.id));
+            boolean headed=TabFiles.headed(body);
+            row.removeAll();faces.clear();heads.clear();fileTabs.clear();fileTabs.putAll(tabs);
+            for(TabFiles.Group<NoteStore.Held> group:groups) {
+                if(headed){JComponent head=head(group.called);heads.put(group.tab,head);row.add(head);}
+                for(NoteStore.Held file:group.files)row.add(card(file,thumbs.get(file.id),Say.t(states.getOrDefault(file.id,"")),lengths.getOrDefault(file.id,-1L),stamped.get(file.id)));
+            }
+            tabsShown=Sections.of(body).stream().map(s->TabFiles.key(s.name)).collect(java.util.stream.Collectors.toList());
             // Still playing if it is still here: the player finds its new card by the file's id.
             if(playing!=null&&!faces.containsKey(playing))stopPlaying();
-            drawn=files.size();
+            drawn=given.size();
             setVisible(open&&drawn>0);revalidate();repaint();if(getParent()!=null)getParent().revalidate();
+            toOpenTab();
         },app::failed);
+    }
+
+    /** Each tab's quiet name before its cards, by the tab's place; and the tabs as they were when the cards were drawn. */
+    private final java.util.Map<Integer,JComponent> heads=new java.util.HashMap<>();
+    private List<String> tabsShown=List.of();
+    /** The tab each card's file is under, as last read, for Move to tab. */
+    private final java.util.Map<String,String> fileTabs=new java.util.HashMap<>();
+
+    /** A tab's name before its files: quiet, at the height of a card, a thin rule before it so the groups read apart. */
+    private static JComponent head(String called) {
+        JLabel name=new JLabel(called);name.setName("fileTab");
+        name.setFont(DesktopUi.BODY.deriveFont(12.5f));name.setForeground(Desktop.QUIET);
+        name.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(0,1,0,0,DesktopUi.LINE),BorderFactory.createEmptyBorder(0,10,0,2)));
+        name.setVerticalAlignment(SwingConstants.TOP);
+        name.setPreferredSize(new Dimension(name.getPreferredSize().width,122));
+        return name;
+    }
+
+    /**
+     * The page's tabs drawn again: where they are not the ones the cards were grouped by (one added, renamed, moved, or the
+     * note's words arrived), the cards are drawn again; else the open tab's files are brought into view.
+     */
+    void tabsDrawn() {
+        if(showing.isEmpty()||!showing.equals(app.noteShown()))return;
+        List<String> now=Sections.of(app.noteNow()).stream().map(s->TabFiles.key(s.name)).collect(java.util.stream.Collectors.toList());
+        if(!now.equals(tabsShown)){tabsShown=now;show(showing);return;}
+        toOpenTab();
+    }
+
+    /** The row slid so the open tab's files, or the nearest after them, start what is in view. */
+    private void toOpenTab() {
+        if(heads.isEmpty())return;
+        List<Integer> order=new java.util.ArrayList<>(new java.util.TreeSet<>(heads.keySet()));
+        int open=app.tab,at=order.get(order.size()-1);
+        for(int one:order)if(one>=open){at=one;break;}
+        JComponent head=heads.get(at);
+        SwingUtilities.invokeLater(()->{
+            row.doLayout();
+            JViewport port=slide.getViewport();
+            int most=Math.max(0,row.getPreferredSize().width-port.getExtentSize().width);
+            port.setViewPosition(new java.awt.Point(Math.max(0,Math.min(head.getX()-4,most)),0));
+        });
     }
 
     /** The cards drawn again as they stand: a stamp sent, landed or found shows on its file's card (decision 224). */
@@ -246,6 +299,21 @@ final class DesktopFileCards extends JPanel {
         JMenuItem save=DesktopMenus.item("Save on my computer…");save.addActionListener(e->app.saveCopy(file));menu.add(save);
         JMenuItem send=DesktopMenus.item("Send to a device…");send.addActionListener(e->send(file));menu.add(send);
         JMenuItem move=DesktopMenus.item("Move to another note…");move.setEnabled(app.page.isEditable());move.addActionListener(e->app.home.intoNote(line));menu.add(move);
+        // Under another of the note's tabs (decision 299): each tab but the one it is under, where the note has more than one
+        // and this PC may write in it.
+        if(file.note.equals(app.noteShown())&&app.page.isEditable()) {
+            List<Sections.Section> tabs=Sections.of(app.noteNow());
+            if(tabs.size()>1) {
+                JMenu under=new JMenu(Say.t("Move to tab"));under.setName("moveToTab");
+                int now=TabFiles.under(fileTabs.get(file.id),tabs);
+                for(int i=0;i<tabs.size();i++) {
+                    if(i==now)continue;
+                    String called=tabs.get(i).called(i),key=TabFiles.key(tabs.get(i).name);
+                    JMenuItem one=DesktopMenus.plain(called);one.addActionListener(e->app.moveToTab(file,key,called));under.add(one);
+                }
+                menu.add(under);
+            }
+        }
         menu.addSeparator();
         JMenuItem delete=DesktopMenus.item("Move to bin");delete.setEnabled(app.page.isEditable());delete.addActionListener(e->delete(file));menu.add(delete);
         return menu;
@@ -255,14 +323,19 @@ final class DesktopFileCards extends JPanel {
      * Straight to one of the devices, in no note, as files dropped on the window go: a copy is taken out of the
      * notebook - opened on the way if it is locked - for the Send box, and deleted when Mininotes closes.
      */
-    void send(NoteStore.Held file) {
+    void send(NoteStore.Held file){send(List.of(file));}
+    /** Several at once, chosen together on Home or in a card (decision 292): one Send box for them all. */
+    void send(List<NoteStore.Held> files) {
         app.disk.submit(()->{
             Path room=Files.createTempDirectory("mininotes-");room.toFile().deleteOnExit();
-            Path copy=room.resolve(DesktopFiles.onDisk(file.name));
-            try(java.io.OutputStream out=Files.newOutputStream(copy)){DesktopFiles.copyOut(app.context,app.store.fileFor(file.id).toPath(),out);}
-            copy.toFile().deleteOnExit();
-            return copy;
-        },copy->DesktopDrops.send(app,List.of(copy)),app::failed);
+            List<Path> copies=new java.util.ArrayList<>();
+            for(NoteStore.Held file:files) {
+                Path copy=DesktopDragOut.free(room,file.name);
+                try(java.io.OutputStream out=Files.newOutputStream(copy)){DesktopFiles.copyOut(app.context,app.store.fileFor(file.id).toPath(),out);}
+                copy.toFile().deleteOnExit();copies.add(copy);
+            }
+            return copies;
+        },copies->DesktopDrops.send(app,copies),app::failed);
     }
 
     // ---- listening, without leaving the note ------------------------------------------------------------------

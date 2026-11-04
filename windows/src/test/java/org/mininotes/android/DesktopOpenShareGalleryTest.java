@@ -84,7 +84,10 @@ public class DesktopOpenShareGalleryTest {
         SwingUtilities.invokeAndWait(()->{try{shoot(box[0],"94-person-devices");}catch(Exception e){throw new RuntimeException(e);}});
     }
 
-    /** New, with what each thing is, from whom, when and where, and what can be done with it (decision 187). Made up. */
+    /**
+     * New, with what each thing is, from whom, when and where (decision 187), one line each: a click opens it, its right click
+     * says where it is or marks it seen, Mark all as seen at the foot (decision 298). Made up.
+     */
     @Test public void newSaysWhatEachIsAndWhatToDo() throws Exception {
         NoteStore.Held sheet=pad.store.addFileExact(Things.HOME,"Budget 2026.ods",null,new java.io.ByteArrayInputStream("PK made up".getBytes()));
         pad.store.getWritableDatabase().execSQL("UPDATE files SET fresh=1 WHERE id=?",new Object[]{sheet.id});
@@ -94,7 +97,10 @@ public class DesktopOpenShareGalleryTest {
         SwingUtilities.invokeAndWait(()->{for(Window w:Window.getWindows())if(w instanceof JDialog j&&j.isShowing())box[0]=j;});
         assertNotNull(box[0]);
         java.util.List<String> said=new java.util.ArrayList<>();SwingUtilities.invokeAndWait(()->texts(box[0],said));
-        for(String one:new String[]{"Open","Show where it is","Mark as seen","Mark all as seen"})assertTrue(one+": "+said,said.contains(one));
+        assertTrue("its name: "+said,said.contains("Budget 2026.ods"));
+        assertTrue("what it is and where, under it: "+said,said.stream().anyMatch(one->one.startsWith("File")&&one.endsWith("Home")));
+        assertTrue(said.contains("Mark all as seen"));
+        assertFalse("no buttons under each one any more: "+said,said.contains("Show where it is"));
         SwingUtilities.invokeAndWait(()->{try{shoot(box[0],"96-new");}catch(Exception e){throw new RuntimeException(e);}});
     }
 

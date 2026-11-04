@@ -51,16 +51,28 @@ final class Enclosure {
     /** One file as the list names it. The manifest is empty while it has not gone up, or cannot. */
     static final class Listed {
         final String id,name,kind,manifest; final long bytes;
+        /**
+         * The note's tab it is under at the sender's end, as {@link TabFiles#key} keeps it, and when that was decided there
+         * (decision 299); null and 0 where the sender did not say, a build from before tabs had files, which changes nothing
+         * here. Said behind its own mark after everything a build from before reads (see {@link Parcel}).
+         */
+        final String tab; final long tabAt;
         Listed(String id,String name,String kind,long bytes,String manifest) {
+            this(id,name,kind,bytes,manifest,null,0L);
+        }
+        Listed(String id,String name,String kind,long bytes,String manifest,String tab,long tabAt) {
             this.id=id==null?"":id;this.name=name==null?"":name;this.kind=kind==null?"":kind;
             this.bytes=bytes;this.manifest=manifest==null?"":manifest;
+            this.tab=tab;this.tabAt=tab==null?0L:Math.max(0L,tabAt);
         }
+        /** The same file, under that tab. */
+        Listed under(String tab,long at){return new Listed(id,name,kind,bytes,manifest,tab,at);}
         /** Whether there is anywhere to fetch it from. */
         boolean fetchable(){return !manifest.isEmpty()&&travels(bytes)&&plainId(id);}
         /** Named as taken out of the note at the sender's end, in its bin there (decision 206): to be taken out here too. */
         boolean takenOut(){return TAKEN_OUT.equals(manifest);}
         /** The same file, named but not yet said where to find. */
-        Listed unsaid(){return new Listed(id,name,kind,bytes,"");}
+        Listed unsaid(){return new Listed(id,name,kind,bytes,"",tab,tabAt);}
     }
 
     /** What one arriving list asks of this device. */

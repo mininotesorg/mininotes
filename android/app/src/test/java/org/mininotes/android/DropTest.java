@@ -245,4 +245,27 @@ public class DropTest {
         assertTrue("and A knows B does, so what waited for B goes",knows[0]);
         assertEquals("said three times in all, and then quiet",3,said[0]);
     }
+
+    /**
+     * "Said this device takes files: not sent (IllegalStateException)", logged every ten minutes on both the Graphene and the
+     * PC (decision 262): with notes only between the owner's devices, a device not in reach makes Direct.send throw
+     * Direct.WAITS (OnlyMineTest), and this was said to it again at each round ten minutes on, unlike every other receipt,
+     * which rests a device that could not be reached and keeps what was taken within the day. Now it is the same.
+     */
+    @Test public void takesFilesIsSaidOnceAndAnUnreachedDeviceIsLeftAlone() {
+        long now=1_760_000_000_000L;
+        assertTrue("never told",Drop.tellNow(0,false,false,now));
+        assertFalse("taken, this run or within the day before a restart: never again",Drop.tellNow(now-Said.KEEP/2,true,false,now));
+        assertFalse("tried a moment ago",Drop.tellNow(now-60_000,false,false,now));
+        assertTrue("ten minutes on, not taken",Drop.tellNow(now-Said.TELL_AGAIN,false,false,now));
+        assertFalse("but not while a device out of reach is left alone",Drop.tellNow(now-Said.TELL_AGAIN,false,true,now));
+        // Out of reach again and again: tried after a minute, two, four... at most every half hour, not every ten minutes.
+        int tries=0;long missedAt=0;int misses=0;long told=0;
+        for(long at=now;at<now+160*60_000L;at+=30_000) {
+            boolean resting=Said.resting(missedAt,misses,at);
+            if(!Drop.tellNow(told,false,resting,at))continue;
+            told=at;tries++;missedAt=at;misses++;
+        }
+        assertTrue("in 2 h 40 min, far fewer than the 16 tries of before: "+tries,tries<=9);
+    }
 }

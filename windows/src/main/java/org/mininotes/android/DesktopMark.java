@@ -33,11 +33,17 @@ final class DesktopMark implements Icon {
      * ({@link NoteStore#inside}): whether anything under it reaches anybody, is owed, or is not taken in here.
      * On the disk thread.
      */
+    /** The key the whole notebook's mark is read under. */
+    static final String WHOLE="mininotes.whole";
     static Map<String,SyncMark> read(NoteStore store) {
         Map<String,SyncMark> marks=new HashMap<>();
         walk(store,store.inside(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING).holds,marks,new HashSet<>());
         // And Temp's, for its card: the worst of what is in it that reaches anybody (the owner, 2026-10-14).
         marks.put(NoteStore.TEMP,store.markOf(NoteStore.Branch.Kind.TEMP,NoteStore.TEMP));
+        // And the whole notebook's, for the top bar, as the phone's Home wears it: the worst of everything shared, with every
+        // device it reaches (the owner, 2026-10-28: "why dont we have the equivalent of this arrow on desktop?"; decision 275).
+        marks.put(WHOLE,SyncMark.of(store.pausedHere(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING),!store.shares().isEmpty(),false,
+            SyncMark.worst(store.marksUnder(NoteStore.Branch.Kind.LIBRARY,Sharing.EVERYTHING))));
         return marks;
     }
 

@@ -46,10 +46,30 @@ final class Sharing {
 
     /** What a device of mine with no bond with everything is said to have, and under it what that means. */
     static final String NOTHING_YET="Nothing yet";
-    static final String NOTHING_YET_DOES="One of your devices. It gets what you share with it, and Temp. Choose here what it may do with everything.";
+    // Said plainly (the owner, 2026-10-30, of "et Temp": "I dont get why we say 'et Temp' here, what does it mean"; decision 293).
+    static final String NOTHING_YET_DOES="One of your devices. It gets only Temp and what you share with it. Choose here what it may do with everything else.";
 
-    /** What a role on everything lets one of my devices do, where it is chosen: Can write or Can read, of everything here. */
+    /**
+     * Said on a Share box where somebody was taken away from this thing though what holds it gives it to them ("not here",
+     * decision 293), and what that means; choosing what they may do gives it back.
+     */
+    static final String REMOVED_HERE="Removed here";
+    static final String REMOVED_HERE_DOES="Taken away here, though what it is in gives it to them. Choose what they may do to give it back.";
+    /** Under the pointer on a line through a folder or everything, which may be changed for this thing alone (decision 293). */
+    static final String CHANGED_HERE="{0} Changed here, it changes for this one only.";
+    /** What Remove on a thing's Share box asks with (decision 293): it takes this one, and nothing else they have. */
+    static final String REMOVE_HERE_SAYS="They stop getting this one, and keep everything else they have. Their copy stays on their device, and they are told.";
+    /** What Remove on a device of mine's bond asks with (decision 293): it ends its access to everything, said so. */
+    static final String REMOVE_EVERYTHING="Remove access to everything?";
+    static final String REMOVE_EVERYTHING_SAYS="{0} will no longer get everything of yours, only Temp and what you share with it. Its copy stays on it.";
+
+    /**
+     * What a role on everything lets one of my devices do, where it is chosen: Admin, Can write or Can read, of everything here.
+     * Admin is back among them (the owner, 2026-10-30: "it's better to keep them with the 3 levels, admin, write, read";
+     * decision 293, undoing decision 180's two).
+     */
     static String everythingDoes(Level level) {
+        if(level==Level.ADMIN)return "Everything here. It can read it, change it and share it.";
         if(level==Level.WRITE)return "Everything here. It can read it and change it.";
         if(level==Level.READ)return "Everything here. It can see it and get changes.";
         return level==null?NOTHING_YET_DOES:level.does();
@@ -181,21 +201,34 @@ final class Sharing {
         final long changed;
         /** The device this is about, by the key it signs with: an address moves, a key does not. */
         final String key;
+        /**
+         * "Not here" (decision 293; the owner agreed 2026-10-11 and 2026-10-30): set on this thing alone, for this device it
+         * stands in place of every rule on a folder above the thing or on everything, so somebody can be taken away below a
+         * folder (at GONE) or given less there than the folder gives (at a level). A rule without it only adds, the most of all
+         * of them standing, which is what every rule written before it still does. Kept as a flag on the row rather than as a
+         * level of its own: a level travels as a number, and a build from before reads any number past Admin as Admin.
+         */
+        final boolean here;
         Rule(Scope scope,String target,String address,boolean mine) {
             this(scope,target,address,mine?Level.WRITE:Level.READ,0L,"");
         }
         Rule(Scope scope,String target,String address,Level level,long changed,String key) {
+            this(scope,target,address,level,changed,key,false);
+        }
+        Rule(Scope scope,String target,String address,Level level,long changed,String key,boolean here) {
             this.scope=Objects.requireNonNull(scope);this.target=Objects.requireNonNull(target);
             this.address=Objects.requireNonNull(address);
             this.level=level==null?Level.READ:level;this.mine=this.level.writes();
             this.changed=changed;this.key=key==null?"":key;
+            // Never on everything: nothing is above it to stand in place of.
+            this.here=here&&scope!=Scope.LIBRARY;
         }
         @Override public boolean equals(Object other) {
             if(!(other instanceof Rule))return false;
             Rule r=(Rule)other;return scope==r.scope&&target.equals(r.target)&&address.equals(r.address);
         }
         @Override public int hashCode(){return Objects.hash(scope,target,address);}
-        @Override public String toString(){return scope+" "+target+" -> "+address+(mine?" (my device)":"");}
+        @Override public String toString(){return scope+" "+target+" -> "+address+(mine?" (my device)":"")+(here?" (not here)":"");}
     }
 
     /**
@@ -212,8 +245,9 @@ final class Sharing {
      */
     static Map<String,Boolean> audience(Collection<Rule> rules,java.util.List<String> path) {
         Map<String,Boolean> reached=new LinkedHashMap<>();
-        for(Rule rule:rules) {
-            if(!covers(rule,path))continue;
+        for(Rule rule:standingOn(rules,path)) {
+            // Taken away here (decision 293): the one kind of row at GONE handed in with the rules, and it reaches nobody.
+            if(rule.level==Level.GONE)continue;
             Boolean mine=reached.get(rule.address);
             reached.put(rule.address,rule.mine||(mine!=null&&mine));
         }
@@ -237,14 +271,65 @@ final class Sharing {
     /** The same, along a path: see {@link #audience(Collection,java.util.List)}. */
     static Rule standing(Collection<Rule> rules,java.util.List<String> path,Collection<String> addresses,String key) {
         Rule most=null;
-        for(Rule rule:rules) {
-            if(!covers(rule,path))continue;
+        for(Rule rule:standingOn(rules,path)) {
             boolean them=(addresses!=null&&addresses.contains(rule.address))
                 ||(key!=null&&!key.isEmpty()&&key.equals(rule.key));
             if(!them)continue;
             if(most==null||rule.level.ordinal()>most.level.ordinal())most=rule;
         }
         return most;
+    }
+
+    /**
+     * The same, on whatever holds the thing at the end of {@code path} and not on the thing itself: what a device has from a
+     * folder above or from everything, which "not here" on the thing stands in place of (decision 293). Null where nothing
+     * above names them.
+     */
+    static Rule above(Collection<Rule> rules,java.util.List<String> path,Collection<String> addresses,String key) {
+        if(path==null||path.isEmpty())return null;
+        return standing(rules,path.subList(0,path.size()-1),addresses,key);
+    }
+
+    /**
+     * Whether a choice made on one thing for one device is written as "not here" (decision 293): where whatever holds the
+     * thing gives them more than was chosen, Remove included, since a rule that only adds could not take that away. Where it
+     * gives them as much or less, the choice is a rule like any other, so choosing a level again lifts "not here" by itself.
+     *
+     * @param above what they have from above, or null for nothing
+     */
+    static boolean here(Level chosen,Level above) {
+        return chosen!=null&&above!=null&&chosen.ordinal()<above.ordinal();
+    }
+
+    /**
+     * Every rule that applies along a path, less those that "not here" sets aside (decision 293): for each device, a rule
+     * marked {@link Rule#here} on a thing stands in place of every rule for the same device, by address or by key, on what
+     * holds that thing, the folders above it and everything. Rules on that thing itself or on anything inside it still
+     * count, the most of them standing as before. With no such rule, every rule that covers the path, as it always was.
+     */
+    static java.util.List<Rule> standingOn(Collection<Rule> rules,java.util.List<String> path) {
+        Map<String,Integer> byAddress=new java.util.HashMap<>(),byKey=new java.util.HashMap<>();
+        for(Rule rule:rules) {
+            if(!rule.here||!covers(rule,path))continue;
+            int at=depth(rule,path);
+            byAddress.merge(rule.address,at,Math::max);
+            if(!rule.key.isEmpty())byKey.merge(rule.key,at,Math::max);
+        }
+        java.util.List<Rule> standing=new java.util.ArrayList<>();
+        for(Rule rule:rules) {
+            if(!covers(rule,path))continue;
+            if(!byAddress.isEmpty()) {
+                int from=Math.max(byAddress.getOrDefault(rule.address,-1),rule.key.isEmpty()?-1:byKey.getOrDefault(rule.key,-1));
+                if(depth(rule,path)<from)continue;
+            }
+            standing.add(rule);
+        }
+        return standing;
+    }
+
+    /** How far down a path a rule that covers it was set: -1 for everything, above all of it, else its target's place. */
+    private static int depth(Rule rule,java.util.List<String> path) {
+        return rule.scope==Scope.LIBRARY?-1:path.lastIndexOf(rule.target);
     }
 
     /** True when a rule set at its level applies to this page. A rule for another target must never apply. */

@@ -2,6 +2,7 @@ package org.mininotes.android;
 
 import java.io.*;
 import java.nio.file.*;
+import java.util.List;
 import org.mininotes.desktop.platform.content.Context;
 import org.mininotes.desktop.platform.util.Log;
 
@@ -60,6 +61,23 @@ final class DesktopFiles {
     static void keepArriving(Path folder,byte[] message) {
         try{Path inbox=folder.resolve("inbox");Files.createDirectories(inbox);Files.write(inbox.resolve(System.currentTimeMillis()+"-"+Integer.toHexString(java.util.Arrays.hashCode(message))),message);}
         catch(IOException full){/* nothing to say it to: the sender tries again until it is answered */}
+    }
+
+    /** What waits in the inbox, oldest first, each to be taken in on its own with {@link #takeInOne}. */
+    static List<Path> waiting(Context context) {
+        Path inbox=context.getFilesDir().toPath().resolve("inbox");
+        if(!Files.isDirectory(inbox))return List.of();
+        try(var list=Files.list(inbox)){return list.sorted().toList();}
+        catch(IOException e){return List.of();/* the next opening tries again */}
+    }
+
+    /** One message that waited, taken in, then let go once it has landed. Whether it landed. */
+    static boolean takeInOne(Context context,NoteStore store,Keys keys,Path one) {
+        if(!Files.isRegularFile(one))return false;
+        boolean landed=false;
+        try{landed=Post.arrived(context,store,keys,Files.readAllBytes(one))!=null;}catch(Exception unreadable){/* not ours */}
+        try{Files.deleteIfExists(one);}catch(IOException e){/* taken in again next time, and weighed as already here */}
+        return landed;
     }
 
     /** Everything that waited, taken in, oldest first. How many landed. */

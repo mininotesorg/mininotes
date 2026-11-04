@@ -12,7 +12,7 @@ import java.util.List;
  * types, so the version rules are unit tested without a device.
  */
 final class SchemaMigrations {
-    static final int VERSION=58;
+    static final int VERSION=62;
 
     /** Every pad starts with one collection holding one book, so writing never begins with a decision. */
     static final String FIRST_COLLECTION="collection-first", FIRST_BOOK="book-first";
@@ -868,6 +868,35 @@ final class SchemaMigrations {
         "ALTER TABLE stamped ADD COLUMN nfttx TEXT NOT NULL DEFAULT ''",
     };
 
+    /**
+     * "Not here" (decision 293; see {@link Sharing.Rule#here}): a row on one thing that, for its device, stands in place of
+     * every rule on a folder above it or on everything. Every row there is now is a rule that only adds, as before.
+     */
+    private static final String[] NOT_HERE={
+        "ALTER TABLE shares ADD COLUMN here INTEGER NOT NULL DEFAULT 0",
+    };
+
+    /**
+     * The tab of its note each file is under, by the tab's name, empty for a first tab with none of its own, and when that was
+     * decided (decision 299; see {@link TabFiles}). A table of its own by the file's id rather than columns of {@code files}:
+     * a file's row is written whole again when it is kept again (a recording, a stamp's report), which would forget its tab,
+     * and the tab of a file still waiting to be fetched is kept before it has a row. A file with no line here is under the
+     * first tab, as every file already kept is.
+     */
+    private static final String[] FILE_TABS={
+        "CREATE TABLE IF NOT EXISTS filetab(id TEXT PRIMARY KEY, tab TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL DEFAULT 0)",
+    };
+    // What Mininotes did, for the History page (decision 305): ids and addresses only, never a title or a word of a note.
+    private static final String[] HISTORY={
+        "CREATE TABLE IF NOT EXISTS history(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, kind TEXT NOT NULL, "
+            +"thing TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '', times INTEGER NOT NULL DEFAULT 1)",
+        "CREATE INDEX IF NOT EXISTS history_at ON history(at)",
+    };
+    // How what reached somebody went: direct, left at the PC, or the relays that took it (decision 322; see Routes.road).
+    private static final String[] HISTORY_ROAD={
+        "ALTER TABLE history ADD COLUMN road TEXT NOT NULL DEFAULT ''",
+    };
+
     /** STEPS[i] upgrades a database at version i+1 to version i+2. */
     private static final String[][] STEPS={
         {VIEW_INDEX},
@@ -984,6 +1013,14 @@ final class SchemaMigrations {
         STAMPED,
         // 57 -> 58: the NFT of a verification, kept with its stamps (decision 224).
         STAMP_NFT,
+        // 58 -> 59: somebody taken away below a folder, or given less there (decision 293).
+        NOT_HERE,
+        // 59 -> 60: the tab of its note each file is under (decision 299).
+        FILE_TABS,
+        // 60 -> 61: what Mininotes did, for the History page (decision 305).
+        HISTORY,
+        // 61 -> 62: how what reached somebody went (decision 322).
+        HISTORY_ROAD,
     };
 
     /** The one collection and the one book a pad cannot be without, for a restore that carries neither. */
@@ -1049,6 +1086,10 @@ final class SchemaMigrations {
         Collections.addAll(statements,TAKEN_OUT);
         Collections.addAll(statements,STAMPED);
         Collections.addAll(statements,STAMP_NFT);
+        Collections.addAll(statements,NOT_HERE);
+        Collections.addAll(statements,FILE_TABS);
+        Collections.addAll(statements,HISTORY);
+        Collections.addAll(statements,HISTORY_ROAD);
         return statements;
     }
 

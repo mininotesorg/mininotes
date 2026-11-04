@@ -20,7 +20,11 @@ final class DesktopLook {
      * 18-point page it always had and the ladder moves five rungs either way from there, as on the phone.
      */
     static final int[] PHONE={11,12,14,15,17,19,21,24,26,29};
-    static final int FIRST=4;
+    /**
+     * A new PC's notes at the 4th rung (the owner, 2026-10-31: "I want new notes to be at the 4th bar by default when opening";
+     * decision 309). The phone keeps its own, the 5th.
+     */
+    static final int FIRST=3;
     static float size(int rung){return PHONE[clamp(rung)]*18f/17f;}
     static int clamp(int rung){return Math.max(0,Math.min(PHONE.length-1,rung));}
 
@@ -31,7 +35,8 @@ final class DesktopLook {
     static int rung(Context context) {
         var kept=context.getSharedPreferences("settings",0);
         try{String now=kept.getString("rung","");if(!now.isEmpty())return clamp(Integer.parseInt(now));}catch(NumberFormatException e){/* the older setting, or the middle */}
-        try{int old=Integer.parseInt(kept.getString("textSize","1"));return new int[]{2,4,6,7}[Math.max(0,Math.min(3,old))];}
+        // Only a PC that has the older setting: one that never had it read it as "1", the 5th rung, and so never started at FIRST.
+        try{String older=kept.getString("textSize","");if(older.isEmpty())return FIRST;int old=Integer.parseInt(older);return new int[]{2,4,6,7}[Math.max(0,Math.min(3,old))];}
         catch(NumberFormatException e){return FIRST;}
     }
     static void keepRung(Context context,int rung){context.getSharedPreferences("settings",0).edit().putString("rung",Integer.toString(clamp(rung))).apply();}

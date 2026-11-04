@@ -155,7 +155,12 @@ final class DesktopDrops {
     static class Dropping extends TransferHandler {
         private final java.util.function.Consumer<List<Path>> then;
         Dropping(java.util.function.Consumer<List<Path>> then){this.then=then;}
-        @Override public boolean canImport(TransferSupport support){return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);}
+        @Override public boolean canImport(TransferSupport support) {
+            if(!support.isDataFlavorSupported(DataFlavor.javaFileListFlavor))return false;
+            // A copy, Shift or not, as on the window (decision 292): they are read after the drop has ended.
+            if(support.isDrop()&&(support.getSourceDropActions()&COPY)!=0)support.setDropAction(COPY);
+            return true;
+        }
         @Override public boolean importData(TransferSupport support) {
             if(!canImport(support))return false;
             try {
@@ -180,8 +185,8 @@ final class DesktopDrops {
         /** The one line the bar says while they are held over it. */
         String hint(boolean readOnly) {
             if(does==BOX)return "Drop to send to a device";
-            if(does==KEEP)return NoteStore.home(note)?"Drop to keep on Home":"Drop to keep with “"+name+"”";
-            return readOnly?"This note is read only here":"Drop to attach to “"+name+"”";
+            if(does==KEEP)return NoteStore.home(note)?"Drop to keep on Home":Say.t("Drop to keep with “{0}”",name);
+            return readOnly?"This note is read only here":Say.t("Drop to attach to “{0}”",name);
         }
     }
 
@@ -267,6 +272,11 @@ final class DesktopDrops {
         private static boolean files(TransferSupport support){return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);}
         @Override public boolean canImport(TransferSupport support) {
             if(!files(support))return picture(pad,support)!=null||onHome(pad,support)||was!=null&&was.canImport(support);
+            // Our own files on their way out (DesktopDragOut) are not taken back in as new ones, let go on the window again.
+            if(support.isDrop()&&DesktopDragOut.going)return false;
+            // Taken as a copy, Shift or not (decision 292): Explorer may take a move as done and its files away, while they are
+            // still being read in here, one by one, after the drop has ended. The originals are left where they were.
+            if(support.isDrop()&&(support.getSourceDropActions()&COPY)!=0)support.setDropAction(COPY);
             // No caret or row chosen under them: what they would go to is lit instead, and said in the bar.
             if(support.isDrop()){support.setShowDropLocation(false);over(pad,aim(pad,support.getComponent(),support.getDropLocation().getDropPoint()));}
             return true;
@@ -436,7 +446,9 @@ final class DesktopDrops {
         pad.network.submit(()->{
             if(yes)Post.takeSending(pad.context,pad.store,pad.keys,one.id);else Post.refuseSending(pad.context,pad.store,pad.keys,one.id);
             return null;
-        },done->{pad.status.setText(yes?Say.t("Accepted. The files are coming from {0}…",one.name):Say.t("Refused. {0} is told.",one.name));pad.refresh();},pad::failed);
+        },done->{pad.status.setText(yes?Say.t("Accepted. The files are coming from {0}…",one.name):Say.t("Refused. {0} is told.",one.name));pad.refresh();
+            // Accepted by hand: offered, once, that what they send comes in without asking (decision 269).
+            if(yes)pad.offerWithoutAsking(one.address);},pad::failed);
     }
 
     private static final java.time.format.DateTimeFormatter WHEN=java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm");
@@ -471,7 +483,7 @@ final class DesktopDrops {
                     } else {
                         int here=0;for(NoteStore.Loose f:one.files)if(f.here)here++;
                         JButton stop=DesktopUi.button("Stop",()->{box[0].dispose();answer(pad,one,false);});
-                        JPanel line=DesktopUi.row(DesktopUi.person(one.name,Drop.files(one.files.size())+" coming  ·  "+here+" here so far"),stop);
+                        JPanel line=DesktopUi.row(DesktopUi.person(one.name,Say.t("{0} coming  ·  {1} here so far",Drop.files(one.files.size()),here)),stop);
                         DesktopMenus.echoOnRightClick(line,stop);waiting.add(line);
                     }
                 }
@@ -482,12 +494,12 @@ final class DesktopDrops {
                 String state=Drop.state(one.state,one.name,takes.contains(one.address));
                 boolean going=Drop.goingOn(one.state);
                 JButton remove=DesktopUi.button(going?"Stop sending":"Remove",()->{
-                    if(going&&!DesktopUi.confirm(box[0],"Stop sending?","The "+Drop.files(one.files.size())+" for "+one.name+" are not offered again.","Stop sending",true))return;
+                    if(going&&!DesktopUi.confirm(box[0],"Stop sending?",Say.t("The {0} for {1} are not offered again.",Drop.files(one.files.size()),one.name),"Stop sending",true))return;
                     pad.disk.submit(()->{Post.stopSending(pad.context,pad.store,one.id);return null;},done->{box[0].dispose();sentFiles(pad);},pad::failed);});
                 JPanel line=DesktopUi.row(DesktopUi.person(one.name,Drop.files(one.files.size())+"  ·  "+when(one.at)+"  ·  "+state),remove);
                 DesktopMenus.echoOnRightClick(line,remove);went.add(line);
             }
-            if(sent.isEmpty())DesktopUi.add(went,DesktopUi.note("Nothing sent from this PC yet. Files go to another device from ⋯ → Send files, or from a file's own menu.",400,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f)));
+            if(sent.isEmpty())DesktopUi.add(went,DesktopUi.note("Nothing sent yet.",400,DesktopUi.QUIET,DesktopUi.BODY.deriveFont(13f)));
             DesktopUi.add(body,DesktopUi.card("Sent",went));
             box[0]=DesktopUi.sheet(pad.frame,"Sent files",DesktopUi.scrolling(body),null,true);
             DesktopUi.show(box[0],560,640);
