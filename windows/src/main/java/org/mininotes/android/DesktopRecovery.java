@@ -1,41 +1,79 @@
 package org.mininotes.android;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.*;
 import org.json.*;
-import org.mininotes.desktop.platform.AtomicFile;
 
-/** Local writing, outside the shared schema and all note/sync queries. Uses the notebook's encryption. */
+/**
+ * Writing a note could not take is made into ordinary notes (decision 328; the owner, 2026-11-05: "For me everything is
+ * saved directly, there is no difference between draft and other notes"). Until 0.4.056 the PC kept it aside here as a
+ * "recovery draft", in its own table, outside notes and sync; drafts still there from then are made notes at the start
+ * (see {@link #adopt}). The table stays only for them, and for nothing new.
+ */
 final class DesktopRecovery {
-    static final String KEPT="Writing kept on this PC. Shorten it to save as a note";
-    record Draft(String id,String token,String title,String body,NoteStore.Note base,Writers writers,String reason) {
-        String text(){return title+"\n\n"+body;}
-    }
-    record Result(NoteStore.Note note,Draft draft) {}
+    record Draft(String id,String token,String title,String body,NoteStore.Note base,Writers writers,String reason) {}
+    /**
+     * What a save came to: the note written in, or null where it could not be (gone, read only, or what arrived with it too
+     * long); the notes made for what it could not take, in order; and why, or null where it took it all.
+     */
+    record Result(NoteStore.Note note,List<NoteStore.Note> made,String reason) {}
     private static void table(NoteStore store) {
         store.getWritableDatabase().execSQL("CREATE TABLE IF NOT EXISTS desktop_recovery (id TEXT NOT NULL, token TEXT PRIMARY KEY, writing TEXT NOT NULL)");
     }
-    static Draft keep(NoteStore store,NoteStore.Note base,String title,String body,Writers writers,String reason) {
-        table(store);
-        Draft draft=new Draft(base.id,UUID.randomUUID().toString(),title,body,base.copy(),writers==null?null:writers.copy(),reason);
-        store.getWritableDatabase().execSQL("INSERT OR REPLACE INTO desktop_recovery(id,token,writing) VALUES(?,?,?)",new Object[]{draft.id,draft.token,json(draft).toString()});
-        return draft;
-    }
-    /** The transaction returns only once the complete writing, or the ordinary note, has committed. */
-    static Result save(NoteStore store,NoteStore.Note base,String title,String body,Writers writers,String expected) {
-        table(store);var db=store.getWritableDatabase();db.beginTransaction();
+    /**
+     * The page written down, all of it, one transaction. Too long for the note: what fits goes into it, at line ends, and the
+     * rest into "Plan (continued)" notes beside it. The note gone or read only, or what arrived with it too long: the note
+     * is left as it is and the writing becomes "Plan (copy)", on Home, the rest after it as before.
+     */
+    static Result save(NoteStore store,NoteStore.Note base,String title,String body,Writers writers) {
+        var db=store.getWritableDatabase();db.beginTransaction();
         try {
             Result result;
             // A validation refusal happens before any note/version write. Do not nest a failed transaction.
             String refusal=DesktopEdits.refusal(store,base,title,body);
-            if(refusal!=null){Draft kept=keep(store,base,title,body,writers,refusal);if(expected!=null)discard(store,base.id,expected);result=new Result(null,kept);}
+            if(refusal==null)result=new Result(DesktopEdits.save(store,base,title,body,writers),List.of(),null);
             else {
-                NoteStore.Note saved=DesktopEdits.save(store,base,title,body,writers);
-                if(expected!=null)discard(store,base.id,expected);
-                result=new Result(saved,null);
+                NoteStore.Note current=store.get(base.id);
+                boolean writable=current!=null&&!Boolean.TRUE.equals(store.readOnlyHere(base.id)[0]);
+                List<NoteSplit.Piece> pieces=NoteSplit.pieces(title,body);
+                Writers all=writers!=null&&writers.length()==body.length()?writers:null;
+                NoteSplit.Piece first=pieces.get(0);
+                if(writable&&DesktopEdits.limits(title,body)!=null&&DesktopEdits.refusal(store,base,first.title,first.body)==null) {
+                    NoteStore.Note saved=DesktopEdits.save(store,base,first.title,first.body,first.writers(all));
+                    result=new Result(saved,made(store,pieces.subList(1,pieces.size()),saved.book,saved.title,false,all),refusal);
+                } else result=new Result(null,made(store,pieces,writable?current.book:Things.HOME,title,true,all),refusal);
             }
             db.setTransactionSuccessful();return result;
+        } finally {db.endTransaction();}
+    }
+    /** Each piece a new note in {@code book}: the first "(copy)" where it is a copy, the others "(continued)", counted. */
+    private static List<NoteStore.Note> made(NoteStore store,List<NoteSplit.Piece> pieces,String book,String title,boolean copy,Writers all) {
+        List<NoteStore.Note> out=new ArrayList<>();
+        for(int i=0;i<pieces.size();i++) {
+            NoteSplit.Piece one=pieces.get(i);
+            NoteStore.Note note=new NoteStore.Note();note.book=book==null?Things.HOME:book;
+            String name=one.title.isEmpty()?title:one.title;
+            note.title=copy&&i==0?NoteSplit.copyTitle(NoteSplit.cut(name,NoteLimit.TITLE),1,true):NoteSplit.copyTitle(NoteSplit.cut(name,NoteLimit.TITLE),copy?i:i+1,false);
+            note.body=one.body;note.writers=one.writers(all);note.updated=System.currentTimeMillis();
+            store.save(note);out.add(note);
+        }
+        return out;
+    }
+    /**
+     * Drafts kept before 0.4.056 made notes, each on Home as "(copy)" with the rest after it: so nothing is kept aside any
+     * more. Said once at the start; how many notes were made.
+     */
+    static List<NoteStore.Note> adopt(NoteStore store) {
+        List<Draft> drafts=all(store);
+        if(drafts.isEmpty())return List.of();
+        var db=store.getWritableDatabase();db.beginTransaction();
+        try {
+            List<NoteStore.Note> out=new ArrayList<>();
+            for(Draft d:drafts) {
+                Writers all=d.writers!=null&&d.writers.length()==d.body.length()?d.writers:null;
+                out.addAll(made(store,NoteSplit.pieces(d.title,d.body),Things.HOME,d.title,true,all));
+                discard(store,d.id,d.token);
+            }
+            db.setTransactionSuccessful();return out;
         } finally {db.endTransaction();}
     }
     static List<Draft> all(NoteStore store) {
@@ -45,18 +83,13 @@ final class DesktopRecovery {
         }return out;
     }
     static Draft get(NoteStore store,String id){Draft latest=null;for(Draft d:all(store))if(d.id.equals(id))latest=d;return latest;}
-    static Draft token(NoteStore store,String token){for(Draft d:all(store))if(d.token.equals(token))return d;return null;}
     static void discard(NoteStore store,String id,String token){table(store);store.getWritableDatabase().delete("desktop_recovery","id=? AND token=?",new String[]{id,token});}
-    static void export(Draft draft,Path target) throws Exception {AtomicFile.write(target,draft.text().getBytes(StandardCharsets.UTF_8));}
-    static String backup(NoteStore store){JSONArray a=new JSONArray();for(Draft d:all(store))a.put(json(d));return new JSONObject().put("format","mininotes.desktop-writing.v1").put("drafts",a).toString();}
-    /** Adds alongside current recovery writing, never replaces it. Different snapshots get distinct local identities. */
-    static int restore(NoteStore store,String text) {
-        JSONObject o=new JSONObject(text);if(!"mininotes.desktop-writing.v1".equals(o.getString("format")))throw new IllegalArgumentException("Unknown writing backup format");
-        List<Draft> parsed=new ArrayList<>();JSONArray a=o.getJSONArray("drafts");for(int i=0;i<a.length();i++)parsed.add(read(a.getJSONObject(i)));
-        table(store);var db=store.getWritableDatabase();db.beginTransaction();
-        try {for(Draft d:parsed) {
-            db.execSQL("INSERT OR IGNORE INTO desktop_recovery(id,token,writing) VALUES(?,?,?)",new Object[]{d.id,d.token,json(d).toString()});
-        }db.setTransactionSuccessful();return parsed.size();}finally{db.endTransaction();}
+    /** A draft as 0.4.055 kept it: for the tests, which make one as an older PC had. */
+    static Draft keep(NoteStore store,NoteStore.Note base,String title,String body,Writers writers,String reason) {
+        table(store);
+        Draft draft=new Draft(base.id,UUID.randomUUID().toString(),title,body,base.copy(),writers==null?null:writers.copy(),reason);
+        store.getWritableDatabase().execSQL("INSERT OR REPLACE INTO desktop_recovery(id,token,writing) VALUES(?,?,?)",new Object[]{draft.id,draft.token,json(draft).toString()});
+        return draft;
     }
     private static JSONObject json(Draft d){return new JSONObject().put("id",d.id).put("token",d.token).put("title",d.title).put("body",d.body)
         .put("baseTitle",d.base.title).put("baseBody",d.base.body).put("revision",d.base.revision).put("book",d.base.book)

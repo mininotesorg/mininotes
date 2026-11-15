@@ -142,7 +142,7 @@ public class ParlonsContactTest {
         assertEquals("Saved, and sent to Test phone",Parlons.said(false,"this PC",List.of("Test phone"),List.of(),List.of()));
         assertEquals("Saved, and sent to Test phone. Old tablet needs an update of Mininotes first",
             Parlons.said(false,"this PC",List.of("Test phone"),List.of(),List.of("Old tablet")));
-        assertEquals("Saved on this PC. Pro and Laptop could not be reached now: save again later",
+        assertEquals("Saved on this PC. It goes to Pro and Laptop by itself once Mininotes is open there",
             Parlons.said(false,"this PC",List.of(),List.of("Pro","Laptop"),List.of()));
         assertEquals("Removed here, and on Test phone",Parlons.said(true,"this PC",List.of("Test phone"),List.of(),List.of()));
     }

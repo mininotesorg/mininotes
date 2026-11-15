@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 bfd9bcfd1e0b8071f5b694aeec3d5a2e71a5283194b4168d12a53daee11cb960 -->
+<!-- Translated from README.md, SHA-256 974676a5b8610c2363af3db0224eda7faba1672b112ebb1cbb9ccb2ca928a31e -->
 
 # Mininotes
 
@@ -44,6 +44,46 @@ viaja lacrado de ponta a ponta pela rede Minima, ou direto de dispositivo para d
 ## 1. Novidades
 
 Mais recentes primeiro. Cada versão é igual no celular e no PC, a não ser que se diga o contrário.
+
+### 0.4.057
+
+- **Backup em outro dos seus dispositivos**, como o seu próprio servidor Linux: *Backups…*, *Adicionar um local…*,
+  depois escolha-o em *Onde*. O backup é lacrado aqui e enviado quando esse dispositivo pode ser alcançado diretamente,
+  inclusive um celular com dados móveis; um que não chega continua depois de onde parou. O PC também guarda o que seus
+  outros dispositivos enviam a ele.
+- **Seu próprio servidor de backup**: um pequeno Mininotes para um servidor Linux que guarda seus backups e não consegue
+  abri-los. *O seu próprio servidor…*, na página Backups, mostra a linha que o instala, e o
+  [guia](https://github.com/mininotesorg/server).
+
+### 0.4.056
+
+- **A página Backups** (*Configurações*, *Meu perfil* ou o menu): backups feitos sozinhos nas pastas que você escolher,
+  cada um com o que entra, quando (todo dia, semana ou mês, quando o Mininotes fecha, ou só quando você pedir), quantos
+  são mantidos e o que os abre: o bloqueio do caderno, uma senha para os backups, ou 12 palavras criadas para eles.
+  Sempre lacrados.
+- Chega de rascunhos de recuperação: o que não pode entrar na sua nota vira notas, "(continuação)" ou "(cópia)".
+
+### 0.4.054 a 0.4.055
+
+- **Arquivos grandes**, de 16 MB a 2 GB, vão direto para outro dispositivo na mesma rede, nunca por um retransmissor, e
+  são salvos lá em Downloads.
+- *Procurar nesta nota*; uma aba abre onde você a deixou; o log pode ser compartilhado em *Opinião*.
+
+### 0.4.043 a 0.4.053
+
+- Só o que mudou numa nota viaja; *Histórico…* diz como cada coisa chegou a cada dispositivo; seus próprios
+  retransmissores em todos os seus dispositivos de uma vez; suas versões mais novas são sempre mantidas; uma cópia
+  antiga nunca é mesclada de volta.
+
+### 0.4.035 a 0.4.042
+
+- Celulares mais quietos; dispositivos que concordam sobre o que cada um tem; *Remover* numa só coisa, mesmo dentro de
+  uma pasta compartilhada; vários arquivos de uma vez; sincronização mais rápida.
+
+### 0.4.032 a 0.4.034
+
+- Um só + para adicionar qualquer pessoa ou um dos seus dispositivos; *Aceitar tudo sem perguntar* na página de uma
+  pessoa; um bloco Temp que fica; um perfil mais claro.
 
 ### 0.4.031
 
@@ -276,8 +316,8 @@ Nos dois, não é preciso mais nada: o nó Maxima que leva suas notas está dent
   barra.
 - **Recentes** mostra o que você abriu por último: na lateral no PC, no Início no celular. *Remover de Recentes* (clique
   direito no PC) tira da lista sem excluir nada. No celular, deslize para cima a partir da barra, ou toque na alça logo
-  acima, para passar os Recentes como cartões: toque num cartão para abrir, deslize para descartar ou pressione Voltar
-  para fechar.
+  acima, para passar os Recentes como cartões: toque num cartão para abrir, jogue-o para cima para tirá-lo de Recentes,
+  ou pressione Voltar.
 - **Temp** é para o que você só precisa por um tempo, e para passar coisas entre os seus dispositivos e as pessoas que
   escolher: o que está nele chega a elas e some em todo lugar quando o prazo acaba.
 - **Compartilhado comigo** guarda o que outros compartilharam com você, esperando a sua resposta (veja [Compartilhar com
@@ -295,10 +335,10 @@ Nos dois, não é preciso mais nada: o nó Maxima que leva suas notas está dent
 
 ## 5. Seus próprios dispositivos
 
-Vincule o celular e o PC uma vez (*Pessoas e dispositivos*, depois *Adicionar meu dispositivo*, e escaneie com um o
-código do outro). A partir daí, o que você compartilha com seus dispositivos se mantém atualizado em todos, nos dois
-sentidos, alguns segundos depois que você para de escrever. Um dispositivo seu pode ficar em *Pode ler* se só deve
-olhar. Cada um tem seu próprio arranjo: mover uma nota num não a move no outro, e cada um tem sua barra.
+Vincule o celular e o PC uma vez (*Pessoas e dispositivos*, +, escaneie com um o código do outro, *Um dos meus
+dispositivos*). A partir daí, o que você compartilha com seus dispositivos se mantém atualizado em todos, nos dois
+sentidos, alguns segundos depois que você para de escrever. O que cada um recebe se escolhe na sua linha. Cada um tem
+seu próprio arranjo: mover uma nota num não a move no outro, e cada um tem sua barra.
 
 ## 6. Compartilhar com outras pessoas
 
@@ -327,8 +367,8 @@ Os dois ficam no fim de *Sincronização e compartilhamento* no menu.
 - **Pessoas e dispositivos** lista as pessoas que você adicionou, seus dispositivos e seus grupos, cada um na sua
   página. A página de uma pessoa mostra o que você compartilha com ela e deixa você dar a ela uma imagem à sua escolha,
   que só você vê. As configurações de um grupo ficam atrás do seu ›.
-- **O + ao lado de Pessoas** conecta você a alguém: escaneie o código, cole o link ou use *Compartilhar meu link* para
-  enviar o seu por mensagem ou chat. **O + ao lado de Meus dispositivos** adiciona outro dispositivo seu.
+- **O +** adiciona alguém ou um dos seus dispositivos: escaneie o código, cole o link ou use *Compartilhar meu link*
+  para enviar o seu.
 - **Meu perfil** guarda o que é seu:
   - seu **nome** e sua **imagem**, que vão para as pessoas com quem você está vinculado;
   - seu **Endereço do Parlons!**, enviado sozinho aos seus contatos;
@@ -406,9 +446,10 @@ Os dois ficam no fim de *Sincronização e compartilhamento* no menu.
 - **Um arquivo de uma nota na lixeira.** Um arquivo tirado de uma nota vai para a lixeira na hora, sem pergunta, e sai
   da nota em todos os seus dispositivos e para todos que recebem a nota. *Restaurar* o traz de volta em todo lugar. Ele
   só some de vez quando a lixeira é esvaziada.
-- **Backups.** *Exportar backup* grava um só arquivo com todas as pastas, notas e arquivos. Sem o bloqueio (veja
-  [Privacidade, criptografia e segurança](#14-privacidade-criptografia-e-segurança)), ele pede uma senha para esse
-  backup. *Adicionar de backup* traz um de volta e pergunta se deve somar ao que existe ou substituir.
+- **Backups.** *Backups…* (*Configurações*, *Meu perfil*) faz sozinho backups lacrados, todo dia, semana ou mês, ou
+  quando o Mininotes fecha, numa pasta ou para outro dos seus dispositivos, como o seu próprio [servidor de
+  backup](https://github.com/mininotesorg/server). O bloqueio, uma senha ou 12 palavras os abrem. *Adicionar de
+  um backup* traz um de volta.
 
 ## 12. O Agente: peça e ele faz
 
@@ -425,11 +466,8 @@ da caixa dele a fecha.
 Com uma conta do [Integritas](https://docs.integritas.technology/), um arquivo ou uma nota pode ser carimbado na
 blockchain Minima pelo menu. Só a impressão digital (SHA-256) sai do dispositivo, nunca o arquivo.
 
-- **Carimbar no Minima…** registra agora que o arquivo existe exatamente como está: uma prova, a partir desse momento,
-  de que ele existia e não mudou desde então. Usa um carimbo da sua conta do Integritas.
-- **Verificar no Minima…** confere um arquivo, mais tarde, com o que foi registrado: se foi carimbado, se não mudou, e
-  em que bloco e data. Não muda nada e não custa nada.
-- **A diferença:** carimbar grava a prova uma vez; verificar a lê, quantas vezes você quiser.
+- **Carimbar no Minima…** registra que ele existe exatamente como está, com um carimbo da sua conta, e depois o confere
+  de novo: se não mudou, em que bloco e quando. Conferir não custa nada.
 - **O carimbo de uma nota** cobre o título, uma linha vazia e depois o texto; renomeá-la a marca como alterada. Carimbos
   feitos antes da 0.4.018 cobrem só o texto: *Nota, só o texto*.
 - **Meu perfil, Carimbo:** cole a sua chave de API e toque em *Salvar*; ela fica no seu caderno, bloqueada com ele, e
@@ -556,7 +594,6 @@ na hora.
 | Traduzir | Traduza esta página para outro idioma, neste dispositivo. |
 | Versões | Todas as versões anteriores desta nota, para ver ou restaurar. |
 | Carimbar no Minima | Registre agora na blockchain Minima que ele existe como está. Só a impressão digital sai deste dispositivo. |
-| Verificar no Minima | Confira se está no Minima sem alterações, e quando foi registrado. |
 | Temporário | Guarde só por um tempo: ele some quando o prazo acaba. |
 | Arquivados | Guarde longe da vista, conservado. |
 | Mover para a lixeira | Coloque na lixeira. Pode ser restaurado até a lixeira ser esvaziada. |
@@ -578,9 +615,12 @@ na hora.
 | Temp | O que fica só por um tempo, e vai para seus outros dispositivos. |
 | Compartilhado comigo | O que outros compartilharam com você, esperando sua resposta. |
 | Lixeira | O que foi para a lixeira, para restaurar ou excluir de vez. |
-| Escrita de recuperação | O que foi escrito e não pôde ser salvo na nota, guardado à parte. |
 | Exportar backup | Grave um único arquivo com todas as pastas, notas e arquivos. |
 | Adicionar de backup | Recupere o que um arquivo de backup contém. |
+| Backups | Para onde vão os backups, quando, quantos são mantidos e o que os abre; Fazer backup agora. |
+| O seu próprio servidor | A linha que instala um servidor de backup no Linux, e o seu guia. |
+| Histórico | Como cada coisa chegou a cada dispositivo ultimamente: direto, ou por qual retransmissor. |
+| Procurar nesta nota | Encontre palavras nesta nota, aba após aba. |
 | Compartilhar o Mininotes | Conte a alguém sobre o Mininotes. |
 | Atualizar para a v | Instale a versão mais nova. |
 | Opinião | Diga algo sobre o Mininotes, publicamente, com seu nome. |

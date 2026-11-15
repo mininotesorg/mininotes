@@ -11,7 +11,7 @@ import javax.swing.*;
 /**
  * The Agent on the PC, decision 213: one tall conversation with Full screen; Take me there opening My profile at its
  * Stamping part (named Integritas before decision 231) with the key's field ready; and the conversation kept in the notebook through closing the window, for
- * three hours after the last message, and forgotten by New conversation. A made-up notebook, offline.
+ * three hours after the last message. A made-up notebook, offline.
  */
 public class DesktopAssistantKeptTest {
     @Rule public TemporaryFolder temp=new TemporaryFolder();
@@ -93,13 +93,6 @@ public class DesktopAssistantKeptTest {
         Thread.sleep(600);
         assertFalse(said(four).contains("Synthetic question four hours ago"));
         assertTrue(onEdt(()->four.kept().isEmpty()));
-
-        // New conversation forgets it, here and in the notebook.
-        SwingUtilities.invokeAndWait(()->four.ask("What is the dock?"));
-        await(()->!pad.store.secret(Assistant.KEPT_AS).isEmpty());
-        SwingUtilities.invokeAndWait(four::afresh);
-        assertEquals("",said(four).trim());
-        await(()->pad.store.secret(Assistant.KEPT_AS).isEmpty());
     }
 
     private static String kept(String asked,long at) {

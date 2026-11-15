@@ -28,7 +28,8 @@ final class DesktopAssistant {
     private final JTextField field=new JTextField();
     private JScrollPane scroll;
     private JDialog box;
-    private JButton full;
+    /** The symbol in the conversation's corner: the whole screen, and back. */
+    private final JButton corner=new JButton();
     /** Where the box was before Full screen; null while it is not full screen. */
     private Rectangle before;
     /** What has been said, as it is kept. */
@@ -53,8 +54,23 @@ final class DesktopAssistant {
         DesktopUi.add(about,DesktopUi.note(Say.t(Assistant.WHAT),DesktopUi.SPREAD,DesktopUi.INK,DesktopUi.BODY.deriveFont(13.5f)));DesktopUi.gap(about,4);
         DesktopUi.add(about,DesktopUi.note(Say.t(Assistant.PRIVATE_PC),DesktopUi.SPREAD,DesktopUi.ACCENT,DesktopUi.BODY.deriveFont(Font.BOLD,12.5f)));
         body.add(about,BorderLayout.NORTH);
-        // The conversation takes all the room there is.
-        scroll=DesktopUi.scrolling(talk);body.add(scroll,BorderLayout.CENTER);
+        // The conversation takes all the room there is, in a box of its own from the start (the owner, 2026-11-15: "we should
+        // already have a conversation box available on the first window ... we dont need the buttons we currently have"). New
+        // conversation went with the buttons: a conversation still ends three hours after its last word.
+        scroll=DesktopUi.scrolling(talk);scroll.setBorder(BorderFactory.createEmptyBorder(10,12,10,12));
+        corner.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
+        corner.setFocusPainted(false);corner.setMargin(new Insets(4,4,4,4));corner.addActionListener(e->fullScreen());cornerSays();
+        JPanel room=new JPanel(null){
+            @Override public boolean isOptimizedDrawingEnabled(){return false;}
+            @Override public void doLayout(){scroll.setBounds(1,1,getWidth()-2,getHeight()-2);}
+            @Override protected void paintComponent(Graphics g0) {
+                Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setColor(DesktopUi.SHELF);g.fillRoundRect(0,0,getWidth()-1,getHeight()-1,16,16);
+                g.setColor(DesktopUi.LINE);g.drawRoundRect(0,0,getWidth()-1,getHeight()-1,16,16);g.dispose();
+            }
+        };
+        room.setOpaque(false);room.add(scroll);
+        body.add(room,BorderLayout.CENTER);
         JPanel bottom=DesktopUi.column();
         DesktopUi.add(bottom,suggestions());DesktopUi.gap(bottom,DesktopUi.S);
         field.putClientProperty(com.formdev.flatlaf.FlatClientProperties.PLACEHOLDER_TEXT,Say.t("Ask, or say what to do: share Grocery with Carol"));
@@ -65,11 +81,9 @@ final class DesktopAssistant {
         DesktopUi.add(bottom,line);
         body.add(bottom,BorderLayout.SOUTH);
         box=DesktopUi.sheet(d.frame,"Agent",body,null,false);
-        // At the right of its title: a new conversation, and the whole screen.
-        JButton afresh=DesktopUi.quietButton(Assistant.AFRESH,this::afresh);afresh.setToolTipText(Say.t(Assistant.KEPT_SAID));
-        full=DesktopUi.quietButton(Assistant.FULL,this::fullScreen);
-        JPanel tools=new JPanel(new FlowLayout(FlowLayout.RIGHT,DesktopUi.S,0));tools.setOpaque(false);tools.add(afresh);tools.add(full);
-        if(box.getRootPane().getClientProperty("top") instanceof JPanel top)top.add(tools,BorderLayout.EAST);
+        // The symbol at the right of its title, the window's own corner: it gives the whole Agent the screen and takes it back (the
+        // owner, 2026-11-15, of the phone's on the conversation: "the ⤢ symbol should be for the whole box").
+        if(box.getRootPane().getClientProperty("top") instanceof JPanel top)top.add(corner,BorderLayout.EAST);
         // No title bar and no close button: a click anywhere outside it closes it, as Esc does. A window it opened itself (a
         // code to scan, a menu) is not outside it.
         box.setUndecorated(true);box.getRootPane().setWindowDecorationStyle(JRootPane.NONE);
@@ -79,11 +93,16 @@ final class DesktopAssistant {
             if(!(event instanceof java.awt.event.MouseEvent m)||m.getID()!=java.awt.event.MouseEvent.MOUSE_PRESSED||!(m.getSource() instanceof Component c))return;
             Window at=SwingUtilities.getWindowAncestor(c);if(c instanceof Window w)at=w;
             for(Window w=at;w!=null;w=w.getOwner())if(w==box)return;
+            // Only a press on the main window is outside it: People or a code to scan, opened from here and owned by the main
+            // window, are not (the owner, 2026-11-07: "the dialog box doesnt show").
+            if(at!=d.frame)return;
             box.dispose();
         };
         Toolkit.getDefaultToolkit().addAWTEventListener(outside,java.awt.AWTEvent.MOUSE_EVENT_MASK);
         box.addWindowListener(new java.awt.event.WindowAdapter(){public void windowClosed(java.awt.event.WindowEvent e){Toolkit.getDefaultToolkit().removeAWTEventListener(outside);}});
         box.getRootPane().putClientProperty("focus",field);
+        // Esc leaves the whole screen first, then closes it (the owner, 2026-11-07: "there is no way to go back").
+        box.getRootPane().registerKeyboardAction(e->{if(isFullScreen())fullScreen();else box.dispose();},KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE,0),JComponent.WHEN_IN_FOCUSED_WINDOW);
         box.addWindowListener(new java.awt.event.WindowAdapter(){public void windowClosed(java.awt.event.WindowEvent e){if(open==DesktopAssistant.this)open=null;}});
         box.setMinimumSize(new Dimension(480,420));
         // Tall, most of the screen it is on, and a comfortable width for reading.
@@ -106,11 +125,23 @@ final class DesktopAssistant {
 
     /** Over the whole screen, and back to where it was. */
     void fullScreen() {
-        if(before==null){before=box.getBounds();box.setBounds(usable(d.frame));full.setText(Say.t(Assistant.SMALLER));}
-        else{box.setBounds(before);before=null;full.setText(Say.t(Assistant.FULL));}
+        if(before==null){before=box.getBounds();box.setBounds(usable(box));}
+        else{box.setBounds(before);before=null;}
+        cornerSays();
         box.validate();down();
     }
     boolean isFullScreen(){return before!=null;}
+    /** The corner's symbol: arrows out for the whole screen, arrows in to come back. */
+    private void cornerSays() {
+        corner.setIcon(DesktopIcons.glyph(before==null?"maximize-2":"minimize-2",16));
+        String says=Say.t(before==null?Assistant.FULL:Assistant.SMALLER);
+        corner.setToolTipText(says);corner.getAccessibleContext().setAccessibleName(says);
+    }
+    /**
+     * Gone before something is shown in the main window: the Agent stays above the window it belongs to, so over the whole
+     * screen it hid what it had just opened, and to the owner nothing happened (2026-11-07: "the full screen mode doesn't work").
+     */
+    private void away(){if(box!=null)box.dispose();}
 
     // ---- the conversation kept (decision 213) ------------------------------------------------------------------------
 
@@ -140,8 +171,8 @@ final class DesktopAssistant {
         d.disk.submit(()->{d.store.setSecret(Assistant.KEPT_AS,text);return null;},done->{},e->{});
     }
 
-    /** A new conversation: what was said is gone, here and in the notebook. */
-    void afresh() {
+    /** Three hours after the last message: what was said is gone, here and in the notebook. */
+    private void afresh() {
         kept.clear();talk.removeAll();talk.revalidate();talk.repaint();
         d.disk.submit(()->{d.store.setSecret(Assistant.KEPT_AS,"");return null;},done->{},e->{});
         field.requestFocusInWindow();
@@ -299,7 +330,7 @@ final class DesktopAssistant {
             case TODO_SHOW -> DesktopUi.button("Show my todo list",()->ask(Say.t("What is on my todo list?"),"What is on my todo list?"));
             case ADD_CONTACT -> DesktopUi.button("Add someone…",()->ask(Say.t("Add someone"),"Add someone"));
             case SHARE -> DesktopUi.button("Share a note…",()->{field.setText(starting("Share a note…"));field.requestFocusInWindow();});
-            case FIND -> DesktopUi.button("Search…",()->{d.goHome();d.home.focusSearch();});
+            case FIND -> DesktopUi.button("Search…",()->{away();d.goHome();d.home.focusSearch();});
             default -> null;
         };
     }
@@ -378,9 +409,9 @@ final class DesktopAssistant {
             if(news.isEmpty()){say(in,Say.t("Nothing is new. Everything has been seen."));return;}
             say(in,news.size()==1?Say.t("One thing is new:"):Say.t("{0} things are new:",String.valueOf(news.size())));
             List<JComponent> each=new ArrayList<>();
-            for(NoteStore.Branch one:news.subList(0,Math.min(8,news.size())))each.add(DesktopUi.quietButton(DesktopHome.named(one)+"  ›",()->d.openThing(one)));
+            for(NoteStore.Branch one:news.subList(0,Math.min(8,news.size())))each.add(DesktopUi.quietButton(DesktopHome.named(one)+"  ›",()->{away();d.openThing(one);}));
             buttons(in,each.toArray(new JComponent[0]));
-            buttons(in,DesktopUi.button("Open New",d::whatIsNew));
+            buttons(in,DesktopUi.button("Open New",()->{away();d.whatIsNew();}));
         },e->failed(in,e));
     }
 
@@ -394,7 +425,7 @@ final class DesktopAssistant {
                 StringBuilder all=new StringBuilder();for(String one:lines)all.append(all.length()==0?"":"\n").append("•  ").append(one);
                 say(in,all.toString());
             }
-            buttons(in,DesktopUi.button("Open it",()->d.open(todo.id)),DesktopUi.button("Add a line…",()->{field.setText(starting("Add to my todo list…"));field.requestFocusInWindow();}));
+            buttons(in,DesktopUi.button("Open it",()->{away();d.open(todo.id);}),DesktopUi.button("Add a line…",()->{field.setText(starting("Add to my todo list…"));field.requestFocusInWindow();}));
         },e->failed(in,e));
     }
 
@@ -428,7 +459,7 @@ final class DesktopAssistant {
     private void make(String title,String body,JPanel in) {
         d.disk.submit(()->Assistant.make(d.store,title,body),made->{
             say(in,Say.t("Made “{0}” on Home.",made.heading()));d.refresh();
-            buttons(in,DesktopUi.button("Open it",()->d.open(made.id)));
+            buttons(in,DesktopUi.button("Open it",()->{away();d.open(made.id);}));
         },e->failed(in,e));
     }
 
@@ -467,7 +498,7 @@ final class DesktopAssistant {
         if(go!=null){say(in,Say.t("Opening “{0}”.",place.said()));box.dispose();go.run();return;}
         d.disk.submit(()->Assistant.thing(d.store,words),thing->{
             if(thing==null){say(in,Assistant.notFound(words));find(words,in);return;}
-            say(in,Say.t("Opening “{0}”.",thing.name));d.openThing(thing);
+            say(in,Say.t("Opening “{0}”.",thing.name));away();d.openThing(thing);
         },e->failed(in,e));
     }
 
@@ -476,7 +507,7 @@ final class DesktopAssistant {
             if(found.isEmpty()){say(in,Say.t("Nothing found for “{0}”.",words));return;}
             say(in,found.size()==1?Say.t("Found one:"):Say.t("Found {0}:",String.valueOf(found.size())));
             List<JComponent> each=new ArrayList<>();
-            for(NoteStore.Branch one:found.subList(0,Math.min(8,found.size())))each.add(DesktopUi.quietButton(DesktopHome.named(one)+"  ›",()->d.openThing(one)));
+            for(NoteStore.Branch one:found.subList(0,Math.min(8,found.size())))each.add(DesktopUi.quietButton(DesktopHome.named(one)+"  ›",()->{away();d.openThing(one);}));
             buttons(in,each.toArray(new JComponent[0]));
         },e->failed(in,e));
     }

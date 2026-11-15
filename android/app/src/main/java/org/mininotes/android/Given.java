@@ -138,7 +138,7 @@ final class Given {
     }
 
     /** One file that was not taken, and why, for the list that says so. */
-    static String refusal(String name,String why){return Attachment.named(name)+" – "+Say.t(why);}
+    static String refusal(String name,String why){return Attachment.named(name)+": "+Say.t(why);}
 
     /** The box listing what was not taken. */
     static String refusals(List<String> lines) {

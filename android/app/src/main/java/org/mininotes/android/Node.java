@@ -698,6 +698,12 @@ final class Node {
         }
     }
 
+    /**
+     * A backup server's public address, its name or IP (decision 330), set before the node starts; null on a phone or a PC, which
+     * find out whether they can be reached from outside (see {@link #reachable}).
+     */
+    static volatile String publicHost;
+
     /** The application string this app owns, kept beside the node that filters on it. */
     private static final String APPLICATION=Post.APPLICATION;
 
@@ -748,6 +754,10 @@ final class Node {
             if(hears)local.announce();
             android.util.Log.i("Mininotes/Node","door "+(door>0?"open":"could not open")
                 +(hears?", hearing the local network":", not hearing the local network"));
+            // A backup server (decision 330) is at a public address of its own: its door said as one it has, to every contact,
+            // as the PC's is once its router opened a port and a relay proved it.
+            String server=publicHost;
+            if(server!=null&&!server.isEmpty()&&door>0){made.setDirectAddress(server+":"+door);android.util.Log.i("Mininotes/Node","a server's door, said to every contact");}
             if(A_PC&&door>0) {
                 reachable(made);
                 // The PC keeps what comes for its owner's phones, and they collect it on the same door.

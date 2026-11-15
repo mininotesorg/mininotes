@@ -58,7 +58,7 @@
 ? ajouter une personne
 ? me connecter a un ami
 ? associer quelqu'un
-! Ouvrez Personnes et appareils et appuyez sur + à côté de Personnes, ou demandez-moi « ajoute un contact ». Ensuite, scannez son code (ou collez son lien), ou montrez-lui votre code (ou envoyez-lui votre lien) pour qu'il le scanne. Une fois que vous avez tous les deux accepté, la personne est dans vos contacts et vous pouvez partager avec elle.
+! Dans Personnes et appareils, appuyez sur le + rond, ou demandez-moi « ajoute un contact ». Scannez son code ou collez son lien, ou appuyez sur Afficher mon code pour qu'elle scanne le vôtre. Choisissez ensuite Quelqu’un d’autre, mettez-la dans un groupe si vous voulez, et choisissez ce qu'elle reçoit. Une fois que vous avez tous les deux accepté, vous pouvez partager avec elle.
 > ADD_CONTACT
 @ PEOPLE
 
@@ -69,7 +69,8 @@
 ? ajouter un autre appareil
 ? mes appareils
 ? synchroniser mes appareils
-! Vos propres appareils, votre téléphone et votre PC par exemple, se relient comme une personne : dans Personnes et appareils, Ajouter mon appareil, puis scannez le code de l'un sur l'autre. Une fois reliés, tout ce que vous partagez avec vos appareils reste à jour sur chacun. Un de vos appareils peut être mis en Peut lire s'il doit seulement consulter.
+! Vos propres appareils, votre téléphone et votre PC par exemple, se relient avec le même + rond dans Personnes et appareils : scannez le code de l'un sur l'autre (Afficher mon code le montre), puis choisissez Un de mes appareils et ce qu'il reçoit : Rien pour l’instant, ou tout en lecture ou en écriture.
+! Une fois reliés, tout ce que vous partagez avec vos appareils reste à jour sur chacun. Un de vos appareils peut être mis en Peut lire s'il doit seulement consulter.
 @ PEOPLE
 
 # whatsnew
@@ -78,7 +79,7 @@
 ? qu'est-ce qui a change
 ? nouveautes
 ? la fenetre nouveau
-! Nouveau liste ce qui a changé depuis votre dernier passage : notes où d'autres ont écrit, éléments partagés avec vous, fichiers arrivés. Chacun s'ouvre d'un clic, et l'ouvrir le fait sortir de Nouveau. Sur le PC c'est le bouton nouveau en haut ; sur le téléphone, il est dans le menu. Demandez-moi « quoi de neuf ? » pour une liste rapide.
+! Nouveau liste ce qui a changé depuis votre dernier passage : notes où d'autres ont écrit, éléments partagés avec vous, fichiers arrivés. Chacun s'ouvre d'un clic, et l'ouvrir le fait sortir de Nouveau. La croix au bout d'une ligne la retire de la liste sans l'ouvrir. Sur le PC c'est le bouton nouveau en haut ; sur le téléphone, il est dans le menu. Demandez-moi « quoi de neuf ? » pour une liste rapide.
 > WHAT_NEW
 
 # todo
@@ -141,7 +142,12 @@
 ? faut-il internet
 ? meme wifi
 ? comment ca voyage
-! Les notes voyagent entre appareils scellées de bout en bout, par les relais Maxima, ou directement de porte à porte quand les deux appareils sont sur le même réseau. Les relais ne font que passer des messages scellés qu'ils ne peuvent pas lire. Le détail de la connexion est dans votre Profil.
+? ajouter un relais
+? mon propre relais
+? couper les relais publics
+! Les notes voyagent entre appareils scellées de bout en bout, par les relais Maxima, ou directement de porte à porte quand les deux appareils sont sur le même réseau. Les relais ne font que passer des messages scellés qu'ils ne peuvent pas lire.
+! Dans Réglages, Relais : Utiliser les relais publics les allume ou les éteint, le champ Ajouter un relais en ajoute un à vous, et Votre propre relais… montre comment en installer un sur un serveur. Pareil sur tous mes appareils donne le même choix à vos autres appareils.
+@ SETTINGS
 
 # filelink
 = Partager un fichier via Mininotes
@@ -167,8 +173,22 @@
 ? temporaire
 ? note a soi-meme
 ? envoyer a mes autres appareils
-! Temp est pour ce dont vous n'avez besoin qu'un moment, et pour passer des choses entre vos propres appareils, comme des notes à soi-même. Ce que vous mettez dans Temp va sur vos autres appareils et disparaît partout quand son temps est écoulé. Temporaire… dans le menu d'un élément règle la durée.
+? bloc-notes
+? garder quelque chose dans temp
+? jusqu'a ce que je le supprime
+! Temp est pour ce dont vous n'avez besoin qu'un moment, et pour passer des choses entre vos propres appareils, comme des notes à soi-même. Ce que vous mettez dans Temp va sur vos autres appareils et disparaît partout quand son temps est écoulé. Temporaire… dans le menu d'un élément règle la durée ; Jusqu'à ce que je le supprime l'y garde jusqu'à ce que vous le supprimiez.
+! Le Bloc-notes reste dans Temp : ses mots sont effacés une fois le temps de Temp passé depuis que vous y avez écrit. Reste dans Temp, dans le menu d'une note, fait de même pour toute note de Temp. Temp : un bloc-notes qui reste, dans Réglages, allume ou éteint le Bloc-notes.
 @ TEMP
+
+# several
+= Choisir plusieurs fichiers
+? choisir plusieurs fichiers
+? selectionner plusieurs fichiers
+? copier plusieurs fichiers
+? tout selectionner
+? plusieurs fichiers a la fois
+! Choisir plusieurs…, dans le menu d'un fichier, permet de cocher d'autres fichiers du même endroit, puis de les copier, envoyer, enregistrer ou mettre à la corbeille d'un coup.
+! Sur le PC, vous pouvez aussi faire Ctrl+clic, Maj+clic, Ctrl+A ou tracer un cadre dessus, puis Ctrl+C pour les copier, ou un clic droit pour le reste.
 
 # archive
 = Archives et Corbeille
@@ -189,14 +209,37 @@
 ? historique d'une note
 ! Chaque version d'une note est gardée. Versions, dans le menu de la note, les liste de la plus récente à la plus ancienne et remet celle que vous voulez. Ce qui arrive de quelqu'un d'autre est aussi gardé comme version : l'écriture de personne n'est jamais perdue.
 
+# history
+= Historique
+? historique
+? qu'a fait mininotes
+? ma note est-elle arrivee sur mon telephone
+? journal de ce qui s'est passe
+? par ou est-elle passee
+! Historique…, dans Synchronisation et partage, liste ce que Mininotes a fait, du plus récent au plus ancien : quelle note ou quel fichier a atteint quel appareil, et comment (en direct, ou par un relais), ce qui est venu de qui, et quand un appareil a pu être joint de nouveau. Appuyez sur une ligne pour ouvrir la note ou le fichier. Rien de votre espace privé n'y figure.
+
 # backup
 = Sauvegardes
 ? sauvegarde
+? comment sauvegarder
+? sauvegarde automatique
+? sauvegarder chaque jour
 ? exporter une sauvegarde
-? ecriture de recuperation
 ? sauvegarder mes notes
 ? restaurer une sauvegarde
-! Exporter une sauvegarde, dans le menu sous Sauvegarde, écrit un fichier avec tous les dossiers, notes et fichiers. Ajouter depuis une sauvegarde en ramène une, et demande s'il faut ajouter à ce qui est ici ou le remplacer. Sur le PC, Écriture de récupération… montre l'écriture qui n'a pas pu être enregistrée dans sa note et a été mise de côté, pour la remettre.
+! Sauvegardes…, dans le menu, dans Réglages ou dans Mon profil, ouvre la page Sauvegarde. Ajouter un emplacement… règle chaque emplacement : Où (un dossier, ou un autre de vos appareils), Quoi, Quand (Seulement quand je le demande, chaque jour, semaine ou mois à une heure, ou chaque fois que Mininotes se ferme ou que vous le quittez), combien des plus récentes garder, et ce qui les ouvre : le verrou du carnet, un mot de passe pour les sauvegardes, 12 mots de récupération, un fichier clé que vous gardez à part (sur une clé USB par exemple), ou Cet appareil seulement, que seul cet appareil peut ouvrir. Pour en remettre une, le mot de passe ou les mots sont demandés, ou Utiliser un fichier clé… ; une sauvegarde faite pour cet appareil seulement s’y ouvre sans rien demander.
+! Les sauvegardes sont toujours chiffrées. Chaque emplacement a Sauvegarder maintenant, et un interrupteur Sauvegarder ici pour l'éteindre et le rallumer. Ajouter depuis une sauvegarde… en ramène une, et demande s'il faut ajouter à ce qui est ici ou le remplacer. Une écriture qui ne peut pas aller dans sa note n'est jamais perdue : elle devient une note nommée « (suite) » ou « (copie) ».
+@ BACKUP
+
+# backupserver
+= Sauvegarder sur un autre appareil ou un serveur
+? sauvegarder sur mon pc
+? sauvegarder sur un autre appareil
+? serveur de sauvegarde
+? mon propre serveur
+? serveur linux
+! Sur la page Sauvegarde, Ajouter un emplacement… puis choisissez un de vos appareils sous Où. La sauvegarde est scellée ici et envoyée quand cet appareil peut être joint directement ; une qui s'arrête en route reprend plus tard. Le PC garde ce que vos autres appareils lui envoient.
+! Votre propre serveur… montre comment installer un petit Mininotes sur un serveur Linux, qui garde vos sauvegardes sans pouvoir les ouvrir, et comment le relier.
 @ BACKUP
 
 # colour
@@ -254,6 +297,22 @@
 ! Le champ de recherche en bas de l'Accueil trouve notes, dossiers et fichiers par leurs mots. Arborescence montre tous les dossiers et notes à la fois. Vous pouvez aussi me demander : « cherche soupe ».
 > FIND
 
+# findinnote
+= Chercher des mots dans une note
+? chercher dans cette note
+? rechercher dans une note
+? chercher du texte dans la note
+? ctrl f
+! Chercher dans cette note, dans le menu ⋮ de la note, trouve des mots dans la note affichée et marque chacun. Sur le PC, Ctrl+F sur une note ou un clic droit l'ouvre aussi. Après le dernier, il continue dans l'onglet suivant qui contient ces mots.
+
+# linkmenu
+= Garder le doigt sur un lien
+? appui long sur un lien
+? copier un lien
+? garder le doigt sur un lien
+? le lien s'ouvre par erreur
+! Sur le téléphone, gardez le doigt sur un lien dans une note : Copier le lien, Ouvrir le lien et Partager le lien apparaissent à côté, et rien ne s'ouvre. Sur le PC, un clic droit sur un lien donne Ouvrir le lien et Copier le lien.
+
 # invitations
 = Partagé avec moi
 ? partage avec moi
@@ -262,6 +321,15 @@
 ? invitation
 ! Ce qu'une autre personne partage avec vous attend dans Partagé avec moi jusqu'à ce que vous l'acceptiez. Avant d'accepter, vous voyez ce que c'est et qui l'envoie, et vous choisissez où le mettre. Refuser le lui dit, discrètement.
 @ SHARED_WITH_ME
+
+# withoutasking
+= Accepter sans demander
+? tout accepter sans demander
+? accepter automatiquement
+? ne plus me demander d'accepter
+? accepter les fichiers d'un contact
+! Tout accepter sans demander, sur la page d'une personne dans Personnes et appareils, fait entrer ses fichiers, notes et dossiers tout de suite, sans attendre dans Partagé avec moi. Après une acceptation à la main, Mininotes peut le proposer : Accepter sans demander, ou Continuer à demander. Vos propres appareils ne demandent jamais.
+@ PEOPLE
 
 # groups
 = Groupes
@@ -320,6 +388,13 @@
 ! Votre adresse Parlons!, dans Mon profil, se règle une fois et part toute seule vers tous ceux avec qui vous êtes relié, pour qu'ils discutent avec vous d'un geste.
 @ PARLONS
 
+# sendparlons
+= Envoyer avec Parlons!
+? envoyer avec parlons
+? envoyer une note dans parlons
+? partager un fichier dans une discussion parlons
+! Sur le téléphone, Envoyer avec Parlons!, dans le menu d'une note ou d'un fichier, le confie à Parlons!, qui demande quelle discussion. Une note part comme un fichier Markdown nommé d'après son titre.
+
 # describe
 = Décrire ce que fait chaque chose
 ? decrire ce que fait chaque chose
@@ -346,3 +421,13 @@
 ? transferts de fichiers
 ! Fichiers envoyés…, dans le menu, liste les fichiers que vous avez envoyés et ceux en route vers vous, avec où en est chacun.
 @ SENT_FILES
+
+# bigfiles
+= Gros fichiers
+? envoyer un gros fichier
+? fichier volumineux
+? fichier trop gros
+? envoyer une video
+? envoyer a un appareil
+! Envoyer à un appareil…, dans le menu d'un fichier, l'envoie directement à un de vos appareils ou à quelqu'un, jusqu'à 2 Go, sans le garder dans Mininotes. On lui demande Enregistrer ou Refuser, et il est enregistré dans ses Téléchargements.
+! Un fichier de plus de 16 Mo part seulement en direct, jamais par un relais : les deux appareils doivent avoir Mininotes ouvert et se joindre, le plus simple sur le même Wi-Fi.

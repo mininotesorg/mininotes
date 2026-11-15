@@ -357,7 +357,7 @@ final class IconPicker {
         final ContentResolver from=a.getContentResolver();
         a.background.submit(()->{
             byte[] thumb=thumbnail(from,picked);
-            a.busySay(job,name.isEmpty()?"Keeping the picture…":"Keeping the picture with “"+name+"”…");
+            a.busySay(job,name.isEmpty()?Say.t("Keeping the picture…"):Say.t("Keeping the picture with “{0}”…",name));
             if(mine)a.store.setOwnImage(kind,id,thumb);else a.store.setImage(kind,id,thumb);
             return null;
         },done->{a.busyDone(job,"Picture set");a.looked(kind,id);},

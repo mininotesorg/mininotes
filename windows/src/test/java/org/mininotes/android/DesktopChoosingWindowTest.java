@@ -85,7 +85,9 @@ public class DesktopChoosingWindowTest {
         // A note among them: Move to bin only, and binned together, with the others on Home staying put.
         SwingUtilities.invokeAndWait(()->{click(tile(grid,"Holiday"),InputEvent.CTRL_DOWN_MASK);click(tile(grid,"boat.jpg"),InputEvent.CTRL_DOWN_MASK);});
         JPopupMenu mixed=onEdt(()->home.menuAt(tile(grid,"boat.jpg")));
-        assertEquals(1,onEdt(()->{int items=0;for(Component c:mixed.getComponents())if(c instanceof JMenuItem)items++;return items;}).intValue());
+        // Move to bin, and Select all under it (2026-11-07).
+        assertEquals(2,onEdt(()->{int items=0;for(Component c:mixed.getComponents())if(c instanceof JMenuItem)items++;return items;}).intValue());
+        assertNotNull(onEdt(()->item(mixed,Say.t("Select all"))));
         Rectangle sunsetWas=onEdt(()->new Rectangle(tile(grid,"sunset.jpg").getBounds()));
         SwingUtilities.invokeAndWait(()->item(mixed,"Move to bin  (2)").doClick());
         await(()->onEdt(()->"2 moved to the bin".equals(pad.status.getText())));settle();

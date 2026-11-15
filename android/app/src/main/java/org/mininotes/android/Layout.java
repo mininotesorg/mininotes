@@ -76,6 +76,26 @@ final class Layout {
         return ordered;
     }
 
+    /**
+     * Where each thing stands in a folder (decision 336): where it was put, then, in the order given, after the last icon and
+     * never in a gap left before it, so what came last is last. Home keeps its own rule, the first free cell of the page.
+     */
+    static Map<String,int[]> folder(List<String> ids,List<Integer> cells,int columns) {
+        int wide=Math.max(1,Math.min(WIDEST,columns));
+        List<String> put=new ArrayList<>(),rest=new ArrayList<>();List<Integer> at=new ArrayList<>();
+        for(int i=0;i<ids.size();i++) {
+            int cell=cells.get(i)==null?NONE:cells.get(i);
+            if(cell<0)rest.add(ids.get(i));else{put.add(ids.get(i));at.add(cell);}
+        }
+        Map<String,int[]> placed=new LinkedHashMap<>(arrange(put,at,columns));
+        int next=0;
+        for(int[] one:placed.values())next=Math.max(next,one[0]*wide+one[1]+1);
+        for(String id:rest){placed.put(id,new int[]{next/wide,next%wide});next++;}
+        Map<String,int[]> ordered=new LinkedHashMap<>();
+        for(String id:ids)ordered.put(id,placed.get(id));
+        return ordered;
+    }
+
     private static int freeFrom(Set<Integer> taken,int from){int at=Math.max(0,from);while(taken.contains(at))at++;return at;}
 
     /**

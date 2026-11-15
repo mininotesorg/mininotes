@@ -321,6 +321,8 @@ final class Post {
             for(Outbox.Wait wait:owed)if(only.equals(wait.address))theirs.add(wait);
             owed=theirs;
         }
+        // Never a note to a backup server (decision 330), whatever a list still says.
+        if(!owed.isEmpty()){List<Outbox.Wait> kept=new ArrayList<>();for(Outbox.Wait wait:owed)if(!store.keepsBackups(wait.address))kept.add(wait);owed=kept;}
         if(owed.isEmpty())return new Done(0,0,"");
         // Named in whatever is said about what did not go: the thing that was asked to go, not each note in it.
         String thing=store.thingName(kind,id);
@@ -1574,6 +1576,8 @@ final class Post {
             tellCalled(where,store,keys);
             // Whoever a list linked this device with and has not answered, asked again when their turn comes. See Linking.
             linkAgain(where,store,keys);
+            // What did not reach one of my devices when it was saved, sent again by itself (the owner, 2026-11-07). See Later.
+            sendLater(where,store,keys);
             // A phone's notes owed and never handed over (their send failed: nobody reachable) went again only when the app was
             // opened or written in; the PC's queue tries them every round. Once a minute here too (decision 294).
             if(!Node.A_PC){long now=System.currentTimeMillis();long was=OWED_TRIED.get();
@@ -2158,7 +2162,8 @@ final class Post {
      * names it. A device linked through a list and since taken off everything stays known, and is sent nothing.
      */
     private static boolean sendsTo(NoteStore store,NoteStore.Contact them) {
-        return them!=null&&(!them.listed()||store.listing(them.address)!=null);
+        // A backup server is sent nothing but its backups (decision 330): no note, no card, whatever a list says.
+        return them!=null&&!store.keepsBackups(them.address)&&(!them.listed()||store.listing(them.address)!=null);
     }
 
     /**
@@ -3971,13 +3976,15 @@ final class Post {
         for(NoteStore.Contact them:store.addresses())if(chosen.contains(them.address)&&them.mine&&them.paired()&&!going.contains(them.address))older.add(them.name);
         if(to.isEmpty())return Parlons.said(removed,here,sent,notReached,older);
         byte[] plain=Parlons.wrap(card);
-        MaximaNode node=Node.node(where);
+        // Not started: every device is owed it, and it goes by itself (see Later).
+        MaximaNode node;try{node=Node.node(where);}catch(Exception notNow){node=null;}
         for(NoteStore.Contact them:to) {
             boolean went=false;
             // One device out of reach is not a card kept from the rest.
             if(node!=null)try{went=hand(where,store,keys,node,them,Envelope.seal(new byte[16],card.decided,System.currentTimeMillis(),plain,keys.signing(),Keys.publicKey(them.agreement)));}
                 catch(Exception noWay){went=false;}
             (went?sent:notReached).add(them.name);
+            owed(where,Later.Kind.PARLONS,address,them.address,!went);
         }
         contacts("a Parlons! card"+(removed?" (removed)":"")+" handed to "+sent.size()+" of the owner's devices, "+notReached.size()+" out of reach, "+older.size()+" from before");
         return Parlons.said(removed,here,sent,notReached,older);
@@ -4006,6 +4013,59 @@ final class Post {
         contacts("a Parlons! card "+(taken==NoteStore.ParlonsTaken.TAKEN?"taken in":taken==NoteStore.ParlonsTaken.OLDER?"older than what is here: nothing changes"
             :"about somebody not known here: dropped"));
         return taken==NoteStore.ParlonsTaken.TAKEN?Landed.contacts():new Landed(null,null);
+    }
+
+    // ---- what did not reach one of my devices, sent again by itself: see Later (2026-11-07) -------------------------
+
+    private static final java.util.concurrent.atomic.AtomicLong LATER_TRIED=new java.util.concurrent.atomic.AtomicLong();
+
+    /**
+     * A send that failed before any device was tried: each of those chosen owed it, so it goes by itself. What the owner is
+     * then told, kept or removed alike.
+     */
+    static String owedAll(Context where,Later.Kind kind,String about,java.util.Collection<String> devices,String here) {
+        if(devices!=null)for(String one:devices)owed(where,kind,about,one,true);
+        return Say.t("It goes to your devices by itself once they are reached.");
+    }
+    /** That device is owed it now, or has it: kept in the post settings either way. */
+    private static void owed(Context where,Later.Kind kind,String about,String device,boolean owed) {
+        if(where==null||device==null||device.isEmpty())return;
+        synchronized(LATER_TRIED) {
+            android.content.SharedPreferences kept=where.getSharedPreferences("post",Context.MODE_PRIVATE);
+            java.util.Set<String> was=kept.getStringSet("later",new java.util.HashSet<String>());
+            java.util.Set<String> now=owed?Later.add(was,new Later.Owed(kind,about,device,System.currentTimeMillis())):Later.remove(was,kind,about,device);
+            if(!now.equals(was))kept.edit().putStringSet("later",new java.util.HashSet<>(now)).apply();
+        }
+    }
+
+    /** Each thing owed, sent to its device as it is now; at most every two minutes, and a month at most. Blocking. */
+    private static void sendLater(Context where,NoteStore store,Keys keys) {
+        long now=System.currentTimeMillis(),was=LATER_TRIED.get();
+        if(now-was<Later.EVERY||!LATER_TRIED.compareAndSet(was,now))return;
+        java.util.Set<String> lines;
+        synchronized(LATER_TRIED) {
+            android.content.SharedPreferences kept=where.getSharedPreferences("post",Context.MODE_PRIVATE);
+            lines=kept.getStringSet("later",new java.util.HashSet<String>());
+            java.util.Set<String> still=Later.kept(lines,now);
+            if(!still.equals(lines))kept.edit().putStringSet("later",new java.util.HashSet<>(still)).apply();
+            lines=still;
+        }
+        for(Later.Owed one:Later.owed(lines,now)) {
+            NoteStore.Contact them=null;
+            for(NoteStore.Contact c:store.addresses())if(c.address.equals(one.device))them=c;
+            // A device taken off, or no longer mine: nothing to send it.
+            if(them==null||!them.mine||!them.paired()){owed(where,one.kind,one.about,one.device,false);continue;}
+            if(resting(fingerprint(them)))continue;
+            java.util.Set<String> to=java.util.Collections.singleton(one.device);
+            try {
+                switch(one.kind) {
+                    case PARLONS: sendParlons(where,store,keys,one.about,to,here());break;
+                    case CALLED: sendCalled(where,store,keys,one.about.isEmpty()?null:one.about,to,here());break;
+                    default: sendKey(where,store,keys,one.about,to);
+                }
+            } catch(Exception notNow){/* tried again in a while */}
+            contacts("something owed to one of the owner's devices sent again ("+one.kind.name().toLowerCase(java.util.Locale.ROOT)+")");
+        }
     }
 
     // ---- the name we pick for a person, to the owner's devices: see Called (decision 124) ---------------------------
@@ -4084,12 +4144,13 @@ final class Post {
         for(NoteStore.Contact them:store.addresses())if(chosen.contains(them.address)&&them.mine&&them.paired()&&!going.contains(them.address))older.add(them.name);
         if(to.isEmpty())return Called.said(here,sent,notReached,older);
         byte[] plain=Called.wrap(card);
-        MaximaNode node=Node.node(where);
+        MaximaNode node;try{node=Node.node(where);}catch(Exception notNow){node=null;}
         for(NoteStore.Contact them:to) {
             boolean went=false;
             if(node!=null)try{went=hand(where,store,keys,node,them,Envelope.seal(new byte[16],card.decided,System.currentTimeMillis(),plain,keys.signing(),Keys.publicKey(them.agreement)));}
                 catch(Exception noWay){went=false;}
             (went?sent:notReached).add(them.name);
+            owed(where,Later.Kind.CALLED,about,them.address,!went);
         }
         contacts("a name we pick handed to "+sent.size()+" of the owner's devices, "+notReached.size()+" out of reach, "+older.size()+" from before");
         return Called.said(here,sent,notReached,older);
@@ -4521,11 +4582,12 @@ final class Post {
             if(node!=null)try{went=hand(where,store,keys,node,them,Envelope.seal(new byte[16],decided,System.currentTimeMillis(),plain,keys.signing(),Keys.publicKey(them.agreement)));}
                 catch(Exception noWay){went=false;}
             (went?sent:notReached).add(them.name);
+            owed(where,Later.Kind.KEY,name,them.address,!went);
         }
         contacts("a key handed to "+sent.size()+" of the owner's devices, "+(notReached.size()-later)+" out of reach"
             +(later>0?", "+later+" waiting for a build that reads it":""));
         String said=sent.isEmpty()?"":Say.t("Sent to {0}",String.join(", ",sent));
-        if(!notReached.isEmpty())said=(said.isEmpty()?"":said+". ")+Say.t("Not reached: {0}. Send it again when it is open.",String.join(", ",notReached));
+        if(!notReached.isEmpty())said=(said.isEmpty()?"":said+". ")+Say.t("It goes to {0} by itself once Mininotes is open there.",String.join(", ",notReached));
         return said;
     }
 
@@ -4725,6 +4787,8 @@ final class Post {
         messagesHeard(where,fingerprint(from));
         Message.Card card=Message.open(opened.text);
         if(card==null||!java.util.Arrays.equals(card.id,opened.page))return new Landed(null,null);
+        // A big file offered straight from their device: never kept as a message (decision 327).
+        if(card.kind==Message.BIG)return bigArrived(where,store,from,card);
         boolean fresh=store.keepMessage(Message.hex(card.id),from.address,false,card.kind,card.words,card.parlons,card.at);
         final NoteStore.Contact them=from;final byte[] id=card.id;
         ANSWERS.execute(()->{
@@ -4738,6 +4802,150 @@ final class Post {
         android.util.Log.i("Mininotes/Post","a message arrived"+(fresh?"":", one already kept"));
         if(!fresh)return Landed.message("","","");
         return Landed.message(from.name,Message.said(card.kind,card.words),from.address);
+    }
+
+    // ---- a big file, straight between two devices that reach each other: see Big (decision 327) ----------------------
+
+    /**
+     * A big file offered to one device: only where it can be reached directly now, at a door on this network or one it proved,
+     * never a relay. The offer goes the usual way, sealed for them; the file stays where it is and is read when they save it.
+     * Null where it was offered, or what to say where it was not. Blocking: the worker calls it.
+     */
+    static String offerBig(Context where,NoteStore store,Keys keys,String address,String name,String kind,long bytes,Big.Source source,Big.Heard heard) {
+        NoteStore.Contact them=store.address(address);
+        if(them==null||!them.paired()||them.agreement.length==0)return Say.t("Nobody added yet. Add someone, then files and messages can go straight to them.");
+        if(bytes>Big.MOST)return Given.refusal(name,Big.TOO_BIG);
+        if(!readsMessages(where,them)){tellMessages(where,store,keys,them);return Say.t("{0}'s Mininotes does not take big files yet. Once it is updated, try again.",them.name);}
+        List<java.net.InetSocketAddress> doors=bigDoors(where,store,address);
+        // Not reached: Big.NOT_NEAR itself, untranslated, so the caller can show the way to send it and try again (Big.steps).
+        if(!reachable(doors))return Big.NOT_NEAR;
+        Big.Offer offer=Big.Offer.of(name,kind,bytes);
+        Big.serve(offer,source,heard);
+        try {
+            MaximaNode node=Node.node(where);
+            if(node==null)throw new IllegalStateException("The node is not running.");
+            byte[] id=Message.newId();
+            byte[] plain=Message.wrap(new Message.Card(id,Message.BIG,offer.said(),"",System.currentTimeMillis()));
+            byte[] sealed=Envelope.seal(id,0,System.currentTimeMillis(),plain,keys.signing(),Keys.publicKey(them.agreement));
+            if(!hand(where,store,keys,node,them,sealed)){Big.withdraw(offer.token);return Big.NOT_NEAR;}
+            android.util.Log.i("Mininotes/Big","offered a big file, "+(bytes>>20)+" MB");
+            return null;
+        } catch(Exception notNow){Big.withdraw(offer.token);return Big.NOT_NEAR;}
+    }
+
+    /**
+     * A file pushed to one of my devices (decision 330): a backup, brought to its door by this device, which a phone on mobile
+     * data can do where it cannot be fetched from. The offer goes the usual way, sealed for it; then the file goes in pieces,
+     * from where that device says it has it to. MADE once it said it has it whole; NO_DEVICE where it is not reached directly
+     * (or no longer one of mine); NOT_TAKEN where it did not take it. Blocking, for as long as the file takes.
+     */
+    static Backups.Said pushBig(Context where,NoteStore store,Keys keys,String address,String name,String kind,long bytes,Big.Source source) {
+        NoteStore.Contact them=store.address(address);
+        if(them==null||!them.paired()||!them.mine||them.agreement.length==0||bytes>Big.MOST)return Backups.Said.NOT_TAKEN;
+        List<java.net.InetSocketAddress> doors=bigDoors(where,store,address);
+        if(!reachable(doors))return Backups.Said.NO_DEVICE;
+        if(!readsMessages(where,them)){tellMessages(where,store,keys,them);return Backups.Said.NOT_TAKEN;}
+        Big.Offer offer=Big.Offer.pushing(name,kind,bytes);
+        try {
+            MaximaNode node=Node.node(where);
+            if(node==null)return Backups.Said.NO_DEVICE;
+            byte[] id=Message.newId();
+            byte[] plain=Message.wrap(new Message.Card(id,Message.BIG,offer.said(),"",System.currentTimeMillis()));
+            byte[] sealed=Envelope.seal(id,0,System.currentTimeMillis(),plain,keys.signing(),Keys.publicKey(them.agreement));
+            if(!hand(where,store,keys,node,them,sealed))return Backups.Said.NO_DEVICE;
+            // The offer may come a moment after the first knock: knocked again for two minutes.
+            Big.push(doors,offer,source,120_000L);
+            android.util.Log.i("Mininotes/Big","pushed a backup, "+(bytes>>20)+" MB");
+            return Backups.Said.MADE;
+        } catch(Exception notThere) {
+            android.util.Log.i("Mininotes/Big","a backup not pushed: "+notThere.getMessage());
+            return Backups.Said.NOT_TAKEN;
+        }
+    }
+
+    /** When each device of mine was last told this device only keeps backups, by address: see {@link #tellKeepsBackups}. */
+    private static final java.util.Map<String,Long> TOLD_KEEPS=new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * "This device only keeps backups", said by a backup server to each of the owner's devices (decision 330), every six hours,
+     * and at once to one just added. Blocking.
+     */
+    static void tellKeepsBackups(Context where,NoteStore store,Keys keys) {
+        long now=System.currentTimeMillis();
+        try {
+            MaximaNode node=Node.node(where);
+            if(node==null)return;
+            for(NoteStore.Contact them:store.addresses()) {
+                if(!them.mine||!them.paired()||them.agreement.length==0)continue;
+                Long told=TOLD_KEEPS.get(them.address);
+                if(told!=null&&now-told<6*60*60_000L)continue;
+                byte[] sealed=Envelope.seal(new byte[16],0,now,Receipt.wrap(Receipt.KEEPS_BACKUPS),keys.signing(),Keys.publicKey(them.agreement));
+                if(handSaying(where,store,keys,node,them,sealed))TOLD_KEEPS.put(them.address,now);
+                // And that it reads a message, so it pushes: the offer of a backup is one.
+                tellMessages(where,store,keys,them);
+            }
+        } catch(Exception notNow){/* the next round */}
+    }
+
+    /** The doors of a paired device that are its own, never a relay: on this network first, then any it proved. */
+    static List<java.net.InetSocketAddress> bigDoors(Context where,NoteStore store,String address) {
+        List<java.net.InetSocketAddress> out=new ArrayList<>();
+        try {
+            MaximaNode node=Node.node(where);
+            NoteStore.Contact them=store.address(address);
+            com.eurobuddha.maxima.core.contacts.Contact reach=them==null||node==null?null:Node.known(where,them.contact);
+            if(reach==null)return out;
+            for(String door:Direct.firstTries(node.lanAddressFor(reach.publicKey),new ArrayList<>(reach.addresses),reach.publicKey))
+                try{out.add(Home.where(door));}catch(RuntimeException notADoor){/* the next */}
+        } catch(RuntimeException notNow){/* none, then */}
+        return out;
+    }
+
+    /** Whether any of these doors answers at all, now. */
+    private static boolean reachable(List<java.net.InetSocketAddress> doors) {
+        for(java.net.InetSocketAddress door:doors)try(java.net.Socket socket=new java.net.Socket()){socket.connect(door,Direct.LEASH);return true;}
+            catch(java.io.IOException notThere){/* the next */}
+        return false;
+    }
+
+    /**
+     * A big file offered to this device: kept in memory and put to the person (a notification, a box), or, from somebody whose
+     * files are taken without asking, saved at once. A stranger, or somebody blocked, is not heard.
+     */
+    private static Landed bigArrived(Context where,NoteStore store,NoteStore.Contact from,Message.Card card) {
+        Big.Offer offer=Big.Offer.read(card.words);
+        if(offer==null||!from.paired()||store.senderBlocked(from.address))return new Landed(null,null);
+        // Pushed (decision 330): only from one of mine, and only where this device takes pushes (a backup server, the PC).
+        if(offer.pushed) {
+            java.util.function.Consumer<Big.Waiting> take=Big.pushed;
+            if(!from.mine||take==null||Big.taking(offer.token))return new Landed(null,null);
+            android.util.Log.i("Mininotes/Big","a backup is being pushed here, "+(offer.bytes>>20)+" MB");
+            take.accept(new Big.Waiting(from.address,from.name,offer,System.currentTimeMillis()));
+            return new Landed(null,null);
+        }
+        if(Big.waitingFor(offer.token)!=null)return new Landed(null,null);
+        Big.Waiting one=new Big.Waiting(from.address,from.name,offer,System.currentTimeMillis());
+        Big.waiting(one);
+        android.util.Log.i("Mininotes/Big","a big file offered, "+(offer.bytes>>20)+" MB");
+        java.util.function.Consumer<Big.Waiting> tell=store.acceptsWithoutAsking(from.address)?Big.saving:Big.asking;
+        if(tell==null)tell=Big.asking;
+        if(tell!=null)tell.accept(one);
+        return new Landed(null,null);
+    }
+
+    /** A big file saved: fetched from the sender's own door into {@code to}. Throws where it could not be. Blocking. */
+    static void saveBig(Context where,NoteStore store,Big.Waiting one,java.io.OutputStream to,java.util.function.LongConsumer progress) throws java.io.IOException {
+        List<java.net.InetSocketAddress> doors=bigDoors(where,store,one.from);
+        if(doors.isEmpty())throw new java.io.IOException(Say.t(Big.NOT_NEAR,one.name));
+        Big.fetch(doors,one.offer,to,progress);
+        Big.answered(one.offer.token);
+        android.util.Log.i("Mininotes/Big","a big file saved, "+(one.offer.bytes>>20)+" MB");
+    }
+
+    /** A big file refused: the sender told where it can be, so it stops offering it. Blocking. */
+    static void refuseBig(Context where,NoteStore store,Big.Waiting one) {
+        Big.answered(one.offer.token);
+        Big.refuse(bigDoors(where,store,one.from),one.offer);
     }
 
     // ---- a help request, sent the moment a note or folder set to send one is opened: see Help (decision 113) ----------
@@ -5179,6 +5387,8 @@ final class Post {
                 android.util.Log.w("Mininotes/Post","dropped an arriving message: signed by this device itself");
                 return new Landed(null,null);
             }
+            // Who this device is, known before anything in it is taken in: a list of who has a note names it too (decision 324).
+            if(store.mySigningKey==null||store.mySigningKey.isEmpty())store.knowMyself(keys.signing().getPublic().getEncoded());
             if(!brought)knownBy(where,store,opened.sender,Node.sentBy(message));
             // Somebody taking up an offer, which arrives from a phone this one has never heard of - that
             // is the whole point of it, so it is read before the check that everything else must pass.
@@ -5474,6 +5684,15 @@ final class Post {
                 if(back)ANSWERS.execute(()->tellOwnParlons(where,store,keys,them));
                 if(first)ANSWERS.execute(()->sendMyParlons(where,store,keys,false));
                 contacts("heard their build takes your own Parlons! address"+(first?"":", as it said before")+(back?"; said it back":""));
+                return new Landed(null,null);
+            }
+            if(about==Receipt.KEEPS_BACKUPS) {
+                // A backup server of the owner's (decision 330): from now on it is sent nothing but backups, and anything that
+                // was given to it is taken off, so nothing waits for it. Heard only from one of mine: nobody else's word counts.
+                if(!from.mine)return new Landed(null,null);
+                boolean first=store.keepsBackups(from.address,true);
+                if(first){List<Sharing.Rule> off=store.offEverything(from.address);
+                    android.util.Log.i("Mininotes/Post","heard one of the owner's devices only keeps backups"+(off.isEmpty()?"":"; taken off "+off.size()));}
                 return new Landed(null,null);
             }
             if(about==Receipt.MESSAGES) {

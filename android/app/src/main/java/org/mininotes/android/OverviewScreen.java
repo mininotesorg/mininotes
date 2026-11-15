@@ -5,6 +5,7 @@ package org.mininotes.android;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -149,6 +150,61 @@ final class OverviewScreen {
         },e->a.alert(MainActivity.READ_FAILED));
     }
 
+    /**
+     * A card closed: out of Recent for good, not only off the screen, so it is not back the next time the cards come up (the
+     * owner, 2026-11-05: "we could swipe them up to remove them from the list"; decision 326), and the cards beside it close up.
+     * Back in Recent once it is opened again, as anything taken out of Recent is.
+     */
+    private void outOfRecent(Overview.Open one,View card) {
+        forget(one.id);
+        if(cards!=null){cards.removeView(card);said();}
+        a.background.submit(()->{a.store.outOfRecent(one.id);return null;},done->{},e->a.alert("Could not change that. Nothing was changed."));
+    }
+
+    /**
+     * Thrown up, closed, as a phone's open apps are: the card follows the finger up; let go past a quarter of its height, or
+     * flicked up, it flies off and is closed; otherwise it drops back. Sideways is still the row's, to scroll; a tap and a hold
+     * are still the card's.
+     */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private void thrownUp(View card,Overview.Open one) {
+        final float[] from=new float[2];final boolean[] lifting={false};
+        final android.view.VelocityTracker[] speed={null};
+        int slop=android.view.ViewConfiguration.get(a).getScaledTouchSlop();
+        card.setOnTouchListener((v,e)->{
+            switch(e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    from[0]=e.getRawX();from[1]=e.getRawY();lifting[0]=false;
+                    if(speed[0]!=null)speed[0].recycle();
+                    speed[0]=android.view.VelocityTracker.obtain();speed[0].addMovement(e);
+                    return false;
+                case MotionEvent.ACTION_MOVE: {
+                    if(speed[0]!=null)speed[0].addMovement(e);
+                    float dx=e.getRawX()-from[0],dy=e.getRawY()-from[1];
+                    if(!lifting[0]&&-dy>slop&&Math.abs(dy)>Math.abs(dx)*1.5f) {
+                        lifting[0]=true;v.cancelLongPress();v.setPressed(false);
+                        if(v.getParent()!=null)v.getParent().requestDisallowInterceptTouchEvent(true);
+                    }
+                    if(!lifting[0])return false;
+                    float up=Math.min(0,dy);
+                    v.setTranslationY(up);v.setAlpha(1f-Math.min(0.7f,-up/(float)Math.max(1,v.getHeight())));
+                    return true;
+                }
+                case MotionEvent.ACTION_UP: case MotionEvent.ACTION_CANCEL: {
+                    boolean was=lifting[0];lifting[0]=false;
+                    float flick=0;
+                    if(speed[0]!=null){speed[0].addMovement(e);speed[0].computeCurrentVelocity(1000);flick=speed[0].getYVelocity();speed[0].recycle();speed[0]=null;}
+                    if(!was)return false;
+                    boolean gone=e.getActionMasked()==MotionEvent.ACTION_UP&&(-v.getTranslationY()>v.getHeight()/4f||flick<-a.dp(900));
+                    if(gone)v.animate().translationY(-v.getHeight()*1.2f-v.getTop()).alpha(0f).setDuration(180).withEndAction(()->outOfRecent(one,v));
+                    else v.animate().translationY(0).alpha(1f).setDuration(160);
+                    return true;
+                }
+                default: return false;
+            }
+        });
+    }
+
     /** With no card left: the words that say why, and no button with nothing to do. */
     private void said() {
         if(cards==null)return;
@@ -215,7 +271,8 @@ final class OverviewScreen {
         // Held, as everything is (the owner, 2026-10-11: "make sure everything across the app has a contextual menu"): go to it,
         // or close its card, as throwing it up does.
         card.setOnLongClickListener(v->{a.heldMenu(v,null,"Open",(Runnable)()->{close();home.goTo(one);},
-            "Close",(Runnable)()->{forget(one.id);cards.removeView(card);said();});return true;});
+            "Close",(Runnable)()->outOfRecent(one,card));return true;});
+        thrownUp(card,one);
         LinearLayout.LayoutParams place=new LinearLayout.LayoutParams(wide,high);
         place.setMargins(a.dp(10),0,a.dp(10),0);
         card.setLayoutParams(place);

@@ -37,6 +37,18 @@ final class DesktopFileCards extends JPanel {
         slide.setWheelScrollingEnabled(false);
         slide.addMouseWheelListener(e->{JScrollBar bar=slide.getHorizontalScrollBar();bar.setValue(bar.getValue()+(int)Math.round(e.getPreciseWheelRotation()*60));});
         add(slide);
+        // The crosses follow the page: a note is opened locked and unlocked a moment later, once the notebook says this PC
+        // may write in it, after its cards are drawn; a cross that kept the locked state did nothing when clicked (the owner,
+        // 2026-11-15: "the X to put in the bin doesnt work").
+        app.page.addPropertyChangeListener("editable",e->crosses(row,app.page.isEditable()));
+    }
+
+    /** Every card's cross switched on or off. */
+    private static void crosses(Container in,boolean on) {
+        for(Component one:in.getComponents()) {
+            if(one instanceof JButton cross&&"binCross".equals(cross.getName()))cross.setEnabled(on);
+            else if(one instanceof Container inner)crosses(inner,on);
+        }
     }
 
     private int drawn=-1;
@@ -265,7 +277,7 @@ final class DesktopFileCards extends JPanel {
             mark.addMouseListener(new MouseAdapter(){@Override public void mouseClicked(MouseEvent e){if(SwingUtilities.isLeftMouseButton(e)){e.consume();DesktopStamp.show(app,stamp.n());}}});
             words.add(mark,BorderLayout.WEST);
         }
-        JButton delete=new JButton("×");delete.setFocusPainted(false);delete.setMargin(new Insets(0,4,0,4));delete.setFont(DesktopUi.BODY.deriveFont(15f));
+        JButton delete=new JButton("×");delete.setName("binCross");delete.setFocusPainted(false);delete.setMargin(new Insets(0,4,0,4));delete.setFont(DesktopUi.BODY.deriveFont(15f));
         delete.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
         delete.setToolTipText(Say.t("Move to bin"));delete.getAccessibleContext().setAccessibleName("Delete "+file.name);
         delete.setEnabled(app.page.isEditable());

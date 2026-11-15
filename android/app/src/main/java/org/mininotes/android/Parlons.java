@@ -118,7 +118,8 @@ final class Parlons {
 
     /** The sentences after the first, for the devices that could not be reached and those that need a newer Mininotes. */
     static String notReached(List<String> notReached) {
-        return notReached.isEmpty()?"":". "+Say.t("{0} could not be reached now: save again later",names(notReached));
+        // It goes by itself (see Later): said so, instead of asking the owner to save it again (2026-11-07).
+        return notReached.isEmpty()?"":". "+Say.t("It goes to {0} by itself once Mininotes is open there",names(notReached));
     }
     static String older(List<String> older) {
         if(older.isEmpty())return "";

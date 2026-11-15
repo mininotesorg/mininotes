@@ -129,6 +129,8 @@ final class LockChoice {
 
     /** The words shown again, a password added, the lock taken off: asked of whichever way opens it. */
     static String confirmLine(Way way,String what) {
-        return way==Way.PASSWORD?"Type your password "+what+".":way==Way.PHONE?"Use your fingerprint or screen lock "+what+".":"Type your 12 recovery words "+what+".";
+        // One sentence per way, what it is for put in its place: glued, it stayed English in every language.
+        String why=Say.t(what);
+        return way==Way.PASSWORD?Say.t("Type your password {0}.",why):way==Way.PHONE?Say.t("Use your fingerprint or screen lock {0}.",why):Say.t("Type your 12 recovery words {0}.",why);
     }
 }

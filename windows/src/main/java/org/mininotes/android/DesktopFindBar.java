@@ -83,10 +83,16 @@ final class DesktopFindBar extends JPanel {
     }
 
     private boolean refreshing;
-    private void again(){if(isVisible()&&!refreshing)SwingUtilities.invokeLater(()->look(false));}
+    /**
+     * The note changed under it: marked again where the words now are, and nothing else. The caret and the view stay where the
+     * writing is (the owner, 2026-11-07: "when we type or remove around one found we then jump to the next one, we have to make
+     * sure the search bar doesnt impact what we type"); only the arrows, Enter and F3 move them.
+     */
+    private void again(){if(isVisible()&&!refreshing)SwingUtilities.invokeLater(()->look(false,false));}
 
     /** Every place the words are, any case; from the first, or from near the one in hand. */
-    private void look(boolean fromStart) {
+    private void look(boolean fromStart){look(fromStart,true);}
+    private void look(boolean fromStart,boolean move) {
         int near=at>=0&&at<found.size()?found.get(at)[0]:0;
         clearMarks();found.clear();
         String term=words.getText().trim().toLowerCase(Locale.ROOT);
@@ -95,22 +101,51 @@ final class DesktopFindBar extends JPanel {
         if(!term.isEmpty())for(int from=text.indexOf(term);from>=0;from=text.indexOf(term,from+term.length()))found.add(new int[]{from,from+term.length()});
         at=found.isEmpty()?-1:0;
         if(!fromStart&&!found.isEmpty())for(int i=0;i<found.size();i++)if(found.get(i)[0]>=near){at=i;break;}
-        mark();
+        mark(move);
     }
+
+    /**
+     * The other tabs of the note: past the last match of this one, the next tab holding the words is opened, and before the
+     * first, the one before (the owner, 2026-11-04: "We need a search in note function").
+     */
+    interface Tabs {
+        /** The next tab that way holding the words opened; false where no other tab holds them. */
+        boolean step(String term,int by);
+    }
+    Tabs tabs;
 
     private void go(int by) {
+        int next=at+by;
+        String term=words.getText().trim();
+        if(tabs!=null&&!term.isEmpty()&&(found.isEmpty()||next<0||next>=found.size())&&tabs.step(term,by)) {
+            // Found again on the tab now open, after it is drawn; the first match going on, the last going back. The keys stay
+            // here, so another Enter goes on and never types into the note.
+            SwingUtilities.invokeLater(()->{look(true);if(by<0&&!found.isEmpty()){at=found.size()-1;mark();}words.requestFocusInWindow();});
+            return;
+        }
         if(found.isEmpty()){look(true);return;}
-        at=Math.floorMod(at+by,found.size());
+        at=Math.floorMod(next,found.size());
         mark();
     }
+    /** Opened, or brought back, with these words: the selection on the page where there is one, else what was looked for last. */
+    void open(String selected) {
+        if(selected!=null&&!selected.isBlank()&&selected.indexOf((char)10)<0)show(selected);
+        else if(isVisible()){words.requestFocusInWindow();words.selectAll();}
+        else show(words.getText());
+    }
+    /** The words looked for, for tests. */
+    void typeForTest(String term){words.setText(term);}
+    void goForTest(int by){go(by);}
 
     /** All marked, the one in hand more strongly, selected and scrolled to. */
-    private void mark() {
+    private void mark(){mark(true);}
+    /** @param move whether the caret goes to the one in hand and it is scrolled to: never while the note is being written in */
+    private void mark(boolean move) {
         clearMarks();
         Highlighter lights=page.getHighlighter();
         for(int i=0;i<found.size();i++)try{marks.add(lights.addHighlight(found.get(i)[0],found.get(i)[1],i==at?HERE:ALL));}catch(Exception none){/* past the end */}
         count.setText(found.isEmpty()?(words.getText().isBlank()?" ":Say.t("Not found")):Say.t("{0} of {1}",String.valueOf(at+1),String.valueOf(found.size())));
-        if(at>=0)try {
+        if(move&&at>=0)try {
             refreshing=true;
             page.setCaretPosition(found.get(at)[0]);
             Rectangle r=page.modelToView2D(found.get(at)[0]).getBounds();

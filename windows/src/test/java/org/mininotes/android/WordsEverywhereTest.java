@@ -27,13 +27,40 @@ public class WordsEverywhereTest {
     private static final Path WORDS=ROOT.resolve("android/app/src/main/resources/org/mininotes/android/words");
 
     /** The calls that put words on a screen, on either app. */
-    static final String CALLS="Say\\.t|IOException|IllegalStateException|IllegalArgumentException|item|heading|label|line|row|tapRow|toast|alert|under|part|setTitle|setMessage|setText|setToolTipText|button|primary|danger|quiet|body|note|spread|setPositiveButton|setNegativeButton|setNeutralButton|dimRow|wakeRow|confirm|confirmOr|ask|busy|busyDone|busySay|plain|switchRow|toggle|section|adds|chip|card|tell|roleShown|person|says|noteSays|failed";
+    static final String CALLS="Say\\.t|IOException|IllegalStateException|IllegalArgumentException|item|heading|label|line|row|tapRow|toast|alert|under|part|setTitle|setMessage|setText|setToolTipText|button|primary|danger|quiet|body|note|spread|setPositiveButton|setNegativeButton|setNeutralButton|dimRow|wakeRow|confirm|confirmOr|ask|busy|busyDone|busySay|plain|switchRow|toggle|section|adds|chip|card|tell|roleShown|person|says|noteSays|failed|setHint|putClientProperty|entry|empty|pill|step|confirmKey|askPassword|pick|over|Refused";
+    // setHint and the PC's placeholder (putClientProperty("JTextField.placeholderText",…)) put words in an empty field: "Write."
+    // stayed English in a note on a phone in French (the owner, 2026-11-15). And the helpers that translate what they are given
+    // (entry, empty, over, pill, step, confirmKey, askPassword, pick) and Vault's Refused, whose message is shown: their words were never
+    // read, so a phrase missing from the lists went unseen.
     private static final String LIT="\"(?:[^\"\\\\\\n]|\\\\.)*\"";
     /*
      * What a call is handed: a literal, a name or a bracket, then more of them, each after a +. A name stops before a +, as
      * every later part does: it once ran on through it, so name+" is here" was read as the name alone and never checked.
      */
-    private static final Pattern CALL=Pattern.compile("\\b(?:"+CALLS+")\\s*\\(\\s*((?:"+LIT+"|[^,(){};\"+]+|\\([^()]*\\))(?:\\s*\\+\\s*(?:"+LIT+"|[^,(){};\"+]+|\\([^()]*\\)))*)");
+    private static final String HANDED="(?:"+LIT+"|[^,(){};\"+]+|\\([^()]*\\))(?:\\s*\\+\\s*(?:"+LIT+"|[^,(){};\"+]+|\\([^()]*\\)))*";
+    private static final Pattern CALL=Pattern.compile("\\b(?:"+CALLS+")\\s*\\(\\s*("+HANDED+")");
+    private static final Pattern ARGUMENT=Pattern.compile("\\s*("+HANDED+")");
+
+    /** Each argument of the call whose brackets open just before {@code from}, as written. */
+    static List<String> arguments(String text,int from) {
+        List<String> out=new ArrayList<>();int end=closing(text,from);
+        for(int at=from;at<=end;) {
+            int stop=Math.min(end,until(text,at,','));
+            out.add(text.substring(at,stop));
+            if(stop>=end)break;
+            at=stop+1;
+        }
+        return out;
+    }
+    /** The phrases one argument hands a screen: its words and names glued with +, and each side of a choice. */
+    static List<String> phrases(String argument) {
+        List<String> out=new ArrayList<>();
+        Matcher a=ARGUMENT.matcher(argument);
+        if(a.lookingAt())out.add(template(a.group(1)));
+        // A choice, ok?"Saved "+name:"Not saved", is two phrases: each side read as one.
+        out.addAll(choices(argument));
+        return out;
+    }
 
     static Map<String,String> list(String code) throws Exception {
         try(var in=Files.newInputStream(WORDS.resolve(code+".json"))){return Say.read(in);}
@@ -57,13 +84,17 @@ public class WordsEverywhereTest {
         for(String dir:List.of("android/app/src/main/java/org/mininotes/android","windows/src/main/java/org/mininotes/android"))
             try(var all=Files.list(ROOT.resolve(dir))){all.filter(p->p.toString().endsWith(".java")).forEach(sources::add);}
         for(Path source:sources) {
-            String text=Files.readString(source,StandardCharsets.UTF_8);
+            // The demo build's made-up notebook: its words are notes' own titles and writing, put in a store, never a screen's.
+            if(source.getFileName().toString().equals("Demo.java"))continue;
+            // Without comments: a call's name in one, "note (the owner's …", opened brackets that an apostrophe never closed.
+            String text=noComments(Files.readString(source,StandardCharsets.UTF_8));
             Matcher m=CALL.matcher(text);
             // Overlapping, so a call inside another's brackets, button(Say.t("…")), is read too.
             for(int from=0;from<text.length()&&m.find(from);from=m.start()+1) {
-                List<String> saids=new ArrayList<>();saids.add(template(m.group(1)));
-                // A choice, ok?"Saved "+name:"Not saved", is two phrases: each side read as one.
-                saids.addAll(choices(text.substring(m.start(1),until(text,m.start(1),','))));
+                List<String> saids=new ArrayList<>();
+                // Every argument, not the first alone: section(body,"Put a backup back") was never read, and stayed English
+                // on a phone in French (the owner, 2026-11-15).
+                for(String argument:arguments(text,m.start(1)))saids.addAll(phrases(argument));
                 for(String said:saids) {
                     if(said==null||!onScreen(said)||listed(english,said))continue;
                     missing.putIfAbsent(said,source.getFileName().toString());
@@ -105,6 +136,31 @@ public class WordsEverywhereTest {
         }
         assertTrue(bare.size()+" places hand English to the screen without Say.t:\n"+String.join("\n",bare),bare.isEmpty());
     }
+    /**
+     * The phone's own calls the same way: a TextView's words, a field's hint and a notification's lines are shown as they are
+     * handed, so page.setHint("Write.") stayed English on a phone in French (the owner, 2026-11-15). Every such call on the
+     * phone is given Say.t, or a helper that translates. A box's title, message and buttons are not here: Box translates them.
+     */
+    static final Pattern PHONE=Pattern.compile("\\.(setText|setHint|setContentTitle|setContentText|setTicker|setSubtitle)\\s*\\(");
+    @Test public void phoneScreenCallsAreGivenTranslatedWords() throws Exception {
+        List<String> bare=new ArrayList<>();
+        try(var all=Files.list(ROOT.resolve("android/app/src/main/java/org/mininotes/android"))) {
+            for(Path source:all.filter(p->p.toString().endsWith(".java")).sorted().toList()) {
+                String text=noComments(Files.readString(source,StandardCharsets.UTF_8)),file=source.getFileName().toString();
+                Matcher m=PHONE.matcher(text);
+                while(m.find())for(String words:bareWords(text.substring(m.end(),closing(text,m.end()))))
+                    bare.add(file+":"+(text.substring(0,m.start()).split("\n",-1).length)+"  "+m.group().trim()+" "+words);
+            }
+        }
+        assertTrue(bare.size()+" places on the phone hand English to the screen without Say.t:\n"+String.join("\n",bare),bare.isEmpty());
+    }
+    @Test public void everyArgumentIsRead() {
+        String text="section(body,\"Put a backup back\");";
+        Matcher m=CALL.matcher(text);assertTrue(m.find());
+        List<String> said=new ArrayList<>();for(String one:arguments(text,m.start(1)))said.addAll(phrases(one));
+        assertTrue(said.contains("Put a backup back"));
+    }
+
     @Test public void theGuardFindsBareWords() {
         assertEquals(List.of("\"Saved\""),bareWords("\"Saved\""));
         assertEquals(List.of("\"Saved\"","\"Not saved\""),bareWords("ok?\"Saved\":\"Not saved\""));
@@ -293,6 +349,11 @@ public class WordsEverywhereTest {
         if(bare.matches("[a-z][a-zA-Z0-9_.:-]*"))return false;
         if(bare.matches("[A-Z0-9_]+")||bare.startsWith("Mininotes/")||bare.matches("(Ctrl|Shift|Alt)\\+.*"))return false;
         if(bare.equals("Ag\nAg"))return false;
+        // A property's or a class's dotted name, "JTextField.placeholderText", handed to putClientProperty: a key, not words.
+        if(bare.matches("[A-Za-z]\\w*(\\.\\w+)+"))return false;
+        // A key as Swing writes it, "control shift F", and a FlatLaf style, "showRevealButton: false": handed to a menu line
+        // or a property beside its words, never shown.
+        if(bare.matches("((control|shift|alt|meta|ctrl) )+\\w+")||bare.matches("(;?\\s*[a-z][a-zA-Z]*:\\s*[\\w#.%-]+)+;?"))return false;
         if(said.startsWith("<"))return false;   // markup around words given elsewhere
         char first=said.charAt(0);
         // Words starting with a small letter are words too where they make a phrase ("from {0}"); a lone small word is a key.

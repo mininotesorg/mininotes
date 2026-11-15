@@ -231,6 +231,17 @@ final class Unsent {
         return new ArrayList<>(once.values());
     }
 
+    /**
+     * Whether every reason is one that waits and goes by itself once the device is there (not reached, not in reach, not
+     * connected yet, an update to come): said as "◷ Waits for", never as a failure. None is not waiting.
+     */
+    static boolean waits(List<Problem> all) {
+        List<Problem> once=distinct(all);
+        if(once.isEmpty())return false;
+        for(Problem p:once)switch(p.why){case NOT_REACHED:case NOT_IN_REACH:case NOT_CONNECTED:case NEEDS_UPDATE:break;default:return false;}
+        return true;
+    }
+
     /** The reason whose fix is the box's one button: a pairing first, since nothing else puts that right. */
     static Problem first(List<Problem> all) {
         List<Problem> once=distinct(all);
@@ -262,7 +273,10 @@ final class Unsent {
         StringBuilder out=new StringBuilder();
         for(int at=0;at<once.size()&&at<3;at++) {
             if(out.length()>0)out.append("\n\n");
-            out.append(said(once.get(at),here)).append(' ').append(remedy(once.get(at),here));
+            // What to do first, then why (the owner, 2026-11-07); a link waits for an answer, and its remedy follows from it.
+            Problem p=once.get(at);
+            if(p.why==Why.LINKING)out.append(said(p,here)).append(' ').append(remedy(p,here));
+            else out.append(remedy(p,here)).append(' ').append(said(p,here));
         }
         int more=once.size()-3;
         if(more>0)out.append("\n\n").append(more==1?Say.t("1 more reason, the same way."):Say.t("{0} more reasons, the same way.",more));

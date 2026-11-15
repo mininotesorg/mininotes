@@ -38,7 +38,7 @@ public class SharedWordsTest {
         assertFalse(NoteLine.isSending(NoteLine.SAVING));
         assertEquals("Envoyé à Ana et Ben, en attente de leur confirmation à tous",NoteLine.sent(List.of("Ana","Ben")));
         Unsent.Problem far=new Unsent.Problem(Unsent.Why.NOT_REACHED,"PixelPro","Courses","","");
-        assertEquals("Impossible de joindre PixelPro. Voir pourquoi",NoteLine.couldNot(List.of(far),0));
+        assertEquals("◷ En attente de PixelPro. Voir comment",NoteLine.couldNot(List.of(far),0));
     }
 
     @Test public void whatWaitsIsSaidInFrench() {
@@ -100,7 +100,7 @@ public class SharedWordsTest {
         assertEquals("Enregistrement privé… environ 5 minutes restantes. Gardez Mininotes ouvert.",PrivateSpace.saying(false,5));
         assertEquals("Il ne compte pas ce PC parmi vos appareils. Activez aussi Mon appareil là-bas pour que les noms voyagent.",
             Persons.oneSided(true,true,false,"PC"));
-        assertEquals("Enregistré, et envoyé à Pro et Tablette. Vieux n’a pas pu être joint : enregistrez de nouveau plus tard",
+        assertEquals("Enregistré, et envoyé à Pro et Tablette. Il part tout seul vers Vieux dès que Mininotes y est ouvert",
             Parlons.said(false,"this PC",List.of("Pro","Tablette"),List.of("Vieux"),List.of()));
         assertEquals("Enregistré sur ce téléphone",Called.said("this phone",List.of(),List.of(),List.of()));
         assertTrue(new SyncStatus.State(0,0,SyncStatus.ONLY_HERE).brief("this phone").startsWith("Seulement sur ce téléphone · enregistré "));

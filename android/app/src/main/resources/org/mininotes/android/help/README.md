@@ -43,6 +43,42 @@ travels sealed end to end over the Minima network, or straight from device to de
 
 Newest first. Each version is the same on the phone and the PC unless it says otherwise.
 
+### 0.4.057
+
+- **Back up to another of your devices**, such as your own Linux server: *Backups…*, *Add a place…*, then choose it under
+  *Where*. The backup is sealed here and sent when that device can be reached directly, a phone on mobile data included;
+  one that does not get there goes on later from where it stopped. The PC keeps what your other devices send it too.
+- **Your own backup server**: a small Mininotes for a Linux server that keeps your backups and cannot open them. *Your own
+  server…* on the Backup page shows the line that installs it, and the [guide](https://github.com/mininotesorg/server).
+
+### 0.4.056
+
+- **The Backup page** (*Settings*, *My profile* or the menu): backups made by themselves to the folders you choose, each
+  with what goes in, when (each day, week or month, when Mininotes closes, or only when you ask), how many are kept and
+  what opens them: the notebook's lock, a password for the backups, or 12 words made for them. Always sealed.
+- No more recovery drafts: writing that cannot go into its note becomes notes, "(continued)" or "(copy)".
+
+### 0.4.054 to 0.4.055
+
+- **Big files**, 16 MB to 2 GB, go straight to another device on the same network, never through a relay, and are saved
+  into Downloads there.
+- *Find in this note*; a tab opens where you left it; the log can be shared from *Feedback*.
+
+### 0.4.043 to 0.4.053
+
+- Only what changed in a note travels; *History…* says how each thing reached each device; your own relays on all your
+  devices at once; your own newest versions are always kept; an old copy is never merged back.
+
+### 0.4.035 to 0.4.042
+
+- Quieter phones; devices that agree on what each has; *Remove* on one thing even inside a shared folder; several files at
+  once; quicker sync.
+
+### 0.4.032 to 0.4.034
+
+- One + to add anybody or one of your devices; *Accept everything without asking* on a person's page; a Temp notepad that
+  stays; a clearer profile.
+
 ### 0.4.031
 
 - On the PC, an update now takes even when Mininotes was opened from a shortcut, and one that does not finish says
@@ -266,7 +302,7 @@ Nothing else is needed on either: the Maxima node that carries your notes is ins
   away leaves it in the dock.
 - **Recent** lists what you opened lately: down the side on the PC, on Home on the phone. *Remove from Recent* (a right
   click on the PC) takes something off the list; nothing is deleted. On the phone, swipe up from the dock, or tap the
-  handle just above it, to flip through Recent as cards: tap a card to open it, swipe it away or press Back to close.
+  handle just above it, to flip through Recent as cards: tap a card to open it, throw it up to take it off Recent, or press Back.
 - **Temp** is for what you only need for a while, and to pass things between your own devices and the people you choose:
   what is in it goes to them and is gone everywhere when its time is up.
 - **Shared with me** holds what others shared with you, waiting for your answer (see
@@ -284,9 +320,9 @@ Nothing else is needed on either: the Maxima node that carries your notes is ins
 
 ## 5. Your own devices
 
-Link your phone and your PC once (*People and devices*, then *Add my device*, and scan the code of one on the other).
+Link your phone and your PC once (*People and devices*, +, scan the code of one on the other, *One of my devices*).
 From then on, what you share with your devices keeps itself up to date on all of them, both ways, a few seconds after
-you stop writing. A device of yours can be set to *Can read* if it should only look. Each device keeps its own layout:
+you stop writing. What each gets is chosen on its line. Each device keeps its own layout:
 where you put a note on one does not move it on the other, and each has its own dock.
 
 ## 6. Share with other people
@@ -315,8 +351,7 @@ Both are at the end of *Sync and sharing* in the menu.
 - **People and devices** lists the people you added, your own devices and your groups, each on its own page. A
   person's page shows what you share with them and lets you give them a picture of your choosing, seen only by you. A
   group's settings are behind its ›.
-- **The + by People** connects with someone: scan their code, paste their link, or *Share my link* to send yours in a
-  message or a chat. **The + by My devices** adds another device of your own.
+- **The +** adds someone or one of your devices: scan their code, paste their link, or *Share my link* to send yours.
 - **My profile** holds what is yours:
   - your **name** and your **picture**, which go to the people you are paired with;
   - your **Parlons! address**, sent by itself to your contacts;
@@ -391,9 +426,10 @@ Both are at the end of *Sync and sharing* in the menu.
 - **A note's file in the bin.** A file taken out of a note goes to the bin at once, with no question, and is taken out
   of the note on all your devices and for everybody the note goes to. *Put back* brings it back everywhere. It is gone
   for good only when the bin is emptied.
-- **Backups.** *Export backup* writes one file with every folder, note and file. Without the lock (see
-  [Privacy, encryption and keeping it safe](#14-privacy-encryption-and-keeping-it-safe)), it asks for a password for that
-  backup. *Add from backup* brings one back and asks whether to add to what is there or replace it.
+- **Backups.** *Backups…* (*Settings*, *My profile*) makes sealed backups by themselves, each day, week or month, or when
+  Mininotes closes, into a folder or to another of your devices, such as your own
+  [backup server](https://github.com/mininotesorg/server). The lock, a password or 12 words opens them. *Add from a
+  backup* brings one back.
 
 ## 12. The Agent: ask, and have it done
 
@@ -410,11 +446,8 @@ right place. A press outside its box closes it.
 With an [Integritas](https://docs.integritas.technology/) account, a file or a note can be stamped on the Minima
 blockchain from its menu. Only its fingerprint (SHA-256) leaves the device, never the file.
 
-- **Stamp on Minima…** records now that the file exists exactly as it is: a proof, from that moment, that it existed
-  and has not changed since. It uses a stamp of your Integritas account.
-- **Verify on Minima…** checks a file, later, against what was recorded: whether it was stamped, unchanged, and in
-  which block and on which date. It changes nothing and costs nothing.
-- **The difference:** stamping writes the proof once; verifying reads it back, as often as you like.
+- **Stamp on Minima…** records that it exists exactly as it is, with a stamp of your account, and later checks it again:
+  whether it is unchanged, in which block and when. Checking costs nothing.
 - **A note's stamp** covers its title, an empty line, then its text; renaming it marks it changed. Stamps made before
   0.4.018 cover the text alone: *Note, text only*.
 - **My profile, Stamping:** paste your API key and press *Save*; it is kept in your notebook, locked with it, and never
@@ -536,7 +569,6 @@ does* turns these lines on or off. An entry ending with "…" opens a box or a p
 | Translate | Put this page into another language, on this device. |
 | Versions | Every earlier version of this note, to look at or put back. |
 | Stamp on Minima | Record now on the Minima blockchain that it exists as it is. Only its fingerprint leaves this device. |
-| Verify on Minima | Check whether it is on Minima unchanged, and when it was recorded. |
 | Temporary | Keep it only for a while: it goes when its time is up. |
 | Archive | Put it away, out of sight, kept. |
 | Move to bin | Put it in the bin. It can be put back until the bin is emptied. |
@@ -558,9 +590,12 @@ does* turns these lines on or off. An entry ending with "…" opens a box or a p
 | Temp | What is only kept for a while, and goes to your other devices. |
 | Shared with me | What others shared with you, waiting for your answer. |
 | Bin | What was put in the bin, to put back or delete for good. |
-| Recovery writing | Writing that could not be saved into its note, kept aside. |
 | Export backup | Write one file holding every folder, note and file. |
 | Add from backup | Bring back what a backup file holds. |
+| Backups | Where backups go, when, how many are kept and what opens them; Back up now. |
+| Your own server | The line that installs a backup server on Linux, and its guide. |
+| History | How each thing reached each device lately: direct, or through which relay. |
+| Find in this note | Find words in this note, tab after tab. |
 | Share Mininotes | Tell someone about Mininotes. |
 | Update to v | Install the newer version. |
 | Feedback | Say something about Mininotes, publicly, under your name. |

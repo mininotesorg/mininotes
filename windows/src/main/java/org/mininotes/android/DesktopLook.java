@@ -267,7 +267,7 @@ final class DesktopLook {
     private static JButton step(String words,String name,float size) {
         JButton b=new JButton(words);b.setFont(DesktopUi.BODY.deriveFont(Font.BOLD,size));b.setForeground(Desktop.INK);b.setFocusPainted(false);
         b.putClientProperty(com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE,com.formdev.flatlaf.FlatClientProperties.BUTTON_TYPE_TOOLBAR_BUTTON);
-        b.setToolTipText(name);b.getAccessibleContext().setAccessibleName(name);b.setMargin(new Insets(2,6,2,6));
+        b.setToolTipText(Say.t(name));b.getAccessibleContext().setAccessibleName(Say.t(name));b.setMargin(new Insets(2,6,2,6));
         return b;
     }
 }

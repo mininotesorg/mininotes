@@ -73,7 +73,8 @@ final class PhoneTranslate {
         try {
             if(got.getResponseCode()!=200)throw new IOException("The translation packs are not on GitHub yet (HTTP "+got.getResponseCode()+").");
             try(InputStream in=got.getInputStream()){return Translation.manifest(new String(readAll(in),StandardCharsets.UTF_8));}
-        } catch(java.net.UnknownHostException|java.net.SocketTimeoutException|java.net.ConnectException offline) {
+        } catch(java.net.UnknownHostException|java.net.SocketTimeoutException|java.net.ConnectException|javax.net.ssl.SSLException offline) {
+            android.util.Log.w("Mininotes/Translate","the list of packs not read: "+offline);
             throw new IOException("GitHub could not be reached. Check the connection and try again.");
         } finally{got.disconnect();}
     }
@@ -180,7 +181,7 @@ final class PhoneTranslate {
                 else {
                     List<Translation.File> all=listed.get();
                     long size=all==null?-1:missing(a,all,Translation.both(code));
-                    mark=size>0?"↓ "+megabytes(size):Say.t("not available yet");
+                    mark=all==null?"":size>0?"↓ "+megabytes(size):Say.t("not available yet");
                 }
                 labels.add(name+"   "+mark);
             }
@@ -203,7 +204,8 @@ final class PhoneTranslate {
         final TextView said=a.label(" ",MainActivity.QUIET,a.MUTED);body.addView(said,new LinearLayout.LayoutParams(-1,-2));
         final Button fetchPacks=new Button(a);fetchPacks.setText(Say.t("Download"));fetchPacks.setVisibility(View.GONE);
         final Button stop=new Button(a);stop.setText(Say.t("Stop"));stop.setVisibility(View.GONE);
-        LinearLayout buttons=new LinearLayout(a);buttons.setGravity(Gravity.END);buttons.addView(stop);buttons.addView(fetchPacks);
+        final Button retry=new Button(a);retry.setText(Say.t("Try again"));retry.setVisibility(View.GONE);
+        LinearLayout buttons=new LinearLayout(a);buttons.setGravity(Gravity.END);buttons.addView(stop);buttons.addView(retry);buttons.addView(fetchPacks);
         body.addView(buttons,new LinearLayout.LayoutParams(-1,-2));
 
         final boolean writes=a.noteWritable();
@@ -230,10 +232,11 @@ final class PhoneTranslate {
         final AtomicReference<Boolean> stopped=new AtomicReference<>(false);
         final int[] asked={0};
         final Runnable[] go={null};
+        retry.setOnClickListener(v->go[0].run());
         go[0]=()->{
             final int me=++asked[0];
             final String from=codes.get(fromBox.getSelectedItemPosition()),to=codes.get(toBox.getSelectedItemPosition());
-            result.setText("");enable.run();fetchPacks.setVisibility(View.GONE);
+            result.setText("");enable.run();fetchPacks.setVisibility(View.GONE);retry.setVisibility(View.GONE);
             if(from.equals(to)){said.setText(Say.t("Choose two different languages."));return;}
             final List<Translation.Pair> pairs=Translation.steps(from,to);
             boolean here=true;for(Translation.Pair p:pairs)if(!have(a,p))here=false;
@@ -253,7 +256,8 @@ final class PhoneTranslate {
                             done->{stop.setVisibility(View.GONE);relabel.run();fromItems.notifyDataSetChanged();toItems.notifyDataSetChanged();if(box.isShowing())go[0].run();},
                             e->{stop.setVisibility(View.GONE);said.setText(e.getMessage()==null?Say.t("The packs could not be downloaded."):Say.t(e.getMessage()));fetchPacks.setVisibility(View.VISIBLE);});
                     });
-                },e->{if(me==asked[0])said.setText(unavailable(a,from,to));});
+                // The list not read is not a language missing: why, and the way on (the owner, 2026-11-09, their screenshot).
+                },e->{if(me!=asked[0])return;said.setText(Say.t(e.getMessage()==null?"GitHub could not be reached. Check the connection and try again.":e.getMessage()));retry.setVisibility(View.VISIBLE);});
                 return;
             }
             said.setText(Say.t("Translating…"));stop.setVisibility(View.VISIBLE);

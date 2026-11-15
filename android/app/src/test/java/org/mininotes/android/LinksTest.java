@@ -46,6 +46,18 @@ public class LinksTest {
         assertTrue(Links.find(null).isEmpty());
     }
 
+    @Test public void everyWebEndingIsAnAddress() {
+        // The owner, 2026-11-15: "detect all hyperlink form every extension", a .taxi address for one.
+        assertEquals(List.of("https://rides.example.taxi"),targets("Call rides.example.taxi tonight."));
+        assertEquals(List.of("https://shop.example.BERLIN/a","https://my.site.photography"),targets("shop.example.BERLIN/a and my.site.photography"));
+        assertTrue("the list was read, not only the common few",Links.ENDINGS.size()>1000);
+        // Endings that are mostly files stay words bare, and are addresses with www. or a scheme.
+        assertTrue(Links.find("setup.py Notes.md clip.mov build.sh").isEmpty());
+        assertEquals(List.of("https://www.example.zip"),targets("www.example.zip"));
+        // A name ending in what is no web ending stays words, and so does a version or a sentence's full stop.
+        assertTrue(Links.find("report.docx photo.jpeg 1.2.3 done.").isEmpty());
+    }
+
     @Test public void wherePlacesAreAndWhatIsAtOne() {
         String text="one https://example.org two";
         List<Links.Link> all=Links.find(text);

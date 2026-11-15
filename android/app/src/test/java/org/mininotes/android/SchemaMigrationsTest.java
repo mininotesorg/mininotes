@@ -593,6 +593,18 @@ public class SchemaMigrationsTest {
         assertFalse(upper.contains("UPDATE ")||upper.contains("DELETE ")||upper.contains("DROP "));
     }
 
+    @Test public void everyThingKnowsWhenItCameToWhereItIs() {
+        // Decision 336: added columns and triggers, filled from the dates already there; no row removed, nothing else changed.
+        assertTrue(SchemaMigrations.VERSION>=63);
+        String fresh=String.join(" ",SchemaMigrations.create()),step=String.join(" ",SchemaMigrations.upgrade(62,63));
+        for(String sql:new String[]{fresh,step})for(String table:new String[]{"notes","things","files"}) {
+            assertTrue(sql.contains("ALTER TABLE "+table+" ADD COLUMN arrived INTEGER NOT NULL DEFAULT 0"));
+            assertTrue(sql.contains("CREATE TRIGGER IF NOT EXISTS "+table+"_arrived AFTER INSERT ON "+table));
+        }
+        String upper=step.toUpperCase(java.util.Locale.ROOT);
+        assertFalse(upper.contains("DELETE ")||upper.contains("DROP "));
+    }
+
     @Test public void downgradeIsRefusedRatherThanRewritingTheNotebook() {
         try{SchemaMigrations.upgrade(SchemaMigrations.VERSION,1);fail("Accepted a downgrade");}
         catch(IllegalArgumentException expected){assertTrue(expected.getMessage().contains("newer version"));}

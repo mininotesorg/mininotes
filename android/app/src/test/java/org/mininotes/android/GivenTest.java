@@ -82,11 +82,11 @@ public class GivenTest {
 
     @Test public void theRefusedAreNamedWithTheirReason() {
         String one=Given.refusal("/sdcard/big.mov",Given.TOO_BIG);
-        assertEquals("big.mov – larger than 25 MB",one);
+        assertEquals("big.mov: larger than 25 MB",one);
         assertTrue(Given.refusals(Collections.singletonList(one)).startsWith("This was not added:"));
         String both=Given.refusals(Arrays.asList(one,Given.refusal("x.bin",Given.UNREADABLE)));
         assertTrue(both.startsWith("These were not added:"));
-        assertTrue(both.contains("x.bin – it could not be read"));
+        assertTrue(both.contains("x.bin: it could not be read"));
         assertTrue(both.endsWith("Nothing else was changed."));
     }
 }

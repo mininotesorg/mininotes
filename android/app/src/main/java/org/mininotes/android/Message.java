@@ -30,6 +30,8 @@ final class Message {
     static final int FORMAT=1;
     /** Words; "please send me your Parlons! address"; and the answer, with the address. */
     static final int TEXT=1, ASK_PARLONS=2, PARLONS=3;
+    /** A big file offered straight from the device (see {@link Big}): its words are the offer. A build from before reads it as nothing. */
+    static final int BIG=4;
     /** A brief message, not a letter: as long as a help request's words. */
     static final int MOST_WORDS=280;
     /** Sixteen bytes name a message, so its answer and a second arrival of it are known for the same one. */
@@ -63,8 +65,10 @@ final class Message {
     /** The inside of a card. */
     static byte[] wrap(Card c) {
         if(c.id==null||c.id.length!=ID)throw new IllegalArgumentException("A message needs a sixteen-byte id.");
-        if(c.kind!=TEXT&&c.kind!=ASK_PARLONS&&c.kind!=PARLONS)throw new IllegalArgumentException("No such kind of message.");
-        String words=c.words.trim();if(words.length()>MOST_WORDS)words=words.substring(0,MOST_WORDS);
+        if(c.kind!=TEXT&&c.kind!=ASK_PARLONS&&c.kind!=PARLONS&&c.kind!=BIG)throw new IllegalArgumentException("No such kind of message.");
+        // An offer is said whole, never cut: cut, it would not be one (Big.Offer.read).
+        String words=c.kind==BIG?c.words:c.words.trim();if(c.kind!=BIG&&words.length()>MOST_WORDS)words=words.substring(0,MOST_WORDS);
+        if(c.kind==BIG&&words.getBytes(StandardCharsets.UTF_8).length>MOST_WORDS*4)throw Big.wrong("offer-too-long");
         String parlons=c.kind==PARLONS?c.parlons.trim():"";
         if(c.kind==TEXT&&words.isEmpty())throw new IllegalArgumentException("A message needs words.");
         if(c.kind==PARLONS&&parlons.isEmpty())throw new IllegalArgumentException("An address needs an address.");
@@ -93,7 +97,7 @@ final class Message {
             if(in.readUnsignedByte()!=FORMAT)return null;
             byte[] id=new byte[ID];in.readFully(id);
             int kind=in.readUnsignedByte();
-            if(kind!=TEXT&&kind!=ASK_PARLONS&&kind!=PARLONS)return null;
+            if(kind!=TEXT&&kind!=ASK_PARLONS&&kind!=PARLONS&&kind!=BIG)return null;
             int length=in.readUnsignedShort();if(length>MOST_WORDS*4)return null;
             byte[] text=new byte[length];in.readFully(text);
             int place=in.readUnsignedShort();if(place>Parlons.ADDRESS_MOST*4)return null;
@@ -101,6 +105,7 @@ final class Message {
             long at=in.readLong();
             if(at<=0||in.available()!=0)return null;
             String words=new String(text,StandardCharsets.UTF_8),parlons=new String(address,StandardCharsets.UTF_8);
+            if(kind==BIG)return Big.Offer.read(words)==null?null:new Card(id,kind,words,"",at);
             if(words.length()>MOST_WORDS)words=words.substring(0,MOST_WORDS);
             if(kind==TEXT&&words.trim().isEmpty())return null;
             if(kind==PARLONS&&parlons.trim().isEmpty())return null;

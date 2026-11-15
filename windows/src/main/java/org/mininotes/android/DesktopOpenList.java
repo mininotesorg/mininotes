@@ -100,7 +100,9 @@ final class DesktopOpenList extends JPanel {
             @Override protected void paintComponent(Graphics g0) {
                 if(!front&&!Boolean.TRUE.equals(getClientProperty("over")))return;
                 Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
-                g.setColor(front?DesktopUi.CARD:new Color(0,0,0,14));g.fillRoundRect(0,0,getWidth(),getHeight(),12,12);
+                // The one in front a deeper shade of the list's own colour, not a white card (the owner, 2026-11-15, with a
+                // screenshot of a white row on a green list: "a shade of green to highlight the selected element").
+                g.setColor(new Color(0,0,0,front?34:14));g.fillRoundRect(0,0,getWidth(),getHeight(),12,12);
                 if(front){g.setColor(DesktopUi.ACCENT);g.fillRoundRect(0,6,3,getHeight()-12,3,3);}
                 g.dispose();
             }

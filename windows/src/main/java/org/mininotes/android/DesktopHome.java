@@ -342,10 +342,12 @@ final class DesktopHome extends JPanel {
         // A right-click on Home itself, not on an icon: what can be made here, and syncing everything.
         MouseAdapter room=new MouseAdapter(){
             // A press on the empty room lets go of the icons chosen (decision 292), as Explorer's does.
-            public void mousePressed(MouseEvent e){clearChoice();if(e.isPopupTrigger())pad.roomMenu(Desktop.library(),e.getComponent(),e.getX(),e.getY());}
-            public void mouseReleased(MouseEvent e){if(e.isPopupTrigger())pad.roomMenu(Desktop.library(),e.getComponent(),e.getX(),e.getY());}
+            public void mousePressed(MouseEvent e){if(!e.isControlDown())clearChoice();if(SwingUtilities.isLeftMouseButton(e)&&e.getComponent()==grid)grid.bandStart(e);if(e.isPopupTrigger())pad.roomMenu(Desktop.library(),e.getComponent(),e.getX(),e.getY());}
+            public void mouseReleased(MouseEvent e){if(e.getComponent()==grid)grid.bandEnd();if(e.isPopupTrigger())pad.roomMenu(Desktop.library(),e.getComponent(),e.getX(),e.getY());}
+            // A box dragged over the empty room chooses what it covers (the owner, 2026-11-07).
+            public void mouseDragged(MouseEvent e){if(e.getComponent()==grid)grid.bandDrag(e);}
         };
-        grid.addMouseListener(room);scroll.getViewport().addMouseListener(room);
+        grid.addMouseListener(room);grid.addMouseMotionListener(room);scroll.getViewport().addMouseListener(room);
         turning();
 
         // The foot: the search with the overview button beside it, then the dock.
@@ -704,8 +706,45 @@ final class DesktopHome extends JPanel {
     /** Whether this icon is drawn as chosen: one of those chosen, on the grid they were chosen on. */
     boolean picked(Tile t){return t.getParent()!=null&&t.getParent()==choosingIn&&choosing.has(t.thing.id);}
 
+    /**
+     * Set by Choose several... in an icon's menu (the owner, 2026-11-07: "we should be able to select multiple elements like
+     * images in Temp to be able to copy them all at once"): until Esc or a press on the empty room, a plain click on that grid
+     * chooses or lets go, as a Ctrl+click does, instead of opening.
+     */
+    boolean several;
+    /** The icon a menu was opened on: the one Choose several... starts with. */
+    private Tile menuTile;
+
+    /** Choose several... from an icon's menu: this one chosen, and the clicks that follow choose too. */
+    void chooseSeveral(Tile tile) {
+        if(tile==null||!(tile.getParent() instanceof Icons in))return;
+        if(choosingIn!=in){clearChoice();choosingIn=in;}
+        if(!choosing.has(tile.thing.id))choosing.toggle(tile.thing.id);
+        several=true;in.repaint();
+        pad.status.setToolTipText(null);pad.status.setText(Say.t("Click the others to choose them, then right-click one. Esc when done"));
+    }
+    /** Ctrl+A on an icon: everything that may be chosen on its grid. */
+    void chooseAll(Icons in) {
+        if(choosingIn!=in){clearChoice();choosingIn=in;}
+        choosing.all(order(in));in.repaint();
+    }
+    /** Ctrl+C on an icon: it, or all those chosen with it, copied as files, as their menu's Copy (decision 292). */
+    void copyChosen(Tile tile) {
+        List<NoteStore.Branch> many=chosenWith(tile);
+        for(NoteStore.Branch one:many)if(one.kind!=NoteStore.Branch.Kind.FILE){pad.status.setText(Say.t("Only files can be copied"));return;}
+        withHeld(many,files->{if(files.size()==1)pad.copyFile(files.get(0));else pad.copyFiles(files);});
+    }
+    /** A box dragged over a grid's empty room: what it covers chosen, with Ctrl added to what was. */
+    void chooseCovered(Icons in,Rectangle box,java.util.Collection<String> before) {
+        if(choosingIn!=in){choosing.clear();if(choosingIn!=null)choosingIn.repaint();choosingIn=in;}
+        Set<String> under=new java.util.HashSet<>();
+        for(Tile one:in.tiles)if(one.isVisible()&&one.getBounds().intersects(box))under.add(one.thing.id);
+        choosing.covered(order(in),under,before);in.repaint();
+    }
+
     /** Esc, or a press on the empty room: nothing chosen. Whether anything was. */
     boolean clearChoice() {
+        several=false;
         boolean had=!choosing.isEmpty();choosing.clear();
         if(choosingIn!=null){choosingIn.repaint();choosingIn=null;}
         return had;
@@ -750,6 +789,7 @@ final class DesktopHome extends JPanel {
 
     /** An icon's menu: on one of several chosen, the menu for them all; on any other, its own, and the choice let go of. */
     JPopupMenu menuAt(Tile tile) {
+        menuTile=tile;
         List<NoteStore.Branch> many=chosenWith(tile);
         if(many.size()>1)return chosenMenu(many);
         if(!picked(tile))clearChoice();
@@ -770,6 +810,7 @@ final class DesktopHome extends JPanel {
         if(offers.contains(DesktopChoosing.Offer.COPY))counted(menu,"Copy",count,()->withHeld(many,pad::copyFiles));
         if(offers.contains(DesktopChoosing.Offer.SEND))counted(menu,"Send to a device…",count,()->withHeld(many,files->pad.fileCards.send(files)));
         if(offers.contains(DesktopChoosing.Offer.BIN)){if(menu.getComponentCount()>0)menu.addSeparator();counted(menu,"Move to bin",count,()->binAll(many,null));}
+        if(choosingIn!=null){Icons in=choosingIn;menu.addSeparator();JMenuItem all=DesktopMenus.item("Select all");all.addActionListener(e->chooseAll(in));menu.add(all);}
         return menu;
     }
     private static void counted(JPopupMenu menu,String said,String count,Runnable does){JMenuItem one=DesktopMenus.item(said);one.setText(Say.t(said)+count);one.addActionListener(e->does.run());menu.add(one);}
@@ -952,6 +993,8 @@ final class DesktopHome extends JPanel {
         pad.disk.submit(()->store().mayChangeFile(file.id),may->{rename.setVisible(may);replace.setVisible(may);if(menu.isVisible())menu.pack();},pad::failed);
         // On the clipboard without opening it (the owner, 2026-10-18; decision 198): a picture as a picture, any file as a file.
         item(menu,"Copy",()->withHeld(file,pad::copyFile));
+        // Several at once without knowing Ctrl+click (the owner, 2026-11-07: "ok with Choisir plusieurs").
+        Tile on=menuTile;if(on!=null&&on.thing.id.equals(file.id)&&on.getParent() instanceof Icons)item(menu,"Choose several…",()->chooseSeveral(on));
         // On Minima: one line, saying how far its stamp is, opening the one window for it (decisions 199, 224 and 253).
         DesktopStamp.menuLine(pad,menu,file.id,()->withHeld(file,held->DesktopStamp.thing(pad,held.id,false)));
         item(menu,"Save on my computer…",()->withHeld(file,pad::saveCopy));
@@ -1035,7 +1078,7 @@ final class DesktopHome extends JPanel {
             choices.add(new NoteStore.Branch(NoteStore.Branch.Kind.PAGE,"","","New note","",0,0,false));
             for(NoteStore.Branch one:lately)if(choices.size()<=12)choices.add(one);
             NoteStore.Branch into=DesktopUi.pick(pad.frame,"Put in a note",file.name,choices,
-                b->b.id.isEmpty()?"New note":b.name+(b.detail.isEmpty()?"":"   ·   "+b.detail),"Put it there");
+                b->b.id.isEmpty()?Say.t("New note"):b.name+(b.detail.isEmpty()?"":"   ·   "+b.detail),"Put it there");
             if(into==null)return;
             pad.disk.submit(()->{
                 String note=into.id;
@@ -1997,7 +2040,7 @@ final class DesktopHome extends JPanel {
                     if(Grid.place(one.thing.kind)){places.put(one.thing.id,one.thing.cell);continue;}
                     ids.add(one.thing.id);cells.add(kept?one.thing.cell:Layout.NONE);
                 }
-                drawn=Layout.home(ids,cells,places,NoteStore.FAVOURITES,cols);drawnFor=cols;
+                drawn=places.isEmpty()?Layout.folder(ids,cells,cols):Layout.home(ids,cells,places,NoteStore.FAVOURITES,cols);drawnFor=cols;
             }
             return drawn;
         }
@@ -2108,9 +2151,24 @@ final class DesktopHome extends JPanel {
             int rows=Layout.rows(drawn())+1;
             return new Dimension(columns()*CELL+2*SIDE,top()+rows*HIGH+TOP);
         }
+        /** The box being dragged over the empty room to choose what it covers, where it is; null when none. */
+        Rectangle band;private java.awt.Point bandFrom;private List<String> bandBefore;
+        /** Pressed on the empty room: a box may start here. With Ctrl, what was chosen stays. */
+        void bandStart(MouseEvent e){bandFrom=e.getPoint();band=null;bandBefore=e.isControlDown()&&home.choosingIn==this?home.choosing.chosen():null;}
+        void bandDrag(MouseEvent e) {
+            if(bandFrom==null||home.carry.carrying())return;
+            java.awt.Point p=e.getPoint();
+            Rectangle now=new Rectangle(Math.min(bandFrom.x,p.x),Math.min(bandFrom.y,p.y),Math.abs(p.x-bandFrom.x),Math.abs(p.y-bandFrom.y));
+            if(band==null&&now.width<6&&now.height<6)return;
+            band=now;home.chooseCovered(this,band,bandBefore);
+        }
+        void bandEnd(){bandFrom=null;if(band!=null){band=null;repaint();}}
         @Override protected void paintChildren(Graphics g0) {
             super.paintChildren(g0);
             if(paged())DesktopPages.dots((Graphics2D)g0,this,Layout.dotted(spots(),pageX,pageY),pageX,pageY);
+            if(band!=null){Graphics2D g=(Graphics2D)g0.create();
+                g.setColor(DesktopUi.mix(DesktopUi.ACCENT,DesktopUi.PAPER,0.85f));g.fillRect(band.x,band.y,band.width,band.height);
+                g.setColor(DesktopUi.ACCENT);g.drawRect(band.x,band.y,band.width,band.height);g.dispose();}
             if(landing==null)return;
             // Where a carried icon will land: the outline of an icon, quiet, so it reads as a place and not a thing.
             Graphics2D g=(Graphics2D)g0.create();g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
@@ -2140,6 +2198,8 @@ final class DesktopHome extends JPanel {
                 if(!SwingUtilities.isLeftMouseButton(e)||carry.moved())return;
                 // Ctrl or Shift held: chosen, among others, and not opened (decision 292).
                 if((e.isControlDown()||e.isShiftDown())&&tile.getParent() instanceof Icons in){choose(in,tile,e.isShiftDown());return;}
+                // After Choose several..., a plain click on that grid chooses too.
+                if(several&&tile.getParent() instanceof Icons in&&in==choosingIn){choose(in,tile,false);return;}
                 plainClick(tile);
                 if(thing.asking||where==Where.AWAY)menuFor(thing,where).show(tile,e.getX(),e.getY());else opened(thing,where);
             }
@@ -2149,6 +2209,11 @@ final class DesktopHome extends JPanel {
         };
         tile.addMouseListener(hand);tile.addMouseMotionListener(hand);
         tile.addKeyListener(new KeyAdapter(){public void keyPressed(KeyEvent e){
+            // Ctrl+A chooses every icon of the grid, Ctrl+C copies the chosen files, as in Explorer (the owner, 2026-11-07).
+            if(e.isControlDown()&&!e.isShiftDown()&&!e.isAltDown()&&tile.getParent() instanceof Icons in) {
+                if(e.getKeyCode()==KeyEvent.VK_A){chooseAll(in);e.consume();return;}
+                if(e.getKeyCode()==KeyEvent.VK_C&&tile.where!=Where.AWAY){copyChosen(tile);e.consume();return;}
+            }
             Does does=does(e.getKeyCode(),e.isShiftDown(),e.isControlDown()||e.isAltDown());
             switch(does) {
                 case OPEN: if(thing.asking||where==Where.AWAY)menuFor(thing,where).show(tile,16,tile.getHeight()-12);else opened(thing,where);break;

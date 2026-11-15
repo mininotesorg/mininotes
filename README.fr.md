@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 bfd9bcfd1e0b8071f5b694aeec3d5a2e71a5283194b4168d12a53daee11cb960 -->
+<!-- Translated from README.md, SHA-256 974676a5b8610c2363af3db0224eda7faba1672b112ebb1cbb9ccb2ca928a31e -->
 
 # Mininotes
 
@@ -44,6 +44,47 @@ voyage scellé de bout en bout sur le réseau Minima, ou directement d'un appare
 ## 1. Nouveautés
 
 Les plus récentes d'abord. Chaque version est la même sur le téléphone et sur le PC, sauf mention contraire.
+
+### 0.4.057
+
+- **Sauvegarder sur un autre de vos appareils**, comme votre propre serveur Linux : *Sauvegardes…*, *Ajouter un
+  emplacement…*, puis choisissez-le sous *Où*. La sauvegarde est scellée ici et envoyée quand cet appareil peut être
+  joint directement, y compris un téléphone en données mobiles ; une sauvegarde qui n'arrive pas reprend plus tard là où
+  elle s'était arrêtée. Le PC garde aussi ce que vos autres appareils lui envoient.
+- **Votre propre serveur de sauvegarde** : un petit Mininotes pour serveur Linux, qui garde vos sauvegardes sans pouvoir
+  les ouvrir. *Votre propre serveur…*, sur la page Sauvegardes, montre la ligne qui l'installe, et le
+  [guide](https://github.com/mininotesorg/server).
+
+### 0.4.056
+
+- **La page Sauvegardes** (*Réglages*, *Mon profil* ou le menu) : des sauvegardes faites d'elles-mêmes dans les dossiers
+  de votre choix, chacune avec ce qu'elle contient, quand (chaque jour, semaine ou mois, à la fermeture de Mininotes, ou
+  seulement sur demande), combien sont gardées et ce qui les ouvre : le verrou du carnet, un mot de passe pour les
+  sauvegardes, ou 12 mots créés pour elles. Toujours scellées.
+- Fini les brouillons de récupération : ce qui ne peut pas entrer dans sa note devient des notes, « (suite) » ou
+  « (copie) ».
+
+### 0.4.054 à 0.4.055
+
+- **Les gros fichiers**, de 16 Mo à 2 Go, vont directement à un autre appareil du même réseau, jamais par un relais, et
+  sont enregistrés là-bas dans Téléchargements.
+- *Chercher dans cette note* ; un onglet s'ouvre là où vous l'aviez laissé ; le journal peut être partagé depuis *Avis*.
+
+### 0.4.043 à 0.4.053
+
+- Seul ce qui a changé dans une note voyage ; *Historique…* dit comment chaque chose a atteint chaque appareil ; vos
+  propres relais sur tous vos appareils à la fois ; vos versions les plus récentes sont toujours gardées ; une ancienne
+  copie n'est jamais réintégrée.
+
+### 0.4.035 à 0.4.042
+
+- Des téléphones plus discrets ; des appareils d'accord sur ce que chacun a ; *Retirer* sur une seule chose, même dans
+  un dossier partagé ; plusieurs fichiers à la fois ; une synchronisation plus rapide.
+
+### 0.4.032 à 0.4.034
+
+- Un seul + pour ajouter n'importe qui ou un de vos appareils ; *Tout accepter sans demander* sur la page d'une
+  personne ; un bloc-notes Temp qui reste ; un profil plus clair.
 
 ### 0.4.031
 
@@ -288,7 +329,7 @@ Rien d'autre n'est nécessaire, ni sur l'un ni sur l'autre : le nœud Maxima qui
 - **Récents** liste ce que vous avez ouvert dernièrement : sur le côté sur le PC, sur l'accueil sur le téléphone.
   *Retirer des récents* (clic droit sur le PC) retire un élément de la liste, sans rien supprimer. Sur le téléphone,
   balayez vers le haut depuis le dock, ou touchez la poignée juste au-dessus, pour feuilleter les récents en cartes :
-  touchez-en une pour l'ouvrir, balayez-la ou faites Retour pour fermer.
+  touchez-en une pour l'ouvrir, lancez-la vers le haut pour la retirer des récents, ou faites Retour.
 - **Temp** sert à ce dont vous n'avez besoin qu'un temps, et à passer des choses à vos appareils et aux personnes
   choisies : son contenu leur parvient, puis disparaît partout à échéance.
 - **Partagé avec moi** contient ce que d'autres vous ont partagé, en attente de votre réponse (voir
@@ -307,11 +348,10 @@ Rien d'autre n'est nécessaire, ni sur l'un ni sur l'autre : le nœud Maxima qui
 
 ## 5. Vos propres appareils
 
-Reliez votre téléphone et votre PC une fois (*Personnes et appareils*, puis *Ajouter mon appareil*, et scannez le code
-de l'un avec l'autre). Ensuite, ce que vous partagez avec vos appareils se met à jour tout seul sur chacun, dans les
-deux sens, quelques secondes après que vous cessez d'écrire. Un de vos appareils peut être réglé sur *Peut lire* s'il
-doit seulement consulter. Chaque appareil garde sa disposition : placer une note sur l'un ne la déplace pas sur l'autre,
-et chacun a son dock.
+Reliez votre téléphone et votre PC une fois (*Personnes et appareils*, +, scannez le code de l'un avec l'autre, *Un de
+mes appareils*). Ensuite, ce que vous partagez avec vos appareils se met à jour tout seul sur chacun, dans les deux
+sens, quelques secondes après que vous cessez d'écrire. Ce que chacun reçoit se choisit sur sa ligne. Chaque appareil
+garde sa disposition : placer une note sur l'un ne la déplace pas sur l'autre, et chacun a son dock.
 
 ## 6. Partager avec d'autres personnes
 
@@ -341,8 +381,8 @@ Les deux sont à la fin de *Synchronisation et partage* dans le menu.
 - **Personnes et appareils** liste les personnes ajoutées, vos appareils et vos groupes, chacun sur sa page. La page
   d'une personne montre ce que vous partagez avec elle et permet de lui donner une image de votre choix, vue de vous
   seul. Les réglages d'un groupe sont derrière son ›.
-- **Le + à côté de Personnes** vous relie à quelqu'un : scannez son code, collez son lien, ou *Partager mon lien…* pour
-  envoyer le vôtre dans un message ou une discussion. **Le + à côté de Mes appareils** ajoute un autre de vos appareils.
+- **Le +** ajoute quelqu'un ou un de vos appareils : scannez son code, collez son lien, ou *Partager mon lien…* pour
+  envoyer le vôtre.
 - **Mon profil** contient ce qui est à vous :
   - votre **nom** et votre **image**, qui vont aux personnes avec qui vous êtes associé ;
   - votre **adresse Parlons!**, envoyée d'elle-même à vos contacts ;
@@ -422,10 +462,10 @@ Les deux sont à la fin de *Synchronisation et partage* dans le menu.
 - **Un fichier de note à la corbeille.** Un fichier retiré d'une note va aussitôt à la corbeille, sans question, et
   quitte la note sur tous vos appareils et pour tous ceux à qui elle va. *Remettre* le ramène partout. Il ne disparaît
   pour de bon qu'une fois la corbeille vidée.
-- **Sauvegardes.** *Exporter une sauvegarde* écrit un seul fichier avec chaque dossier, note et fichier. Sans le verrou
-  (voir [Confidentialité, chiffrement et sécurité](#14-confidentialité-chiffrement-et-sécurité)), il demande un mot de
-  passe pour cette sauvegarde. *Ajouter depuis une sauvegarde* en restaure une, en ajout à l'existant ou à sa place, au
-  choix.
+- **Sauvegardes.** *Sauvegardes…* (*Réglages*, *Mon profil*) fait d'elles-mêmes des sauvegardes scellées, chaque jour,
+  semaine ou mois, ou à la fermeture de Mininotes, dans un dossier ou vers un autre de vos appareils, comme votre propre
+  [serveur de sauvegarde](https://github.com/mininotesorg/server). Le verrou, un mot de passe ou 12 mots les
+  ouvrent. *Ajouter depuis une sauvegarde* en restaure une.
 
 ## 12. L'Agent : demandez, et c'est fait
 
@@ -442,11 +482,8 @@ modifie une note, et propose de vous emmener au bon endroit. Un appui hors de sa
 Avec un compte [Integritas](https://docs.integritas.technology/), un fichier ou une note peut être horodaté sur la
 blockchain Minima depuis son menu. Seule son empreinte (SHA-256) quitte l'appareil, jamais le fichier.
 
-- **Horodater sur Minima…** inscrit maintenant que le fichier existe exactement tel quel : une preuve, dès ce moment,
-  qu'il existait et n'a pas changé depuis. Cela utilise un horodatage de votre compte Integritas.
-- **Vérifier sur Minima…** compare plus tard un fichier à ce qui a été inscrit : horodaté ou non, inchangé ou non, dans
-  quel bloc et à quelle date. Cela ne change rien et ne coûte rien.
-- **La différence :** horodater écrit la preuve une fois ; vérifier la relit, aussi souvent que vous voulez.
+- **Horodater sur Minima…** inscrit qu'il existe exactement tel quel, avec un horodatage de votre compte, et le vérifie
+  plus tard : inchangé ou non, dans quel bloc et quand. Vérifier ne coûte rien.
 - **L'horodatage d'une note** couvre son titre, une ligne vide, puis son texte ; la renommer la marque comme modifiée.
   Les horodatages faits avant 0.4.018 ne couvrent que le texte : *Note, texte seul*.
 - **Mon profil, Horodatage :** collez votre clé API et appuyez sur *Enregistrer* ; elle est gardée dans votre carnet,
@@ -573,7 +610,6 @@ une entrée sans le fait tout de suite.
 | Traduire | Traduisez cette page dans une autre langue, sur cet appareil. |
 | Versions | Toutes les versions précédentes de cette note, à consulter ou à remettre. |
 | Horodater sur Minima | Inscrivez maintenant sur la blockchain Minima qu'il existe tel qu'il est. Seule son empreinte quitte cet appareil. |
-| Vérifier sur Minima | Vérifiez s'il est sur Minima sans changement, et quand il a été inscrit. |
 | Temporaire | Gardez-le seulement un temps : il s'en va quand son temps est écoulé. |
 | Archives | Rangez-le, hors de vue, conservé. |
 | Mettre à la corbeille | Mettez-le à la corbeille. Il peut être remis jusqu'à ce que la corbeille soit vidée. |
@@ -595,9 +631,12 @@ une entrée sans le fait tout de suite.
 | Temp | Ce qui n'est gardé qu'un temps, et va à vos autres appareils. |
 | Partagé avec moi | Ce que d'autres vous ont partagé, en attente de votre réponse. |
 | Corbeille | Ce qui a été mis à la corbeille, à remettre ou à supprimer définitivement. |
-| Écriture de récupération | Ce qui a été écrit sans pouvoir être enregistré dans sa note, mis de côté. |
 | Exporter une sauvegarde | Écrivez un seul fichier contenant chaque dossier, note et fichier. |
 | Ajouter depuis une sauvegarde | Restaurez le contenu d'un fichier de sauvegarde. |
+| Sauvegardes | Où vont les sauvegardes, quand, combien sont gardées et ce qui les ouvre ; Sauvegarder maintenant. |
+| Votre propre serveur | La ligne qui installe un serveur de sauvegarde sous Linux, et son guide. |
+| Historique | Comment chaque chose a atteint chaque appareil dernièrement : en direct, ou par quel relais. |
+| Chercher dans cette note | Trouvez des mots dans cette note, onglet après onglet. |
 | Partager Mininotes | Parlez de Mininotes à quelqu'un. |
 | Mettre à jour vers la v | Installez la version plus récente. |
 | Avis | Dites quelque chose sur Mininotes, publiquement, sous votre nom. |

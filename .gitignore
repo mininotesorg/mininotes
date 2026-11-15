@@ -17,3 +17,8 @@ windows/build/
 
 # The translation engine's source and build, fetched by tools (docs/TRANSLATION.md), never in the tree.
 native/
+
+# VS Code's Java extension compiles into bin/ beside each module; never source.
+android/**/bin/
+windows/**/bin/
+server/**/bin/

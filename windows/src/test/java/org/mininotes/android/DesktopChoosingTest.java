@@ -84,4 +84,13 @@ public class DesktopChoosingTest {
         assertTrue(list.isDataFlavorSupported(DataFlavor.javaFileListFlavor));
         assertEquals(List.of(first.toFile()),list.getTransferData(DataFlavor.javaFileListFlavor));
     }
+
+    /** Ctrl+A and a box dragged over the room (the owner, 2026-11-07, "Choisir plusieurs"). */
+    @Test public void allAndWhatABoxCovers() {
+        DesktopChoosing c=new DesktopChoosing();List<String> order=List.of("a","b","c","d");
+        c.all(order);assertEquals(order,c.inOrder(order));
+        c.covered(order,java.util.Set.of("c","b"),null);assertEquals(List.of("b","c"),c.inOrder(order));
+        c.covered(order,java.util.Set.of("d"),List.of("a"));assertEquals("with Ctrl, added to what was",List.of("a","d"),c.inOrder(order));
+        c.covered(order,java.util.Set.of(),null);assertTrue(c.isEmpty());
+    }
 }

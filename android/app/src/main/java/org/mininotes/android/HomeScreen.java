@@ -1262,7 +1262,7 @@ final class HomeScreen {
         } else {
             Map<String,Integer> at=new java.util.LinkedHashMap<>();
             for(NoteStore.Branch place:places)at.put(place.id,placeCell(place.id));
-            drawn=Layout.home(ids,cells,at,NoteStore.FAVOURITES,columns);
+            drawn=at.isEmpty()?Layout.folder(ids,cells,columns):Layout.home(ids,cells,at,NoteStore.FAVOURITES,columns);
             rows=Math.max(Layout.rows(drawn)+1,(int)Math.ceil((least-in.getPaddingTop()-in.getPaddingBottom())/(double)high));
         }
         Laid laid=new Laid(drawn,lines,places,where,columns,rows,cell,high,seen,natural);
@@ -1946,6 +1946,10 @@ final class HomeScreen {
         // Out to anybody or anywhere, as on a note's attachment (the owner, 2026-10-10): another app, Downloads, a place picked.
         // Copied first, as a note's attachment is (decision 207), so the photo viewer's ⋮ has it too.
         sheet.row("Copy",()->withHeld(file,held->a.copyFile(held.id,held.name)));
+        // Several of the place's files ticked at once, then copied together, as a note's attachments are (the owner, 2026-11-07:
+        // "we should be able to select multiple elements like images in Temp to be able to copy them all at once").
+        final Several.Place place=placeShown();
+        if(place!=Several.Place.NONE)sheet.row("Choose several…",()->chooseFiles(place,folder.id(),file));
         sheet.row(Parlons.SEND,()->withHeld(file,held->a.sendWithParlons(held.id,held.name,held.kind)));
         sheet.row("Send with another app…",()->withHeld(file,held->a.sendWithApp(held.id,held.name,held.kind)));
         sheet.row("Save on my phone…",()->withHeld(file,held->a.saveCopyOf(held.id,held.name,held.kind)));
@@ -1965,6 +1969,75 @@ final class HomeScreen {
         sheet.row("Archive",()->a.putAway(file,false));
         sheet.row("Move to bin",()->a.putAway(file,true));
         sheet.show(anchor);
+    }
+
+    /** Where the file's menu is opened: Home, or the card open over it (see Several.place). */
+    private Several.Place placeShown() {
+        MainActivity.Step end=a.trail.isEmpty()?null:a.trail.get(a.trail.size()-1);
+        return Several.place(showing(),folder.isOpen()&&a.trail.size()>1&&end!=null?end.kind:null);
+    }
+
+    /**
+     * Choose several…: the files of the place the menu was opened in (Temp's, the folder's, Home's loose ones; not its notes
+     * nor its folders), read as that place is read to be drawn, ticked in a list as a note's attachments are (decision 208),
+     * the one held ticked already and Select all first. Copy is the one primary; More… has the rest, each on all those ticked.
+     */
+    private void chooseFiles(final Several.Place place,final String folderId,final NoteStore.Branch held) {
+        a.background.submit(()->{
+            List<NoteStore.Branch> shown;
+            switch(place) {
+                case TEMP: shown=a.store.asDrawn(a.store.temporaryShown(System.currentTimeMillis()));break;
+                case FOLDER: shown=a.store.contents(folderId);break;
+                default: shown=a.store.contents(Things.HOME);
+            }
+            List<NoteStore.Branch> lines=Several.listed(shown,one->one.kind==NoteStore.Branch.Kind.FILE&&!one.asking,one->one.id,held);
+            List<NoteStore.Held> files=new ArrayList<>();
+            for(NoteStore.Branch one:lines){NoteStore.Held kept=a.store.file(one.id);if(kept!=null)files.add(kept);}
+            return files;
+        },files->{
+            if(files.isEmpty()){a.alert("That file is not here any more.");refresh();return;}
+            final boolean[] ticked=Several.ticks(files,one->one.id,held.id);
+            final CharSequence[] names=new CharSequence[files.size()+1];
+            names[0]=Say.t("Select all");
+            for(int i=0;i<files.size();i++)names[i+1]=files.get(i).name+"  ·  "+Attachment.size(files.get(i).bytes);
+            final AlertDialog[] box={null};
+            box[0]=a.new Box().setTitle("Choose files")
+                .setMultiChoiceItems(names,ticked,(d,which,on)->{
+                    Several.tick(ticked,which,on);
+                    android.widget.ListView list=box[0].getListView();
+                    for(int i=0;i<ticked.length;i++)list.setItemChecked(i,ticked[i]);
+                })
+                .setPositiveButton("Copy",(d,w)->{List<NoteStore.Held> them=Several.chosen(files,ticked);if(!them.isEmpty())a.copyFiles(them);})
+                .setNeutralButton("More…",(d,w)->{List<NoteStore.Held> them=Several.chosen(files,ticked);if(!them.isEmpty())moreFor(them);})
+                .setNegativeButton("Cancel",null).create();
+            box[0].show();
+        },e->a.alert(MainActivity.READ_FAILED));
+    }
+
+    /** More…, from Choose several…: the rest of what a file's menu does that can be done to several at once. */
+    private void moreFor(final List<NoteStore.Held> files) {
+        MainActivity.Sheet sheet=a.new Sheet();
+        sheet.row("Send with another app…",()->a.sendWithApp(files));
+        sheet.row("Save on my phone…",()->a.saveCopiesOf(files));
+        List<Uri> lent=new ArrayList<>();for(NoteStore.Held one:files)lent.add(Lending.of(one.id));
+        sheet.row("Send to a device…",()->a.chooseDevice(lent,new ArrayList<>()));
+        sheet.line();
+        sheet.row("Move to bin",()->binFiles(files));
+        sheet.show(a.getWindow().getDecorView());
+    }
+
+    /**
+     * The files ticked, in the bin together, with no question, as a note's are (decision 193); their spots on Home left empty,
+     * as one file's are (decision 310).
+     */
+    private void binFiles(final List<NoteStore.Held> files) {
+        Set<String> leaving=new HashSet<>();for(NoteStore.Held one:files)leaving.add(one.id);
+        holdOthers(leaving);
+        a.background.submit(()->{for(NoteStore.Held one:files)a.store.putAway(NoteStore.Branch.Kind.FILE,one.id,true,true);return null;},done->{
+            for(NoteStore.Held one:files)forget(one.id);
+            a.toast(files.size()==1?Say.t("“{0}” is in the bin",files.get(0).name):Say.t("{0} files are in the bin",String.valueOf(files.size())));
+            a.refresh();
+        },e->a.alert("Could not move those files to the bin. Nothing was changed."));
     }
 
     /** One kept file, read from the notebook, for what needs more of it than its line says. */
@@ -2611,11 +2684,15 @@ final class HomeScreen {
      * bin, we should leave the space left empty, not replace the items ordering on the home page"; decision 310). Queued on the
      * worker before the thing is moved; nothing for a thing that is not on Home.
      */
-    void holdOthers(String leaving) {
-        if(homeLaid==null||homeLaid.spots==null||!homeLaid.spots.containsKey(leaving))return;
+    void holdOthers(String leaving){holdOthers(Collections.singleton(leaving));}
+    /** Several leaving at once (Choose several…'s Move to bin): every spot they leave held empty, in one go. */
+    void holdOthers(Set<String> leaving) {
+        if(homeLaid==null||homeLaid.spots==null)return;
+        boolean any=false;for(String one:leaving)any|=homeLaid.spots.containsKey(one);
+        if(!any)return;
         final List<NoteStore.Branch> others=new ArrayList<>();
-        for(NoteStore.Branch one:homeLaid.lines)if(!one.id.equals(leaving))others.add(one);
-        final Map<String,Layout.Spot> held=new HashMap<>(homeLaid.spots);held.remove(leaving);
+        for(NoteStore.Branch one:homeLaid.lines)if(!leaving.contains(one.id))others.add(one);
+        final Map<String,Layout.Spot> held=new HashMap<>(homeLaid.spots);held.keySet().removeAll(leaving);
         a.background.submit(()->{a.store.placeOnPages(others,held);return null;},done->placesOn(held),e->{});
     }
 

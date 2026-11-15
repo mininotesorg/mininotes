@@ -115,7 +115,7 @@ final class DesktopProfile {
             if(app.offline){outcome.setText(Say.t("Restart without --offline to connect."));return;}
             outcome.setText(Say.t("Finding relays and refreshing contacts…"));app.connectivity.submit(()->{
                 Node.retryStart();return Node.reconnect(app.context);
-            },n->{outcome.setText(Say.t(n>0?"Connected":"No relay answered. Check your internet connection and Windows firewall."));app.startNode();},app::failed);
+            },n->{outcome.setText(Say.t(n>0?"Connected":"Check that this PC is online, then press Reconnect: no relay answered."));app.startNode();},app::failed);
         });reconnect.setEnabled(!app.offline&&!Node.onlyMine(app.context));
         JPanel stateRow=new JPanel(new BorderLayout(DesktopUi.M,0));stateRow.setOpaque(false);JPanel stateWords=DesktopUi.column();DesktopUi.add(stateWords,state);DesktopUi.gap(stateWords,2);DesktopUi.add(stateWords,counts);
         // Whether devices away from home can reach this PC straight, or only through a relay: docs/DIRECT.md.
@@ -192,7 +192,7 @@ final class DesktopProfile {
         // 2026-10-22: "It should be clear that any private element can't be backed up"; decision 235).
         DesktopUi.add(backup,DesktopUi.note(Say.t("A backup holds every folder, note and file in Mininotes on this PC, except private spaces, which are never backed up.")));
         DesktopUi.gap(backup,8);
-        DesktopUi.add(backup,DesktopUi.actions(app.button("Export…",()->app.save(app::backup)),app.button("Add from a backup…",()->app.save(app::importBackup))));
+        DesktopUi.add(backup,DesktopUi.actions(app.button("Backups…",()->app.save(()->DesktopBackups.open(app))),app.button("Export…",()->app.save(app::backup)),app.button("Add from a backup…",()->app.save(app::importBackup))));
 
         // The help request is no longer here, in plain sight: it is set inside a private space alone (decision 201).
         // The size of the whole app on this PC, at the app's level (the owner, 2026-10-18; decision 200; see DesktopScale).
@@ -386,7 +386,7 @@ final class DesktopProfile {
             @SuppressWarnings("unchecked") java.util.List<NoteStore.Branch> pick=(java.util.List<NoteStore.Branch>)got;
             if(pick.isEmpty()){DesktopUi.tell(over,"Help request",DesktopUi.note("Every note and folder is already chosen."));return;}
             NoteStore.Branch b=DesktopUi.pick(over,"Choose a note or folder","A help request is sent the moment it opens.",pick,
-                x->(x.kind==NoteStore.Branch.Kind.COLLECTION?"Folder: ":"")+x.name,"Choose");
+                x->x.kind==NoteStore.Branch.Kind.COLLECTION?Say.t("Folder: {0}",x.name):x.name,"Choose");
             if(b==null)return;
             app.disk.submit(()->{app.store.helpWhenOpened(b.kind,b.id,true,to,words);return null;},d->{persistHelp(app,to,words);redraw.run();},app::failed);
         },app::failed);

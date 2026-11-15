@@ -356,14 +356,23 @@ final class DesktopStamp {
         }
 
         /** The one step that costs a stamp, pressed: sent, kept, and watched; the box shows each part as it comes. */
-        void stamp() {
+        /** Tries made by itself after Integritas did not answer; pressing Stamp or Try again starts over. */
+        private int retried;
+        void stamp(){retried=0;stamping();}
+        private void stamping() {
             sending=true;problem=null;draw();
             // No account linked yet: My profile at Stamping, in front of this box, which stays (decision 253).
             d.disk.submit(()->d.store.secret(KEY),key->{if(key.isEmpty()){sending=false;draw();settings(d,dialog);return;}d.network.submit(()->send(d,key,subject),made->{
                 sending=false;n=made;
                 d.disk.submit(()->d.store.stampRow(made),r->{row=r;draw();d.stampLine.again();if(d.fileCards!=null)d.fileCards.again();
                     notice(d,r!=null&&r.confirmed()?Say.t("{0} is on Minima: block {1}",named(r),String.valueOf(r.block())):Say.t("Sent to Integritas, waiting for Minima"));},d::failed);
-            },e->{sending=false;problem=Say.t(e.getMessage()==null?"Integritas could not be reached. Try again in a moment.":e.getMessage());draw();});},d::failed);
+            },e->{sending=false;
+                if(Integritas.retries(e,retried)&&dialog.isDisplayable()) {
+                    problem=Say.t(Integritas.NO_ANSWER);retried++;
+                    javax.swing.Timer again=new javax.swing.Timer((int)Integritas.RETRY_EVERY,x->{if(dialog.isDisplayable()&&row==null&&!sending)stamping();});
+                    again.setRepeats(false);again.start();
+                } else problem=Say.t(e.getMessage()==null?"Integritas could not be reached. Try again in a moment.":e.getMessage());
+                draw();});},d::failed);
         }
 
         private void step(Mark mark,String words) {

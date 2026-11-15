@@ -71,7 +71,8 @@ final class Linking {
      */
     static List<Parcel.Member> toLink(List<Parcel.Member> members,boolean hasASay,String mine,Set<String> linked) {
         List<Parcel.Member> out=new ArrayList<>();
-        if(!hasASay||members==null)return out;
+        // Not knowing which entry is this device's own, none: it would be taken for a stranger and linked (decision 324).
+        if(!hasASay||members==null||mine==null||mine.isEmpty())return out;
         Set<String> seen=new HashSet<>();
         for(Parcel.Member one:members) {
             if(one==null||one.key.isEmpty()||one.key.equals(mine)||linked!=null&&linked.contains(one.key))continue;

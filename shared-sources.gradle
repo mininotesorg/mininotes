@@ -1,0 +1,7 @@
+// The phone's classes that hold no Android types, compiled as they are into the PC's app and the backup server (decision
+// 330): one list for both, so a class added for one is there for the other. "adapted" ones have their platform names rewritten
+// (see each build's sharedSources task).
+ext.portable = ['Album','Peek','KeyCard','StampCard','Arriving','AboutMe','Troubles','History','Assistant','Integritas','Describe','ReadMe','Sections','Translation','Message','Symbols','Face','Say','Attachment','Background','Envelope','Feedback','Find','Hello','HomeMotion',
+    'Merge','Delta','Outbox','Pairing','Parcel','Point','Receipt','Reorder','RevisionClock',
+    'FolderOrder','SchemaMigrations','SyncStatus','SyncMark','Sha3','Sharing','Tint','Update','Vault','Sealed','Courier','Enclosure','Direct','Nearby','Home','Relays','Given','Drop','DropList','Unsent','Persons','Groups','Parlons','Called','Recording','Linking','NoteLine','Waits','Links','Reading','Writers','Things','Carton','Sleeve','Overview','Grid','Layout','Icons','Thumb','Looks','Marks','Routes','FirstShare','Slots','PrivateSpace','PrivateCode','Shrink','Help','NoteFile','Asking','Said','LineEnds','ArrivalNews','LanguageAsk','WaitingPlace','WithoutAsking','BlankLines','Introducing','NoteLimit','SearchTerm','TabFiles','LogKeep','Big','NoteSplit','Backups','Keeping','Several','Later']
+ext.adapted = ['NoteStore','Post','Node','Invites','Joining']

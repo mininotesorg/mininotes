@@ -9,6 +9,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -33,10 +34,15 @@ final class AssistantBox {
     private ScrollView scroll;
     private EditText field;
     private AlertDialog box;
-    private TextView full;
+    /** The conversation's own box, and the symbol beside the Agent's name that gives it the whole screen and takes it back. */
+    private FrameLayout room;
+    private FrameLayout corner;
+    private View cornerFace;
     /** The height the conversation is given, without the keyboard; and whether the box is the whole screen. */
     private int tall;
     private boolean wholeScreen;
+    /** The box's own paper, kept while it fills the screen without it, to be put back. */
+    private android.graphics.drawable.Drawable paper;
     /** What has been said, as it is kept; and the exchange each answer's card belongs to. */
     private final Assistant.Conversation kept=new Assistant.Conversation();
     private final Map<LinearLayout,List<Assistant.Line>> turns=new IdentityHashMap<>();
@@ -45,22 +51,38 @@ final class AssistantBox {
 
     void open() {
         LinearLayout whole=a.column();whole.setPadding(a.dp(16),a.dp(4),a.dp(16),a.dp(4));
+        // Its name, and at the right of it the symbol that gives the whole Agent the screen and takes it back: the window's own
+        // corner, not the conversation's (the owner, 2026-11-15, with screenshots: "the ⤢ symbol should be for the whole box,
+        // it is the agent whole window that needs to be extendable full screen").
+        LinearLayout head=new LinearLayout(a);head.setGravity(Gravity.CENTER_VERTICAL);head.setPadding(a.dp(8),a.dp(12),0,a.dp(4));
+        TextView name=new TextView(a);name.setText(Say.t("Agent"));name.setTextSize(22);name.setTextColor(a.INK);
+        head.addView(name,new LinearLayout.LayoutParams(0,-2,1));
+        corner=new FrameLayout(a);corner.setBackgroundResource(a.borderlessFeedback());
+        cornerFace=new View(a);corner.addView(cornerFace,new FrameLayout.LayoutParams(a.dp(20),a.dp(20),Gravity.CENTER));
+        corner.setOnClickListener(v->fullScreen());
+        cornerSays();
+        head.addView(corner,new LinearLayout.LayoutParams(a.dp(44),a.dp(44)));
+        whole.addView(head);
         // What it is, first and staying there (the owner, 2026-10-18: "make it clear at the top of the agent dialog box that it
         // answers questions and does stuff, that everything is private in the app").
         whole.addView(words(Say.t(Assistant.WHAT),MainActivity.QUIET,a.INK));
         TextView privately=words(Say.t(Assistant.PRIVATE_PHONE),MainActivity.QUIET,a.ACCENT);privately.setTypeface(privately.getTypeface(),Typeface.BOLD);
         whole.addView(privately);
-        // A new conversation, and the whole screen.
-        LinearLayout tools=new LinearLayout(a);tools.setGravity(Gravity.END);tools.setPadding(0,a.dp(2),0,a.dp(2));
-        TextView afresh=chip(Say.t(Assistant.AFRESH),this::afresh);afresh.setContentDescription(Say.t(Assistant.KEPT_SAID));
-        full=chip(Say.t(Assistant.FULL),this::fullScreen);
-        tools.addView(afresh);tools.addView(full);
-        whole.addView(tools,new LinearLayout.LayoutParams(-1,-2));
+        // The conversation in a box of its own from the start (the owner, 2026-11-15: "we should already have a conversation box
+        // available on the first window ... we dont need the buttons we currently have"). New conversation went with the
+        // buttons: a conversation still ends three hours after its last word.
         talk=a.column();
         scroll=new ScrollView(a);scroll.addView(talk);
+        scroll.setPadding(a.dp(10),a.dp(10),a.dp(10),a.dp(10));scroll.setClipToPadding(false);
+        room=new FrameLayout(a);
+        android.graphics.drawable.GradientDrawable edge=new android.graphics.drawable.GradientDrawable();
+        edge.setCornerRadius(a.dp(14));edge.setStroke(a.dp(1),MainActivity.mix(a.PAPER,a.INK,0.16f));edge.setColor(MainActivity.mix(a.PAPER,a.INK,0.03f));
+        room.setBackground(edge);
         // Most of the screen for the conversation (decision 213).
         tall=Math.round(a.getResources().getDisplayMetrics().heightPixels*0.58f);
-        whole.addView(scroll,new LinearLayout.LayoutParams(-1,tall));
+        room.addView(scroll,new FrameLayout.LayoutParams(-1,tall));
+        LinearLayout.LayoutParams roomAt=new LinearLayout.LayoutParams(-1,-2);roomAt.setMargins(0,a.dp(8),0,0);
+        whole.addView(room,roomAt);
         // The suggestions, swiped across: one that needs words of its own puts its start in the field.
         LinearLayout chips=new LinearLayout(a);chips.setPadding(0,a.dp(8),0,a.dp(4));
         for(String one:Assistant.SUGGESTED)chips.addView(chip(Say.t(one),()->{
@@ -82,7 +104,14 @@ final class AssistantBox {
         line.addView(go,at);
         line.setPadding(0,a.dp(6),0,a.dp(8));
         whole.addView(line);
-        box=a.new Box().setTitle("Agent").setView(whole).show();
+        box=a.new Box().setView(whole).show();
+        // Back leaves the whole screen first, and only then closes the Agent (the owner, 2026-11-07: "there is no way to go
+        // back").
+        box.setOnKeyListener((d,key,event)->{
+            if(key!=android.view.KeyEvent.KEYCODE_BACK||!wholeScreen)return false;
+            if(event.getAction()==android.view.KeyEvent.ACTION_UP)fullScreen();
+            return true;
+        });
         fitAboveKeyboard(whole);
         remember();
     }
@@ -92,19 +121,30 @@ final class AssistantBox {
      * window is not visible"): the window is resized rather than pushed up, and while the keyboard is there what was said
      * takes only the room left, never less than a few lines.
      */
-    private void fitAboveKeyboard(View whole) {
+    private void fitAboveKeyboard(LinearLayout whole) {
         if(box.getWindow()==null)return;
         box.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
             |android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
         View root=box.getWindow().getDecorView();
         root.getViewTreeObserver().addOnGlobalLayoutListener(()->{
             android.graphics.Rect seen=new android.graphics.Rect();root.getWindowVisibleDisplayFrame(seen);
-            int screen=a.getResources().getDisplayMetrics().heightPixels;
-            boolean keys=screen-seen.height()>screen/4;
-            // The rest of the box - its title, what it is, the suggestions, the field - and the room round it.
-            int rest=whole.getHeight()-scroll.getHeight()+a.dp(this.wholeScreen?72:120);
-            int room=this.wholeScreen?screen-rest:tall;
-            int want=keys?Math.max(a.dp(64),Math.min(room,seen.height()-rest)):Math.max(a.dp(64),room);
+            // The rest of the box - what it is, the suggestions, the field - added up from those parts themselves, never from the
+            // box's height: a box cut short by the screen measured itself shorter each time, so the conversation was asked
+            // to grow each time and the field went off the bottom (the owner, 2026-11-07: "the full screen mode doesn't work").
+            int others=whole.getPaddingTop()+whole.getPaddingBottom();
+            for(int i=0;i<whole.getChildCount();i++){View one=whole.getChildAt(i);if(one!=room&&one.getVisibility()!=View.GONE)others+=one.getHeight();}
+            int want;
+            if(this.wholeScreen) {
+                // Over the whole screen: from where the conversation starts to the bottom of what can be seen.
+                int[] at=new int[2];whole.getLocationOnScreen(at);
+                want=Math.max(a.dp(64),seen.bottom-a.dp(8)-at[1]-others);
+            } else {
+                // A box: what can be seen, less the box's own margins and its other parts, so the field and Ask are always on the
+                // screen (the owner, 2026-11-15: "before being extended, the input box is not visible": the conversation was
+                // given 58% of the screen whatever else the box held). Not from where the box is: a box in the middle moves as
+                // it shrinks, and measured that way it shrank again at every layout.
+                want=Math.max(a.dp(64),Math.min(tall,seen.height()-others-a.dp(96)));
+            }
             android.view.ViewGroup.LayoutParams now=scroll.getLayoutParams();
             if(Math.abs(now.height-want)>a.dp(8)){now.height=want;scroll.setLayoutParams(now);}
         });
@@ -114,10 +154,24 @@ final class AssistantBox {
     private void fullScreen() {
         if(box==null||box.getWindow()==null)return;
         wholeScreen=!wholeScreen;
-        if(wholeScreen)box.getWindow().setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT,android.view.ViewGroup.LayoutParams.MATCH_PARENT);
-        else box.getWindow().setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT,android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
-        full.setText(Say.t(wholeScreen?Assistant.SMALLER:Assistant.FULL));
+        android.view.Window window=box.getWindow();
+        if(wholeScreen) {
+            // The paper without the margins round a box: there, a tap was taken as one beside the box and closed the Agent.
+            paper=window.getDecorView().getBackground();
+            if(paper instanceof android.graphics.drawable.InsetDrawable inset&&inset.getDrawable()!=null)window.setBackgroundDrawable(inset.getDrawable().getConstantState()==null?inset.getDrawable():inset.getDrawable().getConstantState().newDrawable());
+            window.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT,android.view.ViewGroup.LayoutParams.MATCH_PARENT);
+        } else {
+            if(paper!=null)window.setBackgroundDrawable(paper);
+            window.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT,android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+        cornerSays();
         scroll.requestLayout();down();
+    }
+
+    /** The corner's symbol: arrows out for the whole screen, arrows in to come back. */
+    private void cornerSays() {
+        cornerFace.setBackground(IconFace.symbol(a,wholeScreen?"minimize-2":"maximize-2",a.MUTED));
+        corner.setContentDescription(Say.t(wholeScreen?Assistant.SMALLER:Assistant.FULL));
     }
 
     private String starting(String suggestion) {
@@ -174,7 +228,7 @@ final class AssistantBox {
         a.background.submit(()->{a.store.setSecret(Assistant.KEPT_AS,text);return null;},done->{},e->{});
     }
 
-    /** A new conversation: what was said is gone, here and in the notebook. */
+    /** Three hours after the last message: what was said is gone, here and in the notebook. */
     private void afresh() {
         kept.clear();turns.clear();talk.removeAllViews();
         a.background.submit(()->{a.store.setSecret(Assistant.KEPT_AS,"");return null;},done->{},e->{});

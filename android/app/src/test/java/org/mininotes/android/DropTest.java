@@ -199,7 +199,7 @@ public class DropTest {
         assertEquals("2 new",Drop.boxDetail(2,3));
         assertEquals("Sent. Waiting for Ana to take them",Drop.afterSending("Ana",true,true));
         assertTrue(Drop.notSent(Collections.singletonList(Given.refusal("film.mov",Drop.TOO_BIG))).startsWith("This was not sent:"));
-        assertTrue(Drop.notSent(Collections.singletonList(Given.refusal("film.mov",Drop.TOO_BIG))).contains("film.mov – larger than 16 MB"));
+        assertTrue(Drop.notSent(Collections.singletonList(Given.refusal("film.mov",Drop.TOO_BIG))).contains("film.mov: larger than 16 MB"));
     }
 
     @Test public void theOwnersDevicesComeFirstAndSaySo() {

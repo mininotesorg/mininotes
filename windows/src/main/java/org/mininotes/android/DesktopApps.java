@@ -153,20 +153,45 @@ final class DesktopApps {
         if(!windows()||kind.isEmpty())return null;
         return icons.computeIfAbsent(kind,k->{
             try {
-                Path of;
                 App mine=pickedFor(k);
-                if(mine!=null)of=mine.exe();
-                else {
-                    Path room=Path.of(System.getProperty("java.io.tmpdir"),"mininotes-kinds");Files.createDirectories(room);
-                    of=room.resolve("kind"+k);if(!Files.exists(of))Files.createFile(of);
+                if(mine!=null){BufferedImage app=drawn(mine.exe());return app==null?NONE:app;}
+                BufferedImage img=drawn(sample(k));
+                // A kind that names no icon of its own - .jar where Java set none (the owner, 2026-11-04: "the file doesnt have the
+                // java logo") - is a blank page from Windows. Explorer shows the program it opens in there, and so is it here; with
+                // no program either, the kind in letters alone, not a blank page over them.
+                if(img==null||same(img,blank())) {
+                    App own=windowsChoice(k);
+                    BufferedImage app=own==null||!Files.isRegularFile(own.exe())?null:drawn(own.exe());
+                    return app==null||same(app,blank())?NONE:app;
                 }
-                javax.swing.Icon got=javax.swing.filechooser.FileSystemView.getFileSystemView().getSystemIcon(of.toFile(),64,64);
-                if(got==null||got.getIconWidth()<=0)return NONE;
-                BufferedImage img=new BufferedImage(got.getIconWidth(),got.getIconHeight(),BufferedImage.TYPE_INT_ARGB);
-                var g=img.createGraphics();got.paintIcon(null,g,0,0);g.dispose();
                 return img;
             } catch(IOException|RuntimeException none){return NONE;}
         })==NONE?null:icons.get(kind);
+    }
+    /** An empty file of this kind, for Windows to say the kind's icon by. */
+    private static Path sample(String kind) throws IOException {
+        Path room=Path.of(System.getProperty("java.io.tmpdir"),"mininotes-kinds");Files.createDirectories(room);
+        Path of=room.resolve("kind"+kind);if(!Files.exists(of))Files.createFile(of);
+        return of;
+    }
+    /** The icon Windows draws a file or a program with, at 64 pixels; null where it gives none. */
+    private static BufferedImage drawn(Path of) {
+        javax.swing.Icon got=javax.swing.filechooser.FileSystemView.getFileSystemView().getSystemIcon(of.toFile(),64,64);
+        if(got==null||got.getIconWidth()<=0)return null;
+        BufferedImage img=new BufferedImage(got.getIconWidth(),got.getIconHeight(),BufferedImage.TYPE_INT_ARGB);
+        var g=img.createGraphics();got.paintIcon(null,g,0,0);g.dispose();
+        return img;
+    }
+    /** Windows' blank page: what a kind it knows nothing about is drawn with. */
+    private static BufferedImage blank() {
+        if(blank==null)try{blank=drawn(sample(".mininotes-no-such-kind"));}catch(IOException|RuntimeException none){/* nothing to compare with */}
+        return blank;
+    }
+    private static volatile BufferedImage blank;
+    static boolean same(BufferedImage a,BufferedImage b) {
+        if(a==null||b==null||a.getWidth()!=b.getWidth()||a.getHeight()!=b.getHeight())return false;
+        for(int y=0;y<a.getHeight();y++)for(int x=0;x<a.getWidth();x++)if(a.getRGB(x,y)!=b.getRGB(x,y))return false;
+        return true;
     }
     private static final BufferedImage NONE=new BufferedImage(1,1,BufferedImage.TYPE_INT_ARGB);
     private static final Map<String,BufferedImage> icons=new ConcurrentHashMap<>();

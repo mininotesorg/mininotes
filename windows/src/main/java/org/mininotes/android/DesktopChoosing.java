@@ -34,6 +34,16 @@ final class DesktopChoosing {
         chosen.clear();
         for(int at=Math.min(from,to);at<=Math.max(from,to);at++)chosen.add(order.get(at));
     }
+    /** Ctrl+A: every one in {@code order} chosen, the run starting at the first (the owner, 2026-11-07, "Choisir plusieurs"). */
+    void all(List<String> order){chosen.clear();chosen.addAll(order);anchor=order.isEmpty()?null:order.get(0);}
+    /**
+     * A box dragged over the empty room: those it covers, in {@code order}; with Ctrl held, added to those chosen before
+     * ({@code before}), as Explorer does.
+     */
+    void covered(List<String> order,Collection<String> under,Collection<String> before) {
+        chosen.clear();if(before!=null)chosen.addAll(before);
+        for(String one:order)if(under.contains(one))chosen.add(one);
+    }
     /** Nothing chosen, and no start. */
     void clear(){chosen.clear();anchor=null;}
     /** What is no longer there is no longer chosen: the grid was drawn again without it. */

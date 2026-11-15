@@ -396,6 +396,15 @@ final class Integritas {
 
     /** A host that did not answer at all, or does not have the API: the next is tried. Thrown on when none answers. */
     static final class Unreachable extends IOException{Unreachable(String why){super(why);}}
+    /**
+     * A stamp Integritas did not answer for, while its box is open: said as waiting, and sent again by itself (the owner,
+     * 2026-11-07: "present the solution instead of presenting the problem"), every minute, five times at most.
+     */
+    static final String NO_ANSWER="◷ Integritas did not answer. It is tried again by itself every minute while this stays open.";
+    static final long RETRY_EVERY=60_000;
+    static final int RETRIES=5;
+    /** Whether a stamp that failed so is sent again by itself, after {@code tries} tries already made by itself. */
+    static boolean retries(Throwable failed,int tries){return failed instanceof Unreachable&&tries<RETRIES;}
 
     private static JSONObject once(String url,String key,String request,JSONObject body,boolean report) throws IOException {
         HttpURLConnection http;

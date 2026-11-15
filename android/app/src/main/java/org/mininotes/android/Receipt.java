@@ -370,6 +370,12 @@ final class Receipt {
      * One that cannot rebuild a change asks for the note whole with {@link #ASK}, which every build answers.
      */
     static final int CHANGES=43;
+    /**
+     * "This device only keeps backups" (decision 330): said by a backup server, a Mininotes with no screen on the owner's own
+     * server, to each of the owner's devices. Heard from one of mine, it is sent nothing from then on (no Temp, no cards, no
+     * note even shared with it) but the backups pushed to it, sealed, which it keeps and cannot open.
+     */
+    static final int KEEPS_BACKUPS=44;
 
     private Receipt(){}
 

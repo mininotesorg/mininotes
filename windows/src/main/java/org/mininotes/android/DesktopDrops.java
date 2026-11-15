@@ -48,7 +48,8 @@ final class DesktopDrops {
                     if(!Files.isRegularFile(one)){refused.add(Given.refusal(name,Given.UNREADABLE));continue;}
                     long size=Files.size(one);
                     if(size<=0){refused.add(Given.refusal(name,Drop.EMPTY));continue;}
-                    if(size>Enclosure.MOST){refused.add(Given.refusal(name,Drop.TOO_BIG));continue;}
+                    // Over 16 MB, up to 2 GB: offered straight from where it is (Big, decision 327).
+                    if(size>Big.MOST){refused.add(Given.refusal(name,Big.TOO_BIG));continue;}
                     if(going.size()>=Drop.FILES_MOST){refused.add(Given.refusal(name,Drop.TOO_MANY));continue;}
                     going.add(one);bytes+=size;
                 } catch(IOException unreadable){refused.add(Given.refusal(name,Given.UNREADABLE));}
@@ -126,7 +127,12 @@ final class DesktopDrops {
      * The files copied in - sealed on the way while the notebook is locked - and the sending written down, then
      * offered at once. The bar says it is going and, when that is done, where it stands.
      */
-    private static void sending(Desktop pad,List<Path> files,Drop.Device to) {
+    private static void sending(Desktop pad,List<Path> given,Drop.Device to) {
+        // A big file is not copied in: offered from where it is, only to a device this one reaches directly (decision 327).
+        List<Path> files=new ArrayList<>();
+        for(Path one:given){long size=0;try{size=Files.size(one);}catch(IOException unread){/* sent as the rest, and said */}
+            if(Big.goes(size))DesktopBig.offer(pad,one,to);else files.add(one);}
+        if(files.isEmpty())return;
         pad.status.setToolTipText(null);pad.status.setText(Say.t(Drop.sending(to.name,files.size())));
         pad.disk.submit(()->{
             List<NoteStore.Held> kept=new ArrayList<>();
@@ -304,10 +310,15 @@ final class DesktopDrops {
                 if(paths.isEmpty()){away(pad);return false;}
                 Aim aim=aim(pad,support.getComponent(),support.isDrop()?support.getDropLocation().getDropPoint():null);
                 away(pad);
+                org.mininotes.desktop.platform.util.Log.i("Mininotes/Files",(support.isDrop()?"dropped: ":"pasted: ")+paths.size()+" files, to "+(aim.does==ATTACH?"a note":aim.does==KEEP?NoteStore.TEMP.equals(aim.note)?"Temp":"a folder or Home":"the Send box"));
                 // After the drop has finished: a box opened inside it would hold Explorer's drag until it closed.
                 SwingUtilities.invokeLater(()->dropped(pad,aim,paths));
                 return true;
-            } catch(Exception unreadable){away(pad);return false;}
+            } catch(Exception unreadable) {
+                // Never nothing at all: what went wrong is said, and kept in the log.
+                away(pad);org.mininotes.desktop.platform.util.Log.w("Mininotes/Files","a drop could not be taken: "+unreadable.getClass().getSimpleName());
+                pad.status.setText(Say.t("Those files could not be read. Nothing was added."));return false;
+            }
         }
         @Override public int getSourceActions(JComponent c){return was==null?super.getSourceActions(c):was.getSourceActions(c);}
         @Override public void exportAsDrag(JComponent c,InputEvent e,int action){if(was!=null)was.exportAsDrag(c,e,action);}

@@ -87,6 +87,30 @@ public class DesktopCollectionFilesTest {
         return null;
     }
 
+    private static NoteStore.Branch fileIn(NoteStore store,String place,String file) {
+        for(NoteStore.Branch one:store.contents(place))if(one.kind==NoteStore.Branch.Kind.FILE&&one.id.equals(file))return one;
+        return null;
+    }
+
+    /**
+     * A picture in a shared folder wears the mark its notes wear: waiting until the other device says it has it, then the
+     * check (the owner, 2026-11-15, with a screenshot: "the image should have the green check too"). In a folder shared with
+     * nobody it wears none.
+     */
+    @Test public void aPictureInASharedFolderWearsTheMarkItsNotesWear() throws Exception {
+        String file=owner.keep(trip,"synthetic picture".getBytes(),"photo.png");
+        NoteStore.Branch going=fileIn(owner.store,trip,file);
+        assertNotNull(going);
+        assertNotEquals(Sharing.State.HERE,going.state);
+        assertEquals("not yet had there",SyncMark.WAITING,going.mark());
+        owner.hear(said(writer,owner,file,Receipt.FILE_HERE));
+        assertEquals("had there: the check",SyncMark.GONE,fileIn(owner.store,trip,file).mark());
+
+        String alone=owner.store.addCollection("Only here").id;
+        String mine=owner.keep(alone,"another synthetic picture".getBytes(),"mine.png");
+        assertEquals(SyncMark.HERE,fileIn(owner.store,alone,mine).mark());
+    }
+
     @Test public void aFileKeptWithACollectionGoesInItsCartonIsFetchedThereAndTakenOutWhenUnlisted() throws Exception {
         byte[] map=new byte[40_000];new Random(7).nextBytes(map);
         String file=owner.keep(trip,map,"map.pdf");

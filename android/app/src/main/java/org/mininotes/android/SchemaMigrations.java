@@ -12,7 +12,7 @@ import java.util.List;
  * types, so the version rules are unit tested without a device.
  */
 final class SchemaMigrations {
-    static final int VERSION=62;
+    static final int VERSION=63;
 
     /** Every pad starts with one collection holding one book, so writing never begins with a decision. */
     static final String FIRST_COLLECTION="collection-first", FIRST_BOOK="book-first";
@@ -897,6 +897,35 @@ final class SchemaMigrations {
         "ALTER TABLE history ADD COLUMN road TEXT NOT NULL DEFAULT ''",
     };
 
+    private static String stamped(String trigger,String table,String event,String when) {
+        return "CREATE TRIGGER IF NOT EXISTS "+trigger+" AFTER "+event+" ON "+table+" WHEN "+when
+            +" BEGIN UPDATE "+table+" SET arrived=CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) WHERE id=NEW.id; END";
+    }
+    /**
+     * When each thing came to where it is, on this device (the owner, 2026-11-09: "the latest added element is positioned
+     * last"; decision 336). Notes had no date but their last writing. Triggers, because a thing is made and moved from a
+     * dozen places, arrivals from other devices among them: a row new here, a move to another folder and a move into Temp
+     * each say now. A row replaced by a save carries its date in (NoteStore), so only a real arrival is new. What is already
+     * there has only its last writing, or the date a file or a folder was made.
+     */
+    private static final String[] ARRIVED={
+        "ALTER TABLE notes ADD COLUMN arrived INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE things ADD COLUMN arrived INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE files ADD COLUMN arrived INTEGER NOT NULL DEFAULT 0",
+        "UPDATE notes SET arrived=updated",
+        "UPDATE things SET arrived=CASE WHEN made>0 THEN made ELSE updated END",
+        "UPDATE files SET arrived=added",
+        stamped("notes_arrived","notes","INSERT","NEW.arrived=0"),
+        stamped("notes_moved","notes","UPDATE OF book","NEW.book<>OLD.book"),
+        stamped("notes_to_temp","notes","UPDATE OF until","NEW.until>0 AND OLD.until=0"),
+        stamped("things_arrived","things","INSERT","NEW.arrived=0"),
+        stamped("things_moved","things","UPDATE OF parent","NEW.parent<>OLD.parent"),
+        stamped("things_to_temp","things","UPDATE OF until","NEW.until>0 AND OLD.until=0"),
+        stamped("files_arrived","files","INSERT","NEW.arrived=0"),
+        stamped("files_moved","files","UPDATE OF note","NEW.note<>OLD.note"),
+        stamped("files_to_temp","files","UPDATE OF until","NEW.until>0 AND OLD.until=0"),
+    };
+
     /** STEPS[i] upgrades a database at version i+1 to version i+2. */
     private static final String[][] STEPS={
         {VIEW_INDEX},
@@ -1021,6 +1050,7 @@ final class SchemaMigrations {
         HISTORY,
         // 61 -> 62: how what reached somebody went (decision 322).
         HISTORY_ROAD,
+        ARRIVED,
     };
 
     /** The one collection and the one book a pad cannot be without, for a restore that carries neither. */
@@ -1090,6 +1120,7 @@ final class SchemaMigrations {
         Collections.addAll(statements,FILE_TABS);
         Collections.addAll(statements,HISTORY);
         Collections.addAll(statements,HISTORY_ROAD);
+        Collections.addAll(statements,ARRIVED);
         return statements;
     }
 

@@ -41,16 +41,17 @@ final class DesktopBackup {
      * written to disk plain: it is sealed as it is made.
      */
     static void write(NoteStore store,Path target,byte[] key,byte[] lock,Slots pages) throws Exception {
-        if(!DesktopRecovery.all(store).isEmpty())throw new IllegalStateException("Recovery writing is pending. Export its full text or make a locked writing backup; portable backups cover saved notes only.");
         writeSaved(store,target,key,lock,pages);
     }
-    static void writeSaved(NoteStore store,Path target,byte[] key,byte[] lock,Slots pages) throws Exception {
+    static void writeSaved(NoteStore store,Path target,byte[] key,byte[] lock,Slots pages) throws Exception{writeSaved(store,target,key,lock,pages,true);}
+    /** With {@code files} false, the notes alone: smaller, and a restore of it brings back no file (decision 329). */
+    static void writeSaved(NoteStore store,Path target,byte[] key,byte[] lock,Slots pages,boolean files) throws Exception {
         Path temp=Files.createTempFile(target.toAbsolutePath().getParent(),".mininotes-backup-",".tmp");
         var db=store.getWritableDatabase();db.beginTransaction();
         try {
             try(FileOutputStream file=new FileOutputStream(temp.toFile())) {
                 // Read from the notebook here, on the thread holding it: the zip is made on another.
-                List<NoteStore.Held> held=store.everyFile();
+                List<NoteStore.Held> held=files?store.everyFile():List.of();
                 if(key==null){zip(store,store.backup(),held,file,null,pages);}
                 else {
                     DataOutputStream head=new DataOutputStream(file);head.write(LOCKED);head.writeShort(lock.length);head.write(lock);head.flush();
@@ -145,7 +146,7 @@ final class DesktopBackup {
             }
         }
         if(opening[0]!=null){opening[0].join();if(failed[0]!=null)throw new IOException(failed[0] instanceof Vault.Refused?"That backup could not be opened: "+failed[0].getMessage():"That backup could not be opened.",failed[0]);}
-        if(text==null)throw new IOException("That file is not a Mininotes backup");
+        if(text==null)throw new IOException("Choose the backup Mininotes made: that file is not a Mininotes backup");
         // Validate before writing any staged attachment. The store owns ID remapping.
         new org.json.JSONObject(text).getJSONArray("notes");
         try {

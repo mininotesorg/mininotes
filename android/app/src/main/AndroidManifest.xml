@@ -93,6 +93,9 @@
             android:exported="false" android:grantUriPermissions="true" />
         <!-- The node kept up while the pad is closed. Text from one device to another is what the type is
              for, and it is the one kind that is not cut off after six hours. -->
+        <!-- The Backup page's backups, made when their time comes (decision 329). -->
+        <service android:name=".PhoneBackupJob" android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
         <service android:name=".Listening" android:exported="false"
             android:foregroundServiceType="remoteMessaging" />
         <!-- Where the transport addresses its replies. Exported because it names this class, and it holds

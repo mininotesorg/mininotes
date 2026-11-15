@@ -41,6 +41,34 @@ public class DesktopTabsTest {
         assertEquals("Soup on Sunday\nand bread",pad.page.getText());
     }
 
+    /** Back on a tab, where it was left: the caret and how far down (the owner, 2026-11-04: "not at the top of the note"). */
+    private static final String NL=String.valueOf((char)10);
+    @Test public void aTabIsBackWhereItWasLeft() throws Exception {
+        StringBuilder long_=new StringBuilder();for(int i=1;i<=200;i++)long_.append("Line ").append(i).append(NL);
+        NoteStore.Note note=new NoteStore.Note();note.book=Things.HOME;note.title="Long";
+        note.body="=== A ==="+NL+long_+"end of A"+NL+"=== B ==="+NL+"short";pad.store.save(note);
+        SwingUtilities.invokeAndWait(()->pad.open(note.id));await(()->pad.page.getText().startsWith("Line 1"+NL));settle();
+        int[] left={0,0};
+        SwingUtilities.invokeAndWait(()->{int at=pad.page.getText().indexOf("Line 150");pad.page.setCaretPosition(at);
+            try{java.awt.Rectangle r=pad.page.modelToView2D(at).getBounds();pad.page.scrollRectToVisible(r);}catch(Exception e){throw new RuntimeException(e);}});
+        settle();
+        SwingUtilities.invokeAndWait(()->{int[] p=pad.tabPlaceForTest();left[0]=p[0];left[1]=p[1];});
+        assertTrue("scrolled down first: "+left[1],left[1]>200);
+        SwingUtilities.invokeAndWait(()->pad.switchTab(1));settle();
+        assertEquals("short",pad.page.getText());
+        SwingUtilities.invokeAndWait(()->pad.switchTab(0));settle();
+        int[] back={0,0};
+        // The place is set once the paper is laid out at this tab's length again, a moment after.
+        long until=System.currentTimeMillis()+5000;
+        do{Thread.sleep(50);SwingUtilities.invokeAndWait(()->{int[] p=pad.tabPlaceForTest();back[0]=p[0];back[1]=p[1];});}
+        while(Math.abs(back[1]-left[1])>2&&System.currentTimeMillis()<until);
+        assertEquals("the caret where it was",left[0],back[0]);
+        assertEquals("as far down as it was",left[1],back[1],2);
+        // A tab never left before opens at its top.
+        SwingUtilities.invokeAndWait(()->pad.switchTab(1));settle();
+        assertEquals(0,pad.tabPlaceForTest()[0]);
+    }
+
     @Test public void tabsAreAddedRenamedAndRemovedAsWriting() throws Exception {
         NoteStore.Note note=new NoteStore.Note();note.book=Things.HOME;note.title="Plain";note.body="Just words";pad.store.save(note);
         SwingUtilities.invokeAndWait(()->pad.open(note.id));await(()->pad.page.getText().equals("Just words"));settle();

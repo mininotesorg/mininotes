@@ -1,0 +1,106 @@
+// The backup server (decision 330): a Mininotes with no screen, for a Linux server, that pairs as one of the owner's devices
+// and only keeps the sealed backups their devices push to it. The same store and wire protocol as the phone and the PC,
+// compiled from the phone's sources as the PC's are; only what is kept on disk is this server's own.
+plugins { id 'java'; id 'application' }
+version = '0.4.057'
+repositories { mavenCentral() }
+java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+application { mainClass = 'org.mininotes.android.Server' }
+dependencies {
+    implementation 'io.github.willena:sqlite-jdbc:3.53.4.0'
+    implementation 'org.json:json:20260719'
+    // The code to pair with, drawn in the terminal.
+    implementation 'com.google.zxing:core:3.5.3'
+    runtimeOnly 'org.slf4j:slf4j-nop:1.7.36'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+apply from: '../shared-sources.gradle'
+def portable = ext.portable
+def adapted = ext.adapted
+def androidSource = file('../android/app/src/main/java/org/mininotes/android')
+def platformSource = file('../windows/src/main/java/org/mininotes/desktop/platform')
+def generated = layout.buildDirectory.dir('generated/sources/shared')
+tasks.register('sharedSources') {
+    inputs.files((portable + adapted).collect { new File(androidSource, it + '.java') })
+    inputs.dir(platformSource)
+    outputs.dir(generated)
+    doLast {
+        def dest = generated.get().dir('org/mininotes/android').asFile
+        dest.mkdirs()
+        (portable + adapted).each { name ->
+            def source = new File(androidSource, name + '.java').getText('UTF-8')
+            if (adapted.contains(name)) {
+                source = source.replace('net.zetetic.database.sqlcipher.', 'org.mininotes.desktop.platform.database.sqlite.')
+                    .replace('android.content.', 'org.mininotes.desktop.platform.content.')
+                    .replace('android.database.', 'org.mininotes.desktop.platform.database.')
+                    .replace('android.util.', 'org.mininotes.desktop.platform.util.')
+                if (name == 'Node') {
+                    source = source.replace('where.checkSelfPermission(android.Manifest.permission.INTERNET)', '0')
+                        .replace('org.mininotes.desktop.platform.content.pm.PackageManager.PERMISSION_GRANTED', '0')
+                        .replace('android.os.Build.MODEL', '"Backup server"')
+                    if (!source.contains('static final boolean A_PC=false;')) throw new org.gradle.api.GradleException('Node.java no longer says A_PC=false')
+                }
+            }
+            new File(dest, name + '.java').setText(source, 'UTF-8')
+        }
+        // The PC's stand-ins for Android's storage, but its settings, which Windows' DPAPI seals: the server's own instead.
+        def platformDest = generated.get().dir('org/mininotes/desktop/platform').asFile
+        project.copy {
+            from platformSource
+            into platformDest
+            exclude 'content/SharedPreferences.java'
+        }
+    }
+}
+sourceSets {
+    main {
+        java.srcDir generated
+        java.srcDir '../android/maxima-core/src/main/java'
+        resources.srcDir '../android/maxima-core/src/main/resources'
+        // The words in every language, which the shared classes say things in.
+        resources.srcDir '../android/app/src/main/resources'
+    }
+}
+tasks.named('compileJava') { dependsOn 'sharedSources' }
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+test { maxHeapSize = '256m'; testLogging { events 'failed'; exceptionFormat 'full' } }
+// The same, as one jar, to run beside a server in a container (by hand, never in the suite).
+tasks.register('senderJar', Jar) {
+    dependsOn testClasses
+    archiveFileName = 'sender-probe.jar'
+    destinationDirectory = layout.buildDirectory.dir('probe')
+    manifest { attributes 'Main-Class': 'org.mininotes.android.SenderProbe' }
+    from sourceSets.test.output
+    from sourceSets.main.output
+    from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'module-info.class', 'META-INF/versions/*/module-info.class'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+// One of the owner's devices pushing to a server started apart (see SenderProbe): by hand, never in the suite.
+tasks.register('senderProbe', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'org.mininotes.android.SenderProbe'
+    maxHeapSize = '192m'
+}
+
+// What install.sh downloads: one jar with everything in it, and its SHA-256 beside it.
+tasks.register('serverJar', Jar) {
+    dependsOn classes
+    archiveFileName = "mininotes-backup-server-${project.version}.jar"
+    destinationDirectory = layout.buildDirectory.dir('dist')
+    manifest { attributes 'Main-Class': 'org.mininotes.android.Server', 'Implementation-Version': project.version }
+    from sourceSets.main.output
+    from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) } }
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'META-INF/versions/*/module-info.class', 'module-info.class'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from('../LICENSE') { into 'META-INF' }
+    from('../NOTICE') { into 'META-INF' }
+    from('../android/maxima-core/LICENSE') { into 'META-INF'; rename { 'MAXIMA-LICENSE.txt' } }
+    doLast {
+        def jar = archiveFile.get().asFile
+        def digest = java.security.MessageDigest.getInstance('SHA-256').digest(jar.bytes).collect { String.format('%02x', it) }.join()
+        new File(jar.parentFile, jar.name + '.sha256').text = digest + '  ' + jar.name + '\n'
+    }
+}

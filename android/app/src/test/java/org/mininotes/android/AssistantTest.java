@@ -61,6 +61,19 @@ public class AssistantTest {
         assertEquals("filelink",Assistant.lookUp("how do I keep a spreadsheet in sync",en,3).get(0).id());
         assertEquals("dock",Assistant.lookUp("à quoi sert le dock",fr,3).get(0).id());
         assertEquals("lock",Assistant.lookUp("comment chiffrer mes notes avec un mot de passe",fr,3).get(0).id());
+        // The answers added since 0.4.027.
+        assertEquals("backup",Assistant.lookUp("how do I back up",en,3).get(0).id());
+        assertEquals("backupserver",Assistant.lookUp("can I back up to my own Linux server",en,3).get(0).id());
+        assertEquals("bigfiles",Assistant.lookUp("send a big file",en,3).get(0).id());
+        assertEquals("history",Assistant.lookUp("did my note reach my phone",en,3).get(0).id());
+        assertEquals("findinnote",Assistant.lookUp("how do I find a word in this note",en,3).get(0).id());
+        assertEquals("linkmenu",Assistant.lookUp("long press on a link",en,3).get(0).id());
+        assertEquals("several",Assistant.lookUp("how do I copy several files at once",en,3).get(0).id());
+        assertEquals("withoutasking",Assistant.lookUp("accept everything without asking",en,3).get(0).id());
+        assertEquals("relays",Assistant.lookUp("how do I add my own relay",en,3).get(0).id());
+        assertEquals("backup",Assistant.lookUp("comment sauvegarder mes notes",fr,3).get(0).id());
+        assertEquals("bigfiles",Assistant.lookUp("envoyer un gros fichier",fr,3).get(0).id());
+        assertEquals("temp",Assistant.lookUp("le bloc-notes de temp",fr,3).get(0).id());
         assertTrue("nothing for nonsense",Assistant.lookUp("zzz qqq",en,3).isEmpty());
         // A language with no help of its own is answered in English.
         assertEquals(en.size(),Assistant.help("ja").size());

@@ -94,6 +94,14 @@ public final class MainActivity extends Activity {
     static final int EXPORT=10, IMPORT=11, ATTACH=12, SAYING_SO=13, SEND_FILES=14, SAVE_COPY=15, HEARING=16, PICTURE=17, REPLACE=18, SHOT=19, IMPORT_BYTES=10000000;
     /** Asked only when the first help request alarm is switched on (decision 113), never before. */
     static final int LOCATING=19, LOCATING_BACKGROUND=20;
+    /** Save on my phone… for several files at once: the folder they go in (Choose several…, 2026-11-07). */
+    static final int SAVE_SEVERAL=46;
+    /** Where a backup place's key file is saved, and a key file picked to open a backup (step 3 of decision 329). */
+    static final int KEY_SAVE=47,KEY_OPEN=48;
+    /** The key file waiting for where it goes, and what follows once it is written. */
+    private String keyFileText;private Runnable keyFileSaved;
+    /** A backup's lock waiting for its key file, and what is given the key it opens. */
+    private byte[] keyFileLock;private Consumer<byte[]> keyFileOpens;private TextView keyFileWrong;
     /** The text of a backup, inside the zip that carries it and whatever the notes hold. */
     private static final String BACKUP_TEXT="mininotes-backup.json";
     static final String READ_FAILED="Could not read your notes. Nothing was changed.";
@@ -195,6 +203,8 @@ public final class MainActivity extends Activity {
     private boolean compactWriting;
     private LinearLayout tabStrip;
     private View tabsHolder;
+    /** Where the + to add a tab sits, beside the tabs and not among them; and the tabs' own sideways slide. */
+    private FrameLayout tabPlus;private android.widget.HorizontalScrollView tabsSlide;
     private int tabBand;
     private boolean noteKeyboard;
     private TextView recordingTime;
@@ -711,7 +721,7 @@ public final class MainActivity extends Activity {
         show.setOnClickListener(v->{
             boolean now=field.getInputType()==hidden;int at=field.getSelectionEnd();
             field.setInputType(now?shown:hidden);field.setTypeface(android.graphics.Typeface.DEFAULT);field.setSelection(Math.max(0,at));
-            show.setText(now?"Hide":"Show");show.setContentDescription(now?"Hide the password":"Show the password");
+            show.setText(Say.t(now?"Hide":"Show"));show.setContentDescription(now?"Hide the password":"Show the password");
         });
         row.addView(show);into.addView(row);
         return field;
@@ -784,7 +794,7 @@ public final class MainActivity extends Activity {
         javax.crypto.Cipher cipher;
         try{cipher=PhoneLock.bioCipher(this,false);}
         catch(Exception e) {
-            if(!PhoneLock.lost(e)){said.setTextColor(MUTED);said.setText(withPassword?"Use your password.":"Use your recovery words.");return;}
+            if(!PhoneLock.lost(e)){said.setTextColor(MUTED);said.setText(Say.t(withPassword?"Use your password.":"Use your recovery words."));return;}
             // The fingerprints changed or the screen lock went: the hardware key is gone, by design. The page is
             // drawn again on what still opens it, and says why.
             PhoneLock.forgetBio(this);
@@ -793,7 +803,7 @@ public final class MainActivity extends Activity {
         }
         askPhone("Unlock your notes",cipher,allowed->{
             try{NoteStore.unlock(PhoneLock.openBio(this,allowed));recreate();}
-            catch(Exception e){said.setTextColor(WARN);said.setText(withPassword?"That did not open it. Use your password.":"That did not open it. Try again, or use your recovery words.");}
+            catch(Exception e){said.setTextColor(WARN);said.setText(Say.t(withPassword?"That did not open it. Use your password.":"That did not open it. Try again, or use your recovery words."));}
         },why->{said.setTextColor(MUTED);said.setText(why.isEmpty()?" ":why);});
     }
     private static String passwordProblem(EditText first,EditText again) {
@@ -837,6 +847,12 @@ public final class MainActivity extends Activity {
             LinearLayout here;
             here=section(body,"Security");
             securityInto(here,box);
+
+            // Backup: where backups go, when, and what opens them, on a page of its own (decision 329).
+            here=section(body,"Backup");
+            int folders=PhoneBackups.places(this).size();
+            here.addView(label(folders==0?Say.t("No place for backups yet"):folders==1?Say.t("1 place for backups"):Say.t("{0} places for backups",String.valueOf(folders)),QUIET,MUTED));
+            here.addView(tapRow("Backups…",()->{if(box[0]!=null)box[0].dismiss();backups();}));
 
             here=section(body,"Sync");
             // Right away is a second after the writing pauses, not every keystroke: a word does not go in pieces.
@@ -1130,6 +1146,8 @@ public final class MainActivity extends Activity {
         add.setContentDescription("Add this relay");add.setOnClickListener(v->adding.run());
         line.addView(add);
         body.addView(line);body.addView(said);
+        // How to have one of your own (the owner's OK, 2026-11-07, of "Your own relay… in Settings, Relays").
+        body.addView(tapRow("Your own relay…",this::ownRelay));
         // The same relays on every device of the owner's (decision 316): what is chosen here goes to them at the next round.
         body.addView(switchRow(Relays.SAME,Node.relaysSame(this),on->{
             final int job=busy(on?"Sending your relays to your devices…":"Keeping the relays to this phone…");
@@ -1410,7 +1428,7 @@ public final class MainActivity extends Activity {
      */
     private void confirmKey(String title,String lead,String what,String yes,final Consumer<byte[]> then) {
         LockChoice.Way way=LockChoice.first(PhoneLock.bioHere(this),PhoneLock.hasPassword(this));
-        String line=(lead==null?"":lead+" ")+LockChoice.confirmLine(way,what);
+        String line=(lead==null?"":Say.t(lead)+" ")+LockChoice.confirmLine(way,what);
         if(way==LockChoice.Way.PASSWORD){withPassword(title,line,yes,then);return;}
         if(way==LockChoice.Way.WORDS){withWords(title,line,yes,then);return;}
         javax.crypto.Cipher cipher;
@@ -1442,7 +1460,7 @@ public final class MainActivity extends Activity {
                 try{key=Vault.recover(PhoneLock.kept(this),typed);}catch(Vault.Refused no){failed=no.getMessage();}catch(Exception e){/* said below */}
                 final byte[] opened=key;final String why=failed;
                 runOnUiThread(()->{
-                    if(opened==null){said.setTextColor(WARN);said.setText(why);return;}
+                    if(opened==null){said.setTextColor(WARN);said.setText(Say.t(why));return;}
                     box[0].dismiss();then.accept(opened);
                 });
             },"mininotes-words").start();
@@ -1524,10 +1542,340 @@ public final class MainActivity extends Activity {
         });
     }
 
-    /** The key of a locked backup: the password of the notebook it came from, or its 12 words, in one field. */
-    private void backupKey(final byte[] lock,final Consumer<byte[]> then) {
+    // ---- the Backup page (decision 329) --------------------------------------------------------------------------
+
+    /** The place being added or changed while the phone's folder picker is open, and the line that says its folder. */
+    private Backups.Place backupPicking;private Runnable backupFolderSaid;
+    /** Backups pushed to a device, which take minutes: never on the notebook's worker (decision 330). */
+    private final Background backupPushes=new Background(r->runOnUiThread(r));
+
+    /** The line that installs a backup server, and its guide (decision 330): the same as the PC shows. */
+    static final String SERVER_GUIDE="https://github.com/mininotesorg/server";
+    static final String SERVER_INSTALL="curl -fsSL https://raw.githubusercontent.com/mininotesorg/server/main/install.sh | sudo bash";
+    static final String SERVER_PAIR="sudo mininotes-server pair";
+    /**
+     * Your own server…: what it is, the lines that install and pair it, to copy or share to the computer the server is reached
+     * from, and its guide (the owner, 2026-11-05: "from the app we should made available the linux script to be installed").
+     */
+    void ownServer() {
         LinearLayout body=inside();
-        body.addView(label("This backup is locked. Type its password, or the 12 recovery words of the notebook it came from.",READING,INK));
+        body.addView(label("A small Mininotes for a Linux server that keeps your backups. It is one of your devices, always on, and it cannot open what it keeps: every backup is sealed here first.",READING,INK));
+        section(body,"1. Install it").addView(under("On the server, as root, run:"));
+        TextView install=label(SERVER_INSTALL,QUIET,INK);install.setTypeface(android.graphics.Typeface.MONOSPACE);install.setTextIsSelectable(true);body.addView(install);
+        body.addView(tapRow("Copy",()->{copyPlain(SERVER_INSTALL);}));
+        section(body,"2. Pair it").addView(under("Then run the line below. It shows a code: in People and devices, choose +, scan it or paste its link, then One of my devices and Nothing yet."));
+        // A command, never translated.
+        TextView pairLine=label("",QUIET,INK);pairLine.setText(SERVER_PAIR);pairLine.setTypeface(android.graphics.Typeface.MONOSPACE);pairLine.setTextIsSelectable(true);body.addView(pairLine);
+        section(body,"3. Back up to it").addView(under("Here, choose Add a place…, then the server under Where."));
+        body.addView(tapRow("Open the guide",()->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(SERVER_GUIDE)));}catch(RuntimeException none){alert(Say.t("No app here opens web links."));}}));
+        new Box().setTitle("Your own server").setView(scrolling(body)).setNegativeButton("Done",null).show();
+    }
+    /**
+     * Your own relay…: what it is, the line that installs it (the same as the backup server's, which installs both), where its
+     * address goes, and the guide.
+     */
+    void ownRelay() {
+        LinearLayout body=inside();
+        body.addView(label("A relay on a server of yours carries your notes when your devices cannot reach each other directly. It passes on only what is sealed, and cannot read it.",READING,INK));
+        section(body,"1. Install it").addView(under("On the server, as root, run:"));
+        TextView install=label("",QUIET,INK);install.setText(SERVER_INSTALL);install.setTypeface(android.graphics.Typeface.MONOSPACE);install.setTextIsSelectable(true);body.addView(install);
+        body.addView(tapRow("Copy",()->copyPlain(SERVER_INSTALL)));
+        section(body,"2. Add it here").addView(under("At the end it shows the relay's address, like 203.0.113.7:9501. Type it in the relay field, then Add."));
+        body.addView(tapRow("Open the guide",()->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(SERVER_GUIDE)));}catch(RuntimeException none){alert(Say.t("No app here opens web links."));}}));
+        new Box().setTitle("Your own relay").setView(scrolling(body)).setNegativeButton("Done",null).show();
+    }
+    private void copyPlain(String text) {
+        android.content.ClipboardManager board=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+        if(board!=null){board.setPrimaryClip(android.content.ClipData.newPlainText("Mininotes",text));toast(Say.t("Copied"));}
+    }
+    private static final int[] BACKUP_KEEPS={1,3,5,10,20,50};
+    private static final java.util.Set<String> backingUp=java.util.Collections.synchronizedSet(new java.util.HashSet<>());
+
+    /**
+     * The Backup page (the owner, 2026-11-05: "we should have a full backup page where the user can set its backup parameters,
+     * what is backup, where, when and at what frequency"): each folder with its times, what goes in and what opens it, how its
+     * last one went; Back up now, Change, Remove; Add a folder; Add from a backup.
+     */
+    void backups() {
+        final LinearLayout body=inside();final AlertDialog[] box={null};
+        final Runnable[] draw={null};
+        draw[0]=()->{
+            body.removeAllViews();
+            body.addView(under("Backups are always encrypted. Each place has its own times, and keeps its newest copies: a folder, or another of your devices, such as your own server. Private spaces are never backed up."));
+            java.time.ZoneId zone=java.time.ZoneId.systemDefault();
+            List<Backups.Place> all=PhoneBackups.places(this);
+            if(all.isEmpty()){TextView none=label("No place for backups yet",READING,INK);none.setPadding(0,dp(12),0,dp(4));body.addView(none);}
+            for(final Backups.Place p:all) {
+                LinearLayout part=section(body,p.shown);
+                // On or off, first, where it is seen (the owner, 2026-11-07: "a button to turn on and off the backup").
+                part.addView(switchRow("Back up here",p.on,on->{
+                    synchronized(PhoneBackups.class){List<Backups.Place> every=PhoneBackups.places(this);
+                        for(Backups.Place one:every)if(one.id.equals(p.id))one.on=on;PhoneBackups.keep(this,every);}
+                    draw[0].run();
+                }));
+                part.addView(label(Backups.when(p,true),READING,p.on?INK:MUTED));
+                part.addView(under(Backups.whatNames()[p.what.ordinal()]+"  ·  "+Backups.opensNames(true)[p.opens.ordinal()]+"  ·  "+Say.t("Keeps {0}",String.valueOf(p.keep))));
+                boolean failed=p.said!=Backups.Said.NONE&&p.said!=Backups.Said.MADE&&p.said!=Backups.Said.SAME;
+                TextView last=label(Backups.lastSaid(p,zone),QUIET,failed?WARN:MUTED);part.addView(last);
+                String next=Backups.nextSaid(p,zone);if(!next.isEmpty())part.addView(label(next,QUIET,MUTED));
+                // A folder that is gone or full: the way out first (the owner, 2026-11-07, "present the solution").
+                if(Backups.wantsFolder(p)){View choose=primary("Choose another folder…",()->editBackup(p,draw[0]));part.addView(choose);}
+                LinearLayout both=new LinearLayout(this);both.setPadding(0,dp(8),0,dp(2));
+                both.addView(pill("Back up now",()->runBackup(p,true,draw[0])),new LinearLayout.LayoutParams(0,-2,1f));
+                both.addView(gap(0),new LinearLayout.LayoutParams(dp(10),dp(1)));
+                both.addView(pill("Change",()->editBackup(p,draw[0])),new LinearLayout.LayoutParams(0,-2,1f));
+                part.addView(both);
+                TextView remove=tap("Remove…","Remove this place for backups",QUIET,WARN,v->new Box().setTitle("Remove this place for backups?")
+                    .setMessage(Say.t("Backups stop going to {0}. The backups already there stay.",p.shown))
+                    .setPositiveButton("Remove",(d,w)->{
+                        List<Backups.Place> left=PhoneBackups.places(this);left.removeIf(one->one.id.equals(p.id));PhoneBackups.keep(this,left);
+                        try{getContentResolver().releasePersistableUriPermission(Uri.parse(p.where),Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);}catch(RuntimeException never){/* not held */}
+                        background.submit(()->{store.setSecret(Backups.secretOf(p.id),"");return null;},done->draw[0].run(),e->alert(READ_FAILED));
+                    }).show());
+                remove.setPadding(0,dp(10),0,dp(4));part.addView(remove);
+            }
+            section(body,"Put a backup back").addView(tapRow("Add from backup…",()->{box[0].dismiss();pick(IMPORT);}));
+            body.addView(gap(dp(12)));
+            body.addView(primary("Add a place…",()->editBackup(null,draw[0])));
+        };
+        draw[0].run();
+        box[0]=new Box().setTitle("Backup").setView(scrolling(body)).setNegativeButton("Done",null).create();box[0].show();
+    }
+
+    /** One made now, the busy strip saying it where it was asked for; the page drawn again after. */
+    private void runBackup(final Backups.Place p,final boolean asked,final Runnable after) {
+        if(!backingUp.add(p.id))return;
+        final int job=asked?busy(Say.t("Backing up to {0}…",p.shown)):-1;
+        // To a device it takes minutes: on a worker of its own, never the notebook's (decision 330).
+        (p.toDevice()?backupPushes:background).submit(()->PhoneBackups.make(this,p,asked),said->{
+            backingUp.remove(p.id);PhoneBackups.update(this,p);
+            String how=said==Backups.Said.MADE?Say.t("Backed up to {0}",p.shown):said==Backups.Said.SAME?Say.t("Nothing changed since the last backup"):Backups.lastSaid(p,java.time.ZoneId.systemDefault());
+            if(job>=0)busyDone(job,how);
+            if(after!=null)after.run();
+        },e->{backingUp.remove(p.id);if(job>=0)busyDone(job,null);alert(READ_FAILED);if(after!=null)after.run();});
+    }
+
+    /** A folder added or changed: where, what, when, how many kept, what opens it. Save makes the lock where one is new. */
+    private void editBackup(final Backups.Place was,final Runnable after) {
+        final Backups.Place p=was==null?new Backups.Place():was.copy();
+        final boolean locked=PhoneLock.locked(this)&&NoteStore.key()!=null;
+        if(was==null&&locked)p.opens=Backups.Opens.NOTEBOOK;
+        if(!locked&&p.opens==Backups.Opens.NOTEBOOK)p.opens=Backups.Opens.PASSWORD;
+        final LinearLayout body=inside();final AlertDialog[] box={null};
+        backupPicking=p;
+        // Where: a folder, or another of my devices (decision 330), a backup server among them.
+        final List<NoteStore.Contact> devices=new ArrayList<>();
+        for(NoteStore.Contact one:store.addresses())if(one.mine&&one.paired())devices.add(one);
+        final List<String> wheres=new ArrayList<>();wheres.add(Say.t("A folder"));int whereAt=0;
+        for(int i=0;i<devices.size();i++){wheres.add(devices.get(i).name);if(devices.get(i).address.equals(p.device))whereAt=i+1;}
+        final int[] whereTo={whereAt};
+        final String[] folderWas={p.toDevice()?"":p.where},folderShown={p.toDevice()?"":p.shown};
+        // The folder as a row of its own, its name under "Folder" and a › that opens the phone's picker (the owner, 2026-11-07:
+        // "the folder I picked should be shown here"): drawn again when one is picked.
+        final LinearLayout folderRow=column();
+        final Runnable chooseFolder=()->{
+            try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION),PhoneBackups.PICK);}
+            catch(RuntimeException none){alert(Say.t("This phone has no way to choose a folder."));}
+        };
+        backupFolderSaid=()->{
+            // A folder's place has its address in where; a device's has none until a folder is picked for it here.
+            String named=p.where.isEmpty()?"":p.shown;
+            folderRow.removeAllViews();
+            folderRow.addView(row(Say.t("Folder"),named.isEmpty()?Say.t("No folder chosen"):named,chooseFolder));
+        };
+        backupFolderSaid.run();
+        final TextView deviceSays=under("Sent sealed to that device when it can be reached directly: it keeps the backup and cannot open it.");
+        final Runnable whereShown=()->{
+            boolean toFolder=whereTo[0]==0;
+            folderRow.setVisibility(toFolder?View.VISIBLE:View.GONE);
+            deviceSays.setVisibility(toFolder?View.GONE:View.VISIBLE);
+        };
+        body.addView(dropRow(Say.t("Where"),wheres,null,whereAt,wheres.get(whereAt),picked->{whereTo[0]=picked;whereShown.run();}));
+        body.addView(folderRow);body.addView(deviceSays);
+        body.addView(tapRow("Your own server…",this::ownServer));
+        whereShown.run();
+        final int[] what={p.what.ordinal()},often={p.often.ordinal()},hour={p.hour},weekday={p.weekday},monthday={p.monthday},keep={p.keep},opens={Backups.indexOf(p.opens,locked)};
+        List<String> whats=java.util.Arrays.asList(Backups.whatNames());
+        body.addView(dropRow(Say.t("What"),whats,null,what[0],whats.get(what[0]),picked->what[0]=picked));
+        final List<String> oftens=java.util.Arrays.asList(Backups.oftenNames(true));
+        final List<String> hours=new ArrayList<>();for(int h=0;h<24;h++)hours.add(String.format(java.util.Locale.ROOT,"%02d:00",h));
+        final List<String> days=new ArrayList<>();for(int d=1;d<=7;d++)days.add(Backups.dayName(d));
+        final List<String> dates=new ArrayList<>();for(int d=1;d<=28;d++)dates.add(String.valueOf(d));
+        final View dayRow=dropRow(Say.t("Day"),days,null,weekday[0]-1,days.get(weekday[0]-1),picked->weekday[0]=picked+1);
+        final View dateRow=dropRow(Say.t("Day of the month"),dates,null,monthday[0]-1,dates.get(monthday[0]-1),picked->monthday[0]=picked+1);
+        final View hourRow=dropRow(Say.t("At"),hours,null,hour[0],hours.get(hour[0]),picked->hour[0]=picked);
+        final Runnable shown=()->{
+            Backups.Often o=Backups.Often.values()[often[0]];
+            dayRow.setVisibility(o==Backups.Often.WEEKLY?View.VISIBLE:View.GONE);
+            dateRow.setVisibility(o==Backups.Often.MONTHLY?View.VISIBLE:View.GONE);
+            hourRow.setVisibility(o==Backups.Often.DAILY||o==Backups.Often.WEEKLY||o==Backups.Often.MONTHLY?View.VISIBLE:View.GONE);
+        };
+        body.addView(dropRow(Say.t("When"),oftens,null,often[0],oftens.get(often[0]),picked->{often[0]=picked;shown.run();}));
+        body.addView(dayRow);body.addView(dateRow);body.addView(hourRow);shown.run();
+        final List<String> keeps=new ArrayList<>();int keepAt=2;
+        for(int i=0;i<BACKUP_KEEPS.length;i++){keeps.add(BACKUP_KEEPS[i]==1?Say.t("The newest only"):Say.t("The newest {0}",String.valueOf(BACKUP_KEEPS[i])));if(BACKUP_KEEPS[i]==p.keep)keepAt=i;}
+        final int[] keepIndex={keepAt};
+        body.addView(dropRow(Say.t("Keep"),keeps,null,keepAt,keeps.get(keepAt),picked->keepIndex[0]=picked));
+        final List<String> openers=java.util.Arrays.asList(Backups.opensNames(locked));
+        body.addView(dropRow(Say.t("Opened with"),openers,null,opens[0],openers.get(opens[0]),picked->opens[0]=picked));
+        body.addView(under("Whichever opens it is needed to put a backup back. If it is lost, so are the backups."));
+        final TextView wrong=label(" ",QUIET,WARN);body.addView(wrong);
+        body.addView(primary("Save",()->{
+            if(whereTo[0]==0) {
+                // The folder picked meanwhile is written on p by backupFolderPicked; one kept from before stays.
+                if(p.toDevice()&&p.where.isEmpty()){p.where=folderWas[0];p.shown=folderShown[0];}
+                if(p.where.isEmpty()){wrong.setText(Say.t("Choose a folder first."));return;}
+                p.device="";
+            } else {
+                NoteStore.Contact to=devices.get(whereTo[0]-1);
+                p.device=to.address;p.where="";p.shown=to.name;
+            }
+            p.what=Backups.What.values()[what[0]];p.often=Backups.Often.values()[often[0]];
+            p.hour=hour[0];p.weekday=weekday[0];p.monthday=monthday[0];p.keep=BACKUP_KEEPS[keepIndex[0]];
+            final Backups.Opens chosen=Backups.opensAt(opens[0],locked);
+            boolean fresh=was==null||chosen!=was.opens||(chosen!=Backups.Opens.NOTEBOOK&&p.lock.isEmpty());
+            if(was!=null&&(was.often!=p.often||was.hour!=p.hour||was.weekday!=p.weekday||was.monthday!=p.monthday))p.set=System.currentTimeMillis();
+            final Consumer<Vault.Made> keepIt=made->{
+                p.opens=chosen;
+                if(made!=null)p.lock=java.util.Base64.getEncoder().encodeToString(made.kept);
+                if(chosen==Backups.Opens.NOTEBOOK)p.lock="";
+                final byte[] key=made==null?null:made.key;
+                background.submit(()->{
+                    if(key!=null)store.setSecret(Backups.secretOf(p.id),java.util.Base64.getEncoder().encodeToString(key));
+                    if(chosen==Backups.Opens.NOTEBOOK)store.setSecret(Backups.secretOf(p.id),"");
+                    return null;
+                },done->{
+                    synchronized(PhoneBackups.class){List<Backups.Place> all=PhoneBackups.places(this);boolean found=false;
+                        for(int i=0;i<all.size();i++)if(all.get(i).id.equals(p.id)){all.set(i,p);found=true;}
+                        if(!found)all.add(p);PhoneBackups.keep(this,all);}
+                    box[0].dismiss();backupPicking=null;if(after!=null)after.run();
+                    // A first one made now, so the folder is known to work.
+                    if(was==null)runBackup(p,true,after);
+                },e->alert(READ_FAILED));
+            };
+            if(fresh&&chosen==Backups.Opens.PASSWORD)backupsPassword(password->background.submit(()->{try{return Vault.make(password);}finally{java.util.Arrays.fill(password,' ');}},keepIt::accept,e->alert(READ_FAILED)));
+            else if(fresh&&chosen==Backups.Opens.WORDS)background.submit(Vault::makeWithoutPassword,made->backupsWords(made.words,()->keepIt.accept(made)),e->alert(READ_FAILED));
+            // A key file, saved where the owner chooses, away from the backups (step 3 of decision 329).
+            else if(fresh&&chosen==Backups.Opens.KEY_FILE)new Box().setTitle("Save the key file")
+                .setMessage("Keep it apart from the backups, on a USB key for instance: whoever has both can open them, and without it nobody can.")
+                .setPositiveButton("Choose where",(d,w)->{
+                    final String secret=Backups.newSecret();
+                    keyFileSaved=()->background.submit(()->Vault.make(secret.toCharArray()),keepIt::accept,e->alert(READ_FAILED));
+                    keyFileText=Backups.keyFile(secret);
+                    try{startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/octet-stream")
+                        .putExtra(Intent.EXTRA_TITLE,Backups.keyFileName(Node.nameHere(this))),KEY_SAVE);}
+                    catch(RuntimeException none){keyFileSaved=null;keyFileText=null;alert("This phone has no settings page for that.");}
+                }).setNegativeButton("Cancel",null).show();
+            // This device only: the secret in its own settings, never in the notebook nor a backup (step 3 of decision 329).
+            else if(fresh&&chosen==Backups.Opens.DEVICE)new Box().setTitle("This device only?")
+                .setMessage("Only this phone can open these backups. If it is lost, or Mininotes is removed from it, so are they.")
+                .setPositiveButton("Use this device only",(d,w)->{
+                    final String secret=Backups.newSecret();
+                    android.content.SharedPreferences settings=getSharedPreferences("settings",MODE_PRIVATE);
+                    settings.edit().putStringSet(Backups.HERE_KEYS,Backups.withHere(settings.getStringSet(Backups.HERE_KEYS,new java.util.HashSet<>()),secret)).apply();
+                    background.submit(()->Vault.make(secret.toCharArray()),keepIt::accept,e->alert(READ_FAILED));
+                }).setNegativeButton("Cancel",null).show();
+            else keepIt.accept(null);
+        }));
+        box[0]=new Box().setTitle(was==null?"Add a place for backups":"Change this backup").setView(scrolling(body)).setNegativeButton("Cancel",(d,w)->backupPicking=null).create();box[0].show();
+    }
+
+    /** The folder the phone's picker gave: kept readable and writable from now on, and said on the box. */
+    private void backupFolderPicked(Uri tree) {
+        Backups.Place p=backupPicking;if(p==null||tree==null)return;
+        try{getContentResolver().takePersistableUriPermission(tree,Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION);}
+        catch(RuntimeException refused){alert(Say.t("That folder cannot be written to. Choose another."));return;}
+        p.where=tree.toString();p.shown=PhoneBackups.shown(this,tree);
+        if(backupFolderSaid!=null)backupFolderSaid.run();
+    }
+
+    /** A password for the backups, typed twice. */
+    private void backupsPassword(final Consumer<char[]> then) {
+        LinearLayout body=inside();
+        body.addView(label("Choose a password for these backups. It opens them on any phone or PC, and nothing else can: if it is lost, so are the backups.",READING,INK));
+        final EditText first=secret(body,"Backup password"),again=secret(body,"The same again");
+        final TextView said=label(" ",QUIET,WARN);body.addView(said);
+        final AlertDialog[] box={null};
+        body.addView(primary("Use this password",()->{
+            String problem=passwordProblem(first,again);if(problem!=null){said.setText(problem);return;}
+            char[] chosen=first.getText().toString().toCharArray();box[0].dismiss();then.accept(chosen);
+        }));
+        box[0]=new Box().setTitle("Backup password").setView(scrolling(body)).create();box[0].show();
+    }
+
+    /** The 12 words made for the backups, shown once, then three asked back so they are really written down. */
+    private void backupsWords(final List<String> real,final Runnable then) {
+        final List<String> words=Demo.shown(real);
+        LinearLayout body=inside();
+        body.addView(label("Write these 12 words on paper, in this order, and keep them in a safe place. They open these backups on any phone or PC, and nothing else can.",READING,INK));
+        StringBuilder laid=new StringBuilder();
+        for(int i=0;i<words.size();i++){laid.append(String.format(java.util.Locale.ROOT,"%2d. %-9s",i+1,words.get(i)));laid.append(i%2==1?"\n":"  ");}
+        TextView block=label(laid.toString().trim(),READING,INK);block.setTypeface(android.graphics.Typeface.MONOSPACE,android.graphics.Typeface.BOLD);
+        block.setTextIsSelectable(true);block.setContentDescription("Your 12 recovery words");
+        GradientDrawable card=new GradientDrawable();card.setColor(CARD);card.setCornerRadius(dp(12));card.setStroke(Math.max(1,dp(1)),LINE);
+        block.setBackground(card);block.setPadding(dp(16),dp(14),dp(16),dp(14));
+        LinearLayout.LayoutParams place=new LinearLayout.LayoutParams(-1,-2);place.setMargins(0,dp(14),0,dp(8));body.addView(block,place);
+        final AlertDialog[] box={null};
+        body.addView(primary("I have written them down",()->{
+            box[0].dismiss();
+            List<Integer> order=new ArrayList<>();for(int i=0;i<words.size();i++)order.add(i);
+            java.util.Collections.shuffle(order,new java.security.SecureRandom());
+            final List<Integer> asked=new ArrayList<>(order.subList(0,3));java.util.Collections.sort(asked);
+            LinearLayout check=inside();
+            check.addView(label("To be sure they are written down, type these three of your words.",READING,INK));
+            final EditText[] fields=new EditText[3];
+            for(int i=0;i<3;i++){fields[i]=field("Word "+(asked.get(i)+1),20);fields[i].setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);check.addView(fields[i]);}
+            final TextView said=label(" ",QUIET,WARN);check.addView(said);
+            final AlertDialog[] asking={null};
+            check.addView(primary("Use these words",()->{
+                for(int i=0;i<3;i++)if(!fields[i].getText().toString().trim().equalsIgnoreCase(words.get(asked.get(i)))){said.setText(Say.t("Word {0} is not right. Check what you wrote down.",asked.get(i)+1));return;}
+                asking[0].dismiss();then.run();
+            }));
+            asking[0]=new Box().setTitle("Check your words").setView(scrolling(check)).create();asking[0].show();
+        }));
+        box[0]=new Box().setTitle("Your recovery words").setView(scrolling(body)).create();box[0].show();
+    }
+
+    private void keyFileWritten(Uri where) {
+        final String text=keyFileText;final Runnable then=keyFileSaved;keyFileText=null;keyFileSaved=null;
+        if(where==null||text==null||then==null)return;
+        background.submit(()->{
+            try(java.io.OutputStream out=getContentResolver().openOutputStream(where,"w")){if(out==null)throw new java.io.IOException("no-stream");out.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+            return null;
+        },done->then.run(),e->alert(Say.t("That folder cannot be written to. Choose another.")));
+    }
+    private void keyFileRead(Uri file) {
+        final byte[] lock=keyFileLock;final Consumer<byte[]> then=keyFileOpens;final TextView wrong=keyFileWrong;
+        if(file==null||lock==null||then==null)return;
+        if(wrong!=null){wrong.setTextColor(MUTED);wrong.setText(Say.t("Opening…"));}
+        background.submit(()->{
+            byte[] read=null;try(InputStream in=getContentResolver().openInputStream(file)){if(in!=null){java.io.ByteArrayOutputStream got=new java.io.ByteArrayOutputStream();byte[] part=new byte[1024];for(int n;got.size()<=4096&&(n=in.read(part))>0;)got.write(part,0,n);read=got.toByteArray();}}
+            String secret=Backups.secretIn(read);
+            if(secret==null)return new Object[]{null,"Choose the key file Mininotes saved: that is not one."};
+            byte[] key=Backups.openWith(lock,java.util.Collections.singletonList(secret));
+            return new Object[]{key,key==null?"That key file does not open this backup.":null};
+        },got->{
+            if(got[0]==null){if(wrong!=null){wrong.setTextColor(WARN);wrong.setText(Say.t((String)got[1]));}return;}
+            keyFileLock=null;keyFileOpens=null;keyFileWrong=null;
+            if(backupKeyBox!=null)backupKeyBox.dismiss();
+            then.accept((byte[])got[0]);
+        },e->{if(wrong!=null){wrong.setTextColor(WARN);wrong.setText(Say.t("That key file does not open this backup."));}});
+    }
+    private AlertDialog backupKeyBox;
+
+    /**
+     * The key of a locked backup. One made for this device only is opened with what this device keeps, nothing asked (step 3
+     * of decision 329); otherwise its password or its 12 words in one field, or its key file.
+     */
+    private void backupKey(final byte[] lock,final Consumer<byte[]> then) {
+        final java.util.Set<String> here=getSharedPreferences("settings",MODE_PRIVATE).getStringSet(Backups.HERE_KEYS,new java.util.HashSet<>());
+        if(here.isEmpty()){askBackupKey(lock,then);return;}
+        background.submit(()->{byte[] k=Backups.openWith(lock,here);return k==null?new byte[0]:k;},
+            key->{if(key.length>0)then.accept(key);else askBackupKey(lock,then);},e->askBackupKey(lock,then));
+    }
+    private void askBackupKey(final byte[] lock,final Consumer<byte[]> then) {
+        LinearLayout body=inside();
+        body.addView(label("This backup is locked. Type its password or its 12 recovery words, or use its key file.",READING,INK));
         final EditText said=field("Password or recovery words",400);said.setSingleLine(false);
         said.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE|android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS|android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
         body.addView(said);
@@ -1546,7 +1894,14 @@ public final class MainActivity extends Activity {
                 });
             },"mininotes-backup-key").start();
         }));
-        box[0]=new Box().setTitle("Locked backup").setView(scrolling(body)).create();box[0].show();
+        // Its key file (step 3 of decision 329): picked, read, and tried as a password is.
+        TextView file=tap("Use a key file…","Use a key file",QUIET,ACCENT,v->{
+            keyFileLock=lock;keyFileOpens=then;keyFileWrong=wrong;
+            try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),KEY_OPEN);}
+            catch(RuntimeException none){alert("This phone has no settings page for that.");}
+        });
+        file.setPadding(0,dp(12),0,dp(4));body.addView(file);
+        box[0]=new Box().setTitle("Locked backup").setView(scrolling(body)).create();backupKeyBox=box[0];box[0].show();
     }
 
     /**
@@ -1645,10 +2000,17 @@ public final class MainActivity extends Activity {
         else if(noteWords!=null&&NoteLine.isSending(noteWordsSaid))noteSays(null,null,null);
     }
 
+    /**
+     * A send that threw, as the could-not-go box says one: what to do first, then why, never the exception's own words
+     * alone (the owner, 2026-11-07: "present the solution instead of presenting the problem").
+     */
+    private static Post.Done failedSend(Exception e) {
+        return new Post.Done(0,1,"",java.util.Collections.singletonList(new Unsent.Problem(Unsent.of(e.getMessage()),"","","",e.getMessage())));
+    }
     /** A send of the open note that threw: on its line, with the words it threw with behind the tap. */
     private void noteFailed(Exception e) {
-        noteSays("Could not go. See why",NoteLine.Tone.FAILED,()->tellUnsent(new Post.Done(0,1,"",java.util.Collections.singletonList(
-            new Unsent.Problem(Unsent.of(e.getMessage()),"","","",e.getMessage())))));
+        Post.Done done=failedSend(e);
+        noteSays(NoteLine.couldNot(done.problems,0),NoteLine.couldNotTone(done.problems),()->tellUnsent(done));
     }
 
     /** Who the open page reaches and where each stands, asked again whenever it is opened or written to. */
@@ -2160,7 +2522,7 @@ public final class MainActivity extends Activity {
         });
         titled.addView(faceReach,new LinearLayout.LayoutParams(dp(34),dp(44)));
         named=label("",READING,INK);
-        named.setHint("Title");named.setHintTextColor(MUTED);
+        named.setHint(Say.t("Title"));named.setHintTextColor(MUTED);
         named.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP,20);
         named.setTypeface(named.getTypeface(),android.graphics.Typeface.BOLD);
         named.setSingleLine(true);named.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);
@@ -2184,8 +2546,17 @@ public final class MainActivity extends Activity {
         root.addView(top);
         tabStrip=new LinearLayout(this);tabStrip.setGravity(Gravity.BOTTOM);tabStrip.setPadding(dp(12),dp(2),dp(12),0);
         android.widget.HorizontalScrollView tabsScroll=new android.widget.HorizontalScrollView(this);
-        tabsScroll.setHorizontalScrollBarEnabled(false);tabsScroll.setBackgroundColor(band);tabsScroll.addView(tabStrip);
-        tabBand=band;tabsHolder=tabsScroll;
+        tabsScroll.setHorizontalScrollBarEnabled(false);tabsScroll.addView(tabStrip);
+        // The tabs slide sideways under a finger and the + stays where it can be reached (the owner, 2026-11-15: "browse the
+        // tab in a note by scroling from right to left, making sure the + is always reachable"): right after the last tab
+        // while they fit, held at the edge once there are more than fit. The + was the strip's last card, slid off with it.
+        LinearLayout tabsRow=new LinearLayout(this);tabsRow.setBackgroundColor(band);
+        LinearLayout tabsAndPlus=new LinearLayout(this);tabsAndPlus.setGravity(Gravity.BOTTOM);
+        tabsAndPlus.addView(tabsScroll,new LinearLayout.LayoutParams(-2,-2,1f));
+        tabPlus=new FrameLayout(this);tabPlus.setPadding(0,0,dp(12),0);
+        tabsAndPlus.addView(tabPlus,new LinearLayout.LayoutParams(-2,-2));
+        tabsRow.addView(tabsAndPlus,new LinearLayout.LayoutParams(-2,-2));
+        tabBand=band;tabsHolder=tabsRow;tabsSlide=tabsScroll;
         // Silence means saved, and given to whoever receives it. Anything else is said in one quiet line
         // under the name, which is not there at all when there is nothing to say.
         status=label("",QUIET,MUTED);status.setSingleLine(true);status.setOnClickListener(v->retry());
@@ -2212,7 +2583,7 @@ public final class MainActivity extends Activity {
         askWhatIsOwed();
         askPause(note.id);
         root.addView(head,new LinearLayout.LayoutParams(-1,-2));
-        root.addView(tabsScroll,new LinearLayout.LayoutParams(-1,-2));
+        root.addView(tabsRow,new LinearLayout.LayoutParams(-1,-2));
         askWhereNoteIs(note);
         page=new Pad(this,LINE);page.setGravity(Gravity.TOP);page.setTextSize(pageSize());page.setTextColor(INK);
         // A little paper under the last line, and no more: a page that kept a keyboard's worth of it
@@ -2222,7 +2593,7 @@ public final class MainActivity extends Activity {
         holds("");
         // A page has no name of its own: it is known by its first line. An empty one says so, and from the
         // first word on that line is drawn as the heading it is — in weight only, so the rules still fit it.
-        page.setHint("Write.");page.setHintTextColor(MUTED);
+        page.setHint(Say.t("Write."));page.setHintTextColor(MUTED);
         page.setLinkTextColor(ACCENT);
         // A tap on a web address opens it; a tap anywhere else is left alone, so the cursor still goes where
         // it was put. Nothing is opened without a tap on the address itself.
@@ -2581,7 +2952,7 @@ public final class MainActivity extends Activity {
         if(tabStrip==null||page==null)return;
         // Drawn again under a tab in hand, writing that arrived say: that tab is let go where it was.
         tabHeld=-1;tabTo=-1;tabMoving=false;tabStrip.getOverlay().clear();
-        tabStrip.removeAllViews();
+        tabStrip.removeAllViews();if(tabPlus!=null)tabPlus.removeAllViews();
         String body=whole();
         final List<Sections.Section> all=Sections.of(body);
         if(Sections.tabbed(body))for(int i=0;i<all.size();i++) {
@@ -2614,11 +2985,20 @@ public final class MainActivity extends Activity {
         // none, only "+ Add a tab", small and quiet, so a note's head stays short.
         boolean some=Sections.tabbed(body);
         if(tabsHolder!=null)tabsHolder.setVisibility((some||!readOnly)&&!compactWriting?View.VISIBLE:View.GONE);
-        if(some&&!readOnly)tabStrip.addView(tap("+","Add a tab",20,MUTED,v->addTab()),new LinearLayout.LayoutParams(dp(44),dp(36)));
+        android.view.ViewGroup plusIn=tabPlus!=null?tabPlus:tabStrip;
+        if(some&&!readOnly)plusIn.addView(tap("+","Add a tab",20,MUTED,v->addTab()),new android.view.ViewGroup.LayoutParams(dp(44),dp(36)));
         else if(!readOnly) {
             TextView add=tap("+  "+Say.t("Add a tab"),Say.t("Add a tab"),QUIET,MUTED,v->addTab());
             add.setGravity(Gravity.CENTER_VERTICAL);add.setPadding(dp(4),0,dp(12),0);
-            tabStrip.addView(add,new LinearLayout.LayoutParams(-2,dp(30)));
+            plusIn.addView(add,new android.view.ViewGroup.LayoutParams(-2,dp(30)));
+        }
+        // The open tab in view, wherever along the row it is.
+        if(some&&tabsSlide!=null&&tab>=0&&tab<tabStrip.getChildCount()) {
+            final View openCard=tabStrip.getChildAt(tab);
+            tabsSlide.post(()->{
+                int left=openCard.getLeft(),right=openCard.getRight(),seen=tabsSlide.getScrollX(),wide=tabsSlide.getWidth();
+                if(left<seen)tabsSlide.smoothScrollTo(left,0);else if(right>seen+wide)tabsSlide.smoothScrollTo(right-wide+dp(12),0);
+            });
         }
         filesFollowTabs(body);
     }
@@ -2674,9 +3054,23 @@ public final class MainActivity extends Activity {
 
     private void switchTab(int index) {
         if(page==null||active==null||index==tab)return;
+        // Where the person was on this tab, kept; and where they were on the one they go back to, given back (the owner,
+        // 2026-11-04: "when we move to one tab and come back, we need to come back where we were, not at the top").
+        final String id=active.id;
+        if(id!=null){Map<String,int[]> places=tabPlaces.get(id);if(places==null)tabPlaces.put(id,places=new HashMap<>());
+            places.put(TabFiles.key(tabName()),new int[]{Math.max(0,page.getSelectionStart()),page.getScrollY()});}
         split(whole(),wholeWriters(),index);
         showTab();
+        Map<String,int[]> places=id==null?null:tabPlaces.get(id);
+        final int[] was=places==null?null:places.get(TabFiles.key(tabName()));
+        if(was!=null&&!findOpensTab) {
+            page.setSelection(Math.min(was[0],page.length()));
+            // After showTab's own scroll to the top, once the page is laid out at its new length.
+            final Pad opened=page;page.post(()->page.post(()->{if(page==opened){android.text.Layout lay=opened.getLayout();int most=lay==null?was[1]:Math.max(0,lay.getHeight()+opened.getTotalPaddingTop()+opened.getTotalPaddingBottom()-opened.getHeight());opened.scrollTo(0,Math.min(was[1],most));}}));
+        }
     }
+    /** Per note, per tab by its name: the caret and how far down the page was, while this screen lives. */
+    private final Map<String,Map<String,int[]>> tabPlaces=new HashMap<>();
 
     /** Another tab, last, opened, and its name asked; Cancel keeps the one it was given. */
     private void addTab() {
@@ -4025,6 +4419,16 @@ public final class MainActivity extends Activity {
      */
     void roomFor(View anchor,NoteStore.Branch here){menuFor(anchor,here,false,true);}
 
+    /** How a folder's things are ordered, chosen in one tap and kept for that folder on this phone (decision 336). */
+    private void orderBox(NoteStore.Branch here) {
+        CharSequence[] names=new CharSequence[FolderOrder.CHOICES.size()];
+        for(int i=0;i<names.length;i++)names[i]=Say.t(FolderOrder.said(FolderOrder.CHOICES.get(i)));
+        new Box().setTitle("Order by").setSingleChoiceItems(names,FolderOrder.CHOICES.indexOf(store.folderOrder(here.id)),(d,which)->{
+            d.dismiss();
+            background.submit(()->{store.folderOrder(here.id,FolderOrder.CHOICES.get(which));return null;},done->refresh(),e->alert(READ_FAILED));
+        }).show();
+    }
+
     /**
      * @param app  whether the app's own rows follow: ⋮ has them, a long press does not
      * @param room whether it is the room's menu - Home's, or a card's - with New note and New collection in it
@@ -4231,6 +4635,8 @@ public final class MainActivity extends Activity {
         // only there when there is something to put back: it used to sit greyed at the top of every menu
         // saying "Nothing to undo", which is a row spent telling somebody about a thing they cannot do.
         if(undoHow!=null){sheet.row("Undo "+undoWhat,this::undo);sheet.line();}
+        // A folder's or Temp's empty room held down: how what is in it is ordered, as a right-click there on the PC (decision 336).
+        if(room&&(here.kind==NoteStore.Branch.Kind.TEMP||here.kind==NoteStore.Branch.Kind.COLLECTION||here.kind==NoteStore.Branch.Kind.BOOK)){sheet.row("Order by",()->orderBox(here));sheet.line();}
         // The rows about the thing itself, under its own heading, as on the PC. A place with nothing to do to it has no
         // heading over nothing.
         if(here.kind!=NoteStore.Branch.Kind.FAVOURITES&&here.kind!=NoteStore.Branch.Kind.INBOX&&here.kind!=NoteStore.Branch.Kind.ARCHIVE
@@ -4328,6 +4734,7 @@ public final class MainActivity extends Activity {
                 },e->{});
             }
             // Lower down the list (the owner, 2026-10-14).
+            if(here.kind==NoteStore.Branch.Kind.PAGE&&active!=null&&here.id.equals(active.id)&&page!=null)sheet.row("Find in this note",this::findInNote);
             if(here.kind==NoteStore.Branch.Kind.PAGE)sheet.row("Versions…",()->versions(here));
             // On Minima: one row, saying how far the open note's stamp is, opening the one window for it (decisions 199, 224, 253).
             if(here.kind==NoteStore.Branch.Kind.PAGE) {
@@ -4796,6 +5203,7 @@ public final class MainActivity extends Activity {
         if(atHome)onHomeRows(sheet);
         sheet.line();
         sheet.heading("Backup");
+        sheet.row("Backups…",this::backups);
         sheet.row("Export backup…",this::exportBackup);
         sheet.row("Add from backup…",()->pick(IMPORT));
         sheet.line();
@@ -4818,8 +5226,8 @@ public final class MainActivity extends Activity {
         sheet.row("About…",this::about);
     }
 
-    /** Where Mininotes for Windows is, the same on every phone (decision 241). */
-    static final String WINDOWS_LINK="https://mininotes.org/windows";
+    /** Where Mininotes for Windows is, the same on every phone (decision 241): the website, whose button gives the installer (the owner, 2026-11-06). */
+    static final String WINDOWS_LINK="https://mininotes.org";
     /**
      * Mininotes on a PC (decision 241): that it runs on Windows too, keeping the same notes in step once paired, the link
      * written out, Share link… (the phone's share sheet) and Copy link, and Done, the one primary.
@@ -5587,7 +5995,7 @@ public final class MainActivity extends Activity {
             if(done.sent>0&&done.failed==0)
                 alert(done.sent==1?"Sent.":Say.t("Sent {0} notes.",done.sent));
             else tellUnsent(done);
-        },e->{busyDone(job,null);saidState();alert("Nothing was sent. "+(e.getMessage()==null?"":e.getMessage()));});
+        },e->{busyDone(job,null);saidState();tellUnsent(failedSend(e));});
     }
 
     /**
@@ -5794,7 +6202,7 @@ public final class MainActivity extends Activity {
         },done->{
             String said=Say.t("{0} is one of your devices now. Nothing is shared with it yet.",them.name);
             busyDone(job,said);codeSays(them.target,said);refresh();
-        },e->{busyDone(job,null);alert("Could not pair with "+them.name+". Nothing was changed.");});
+        },e->{busyDone(job,null);alert(Say.t("Open Mininotes on {0}, on the same Wi-Fi as this phone, then scan the code again: the pairing did not finish. Nothing was changed.",them.name));});
     }
 
     /** Saved as a device, introduced, and answered, so their phone stops saying hello. */
@@ -5812,7 +6220,7 @@ public final class MainActivity extends Activity {
             try{Post.helloBack(this,keys(),them,yourName(),mine,saved==null?null:saved.contact);}catch(Exception notNow){/* they send again until they hear */}
             return null;
         },done->{askToSaySo();busyDone(job,Say.t("{0} is added",them.name));refresh();},
-            e->{busyDone(job,null);alert("Could not pair with "+them.name+". Nothing was changed.");});
+            e->{busyDone(job,null);alert(Say.t("Open Mininotes on {0}, on the same Wi-Fi as this phone, then scan the code again: the pairing did not finish. Nothing was changed.",them.name));});
     }
 
     /** What an offer was remembered as: a level's name, or "true" and "false" as builds before 0.1.040 kept it. */
@@ -5868,7 +6276,7 @@ public final class MainActivity extends Activity {
                 found.removeAllViews();
                 // Only where the screen would otherwise be blank. A list that has just told you what it
                 // found does not need a line underneath counting it.
-                none.setText(hits.isEmpty()?"Nothing found.":"");
+                none.setText(hits.isEmpty()?Say.t("Nothing found."):"");
                 for(final NoteStore.Branch hit:hits)found.addView(hitRow(hit,box));
             },e->none.setText(READ_FAILED));
         };
@@ -5909,28 +6317,98 @@ public final class MainActivity extends Activity {
         final long until=System.currentTimeMillis()+4000;
         handler.postDelayed(new Runnable(){public void run(){
             if(page==null||active==null||!note.equals(active.id)||page.length()==0){if(System.currentTimeMillis()<until)handler.postDelayed(this,80);return;}
-            String text=page.getText().toString().toLowerCase(java.util.Locale.ROOT),look=term.toLowerCase(java.util.Locale.ROOT);
-            final List<int[]> at=new ArrayList<>();
-            for(int from=text.indexOf(look);from>=0;from=text.indexOf(look,from+look.length()))at.add(new int[]{from,from+look.length()});
-            if(at.isEmpty()){toast(Say.t("Not found"));return;}
-            closeFindBar();
-            LinearLayout bar=new LinearLayout(MainActivity.this);bar.setGravity(Gravity.CENTER_VERTICAL);bar.setPadding(dp(10),dp(4),dp(4),dp(4));
-            GradientDrawable back=new GradientDrawable();back.setColor(CARD);back.setCornerRadius(dp(12));back.setStroke(Math.max(1,dp(1)),LINE);bar.setBackground(back);
-            final TextView count=label("",QUIET,MUTED);bar.addView(count);
-            final int[] now={0};
-            final Runnable show=()->{int[] one=at.get(now[0]);
-                if(one[1]<=page.length()){page.setSelection(one[0],one[1]);page.bringPointIntoView(one[0]);}
-                count.setText(Say.t("{0} of {1}",String.valueOf(now[0]+1),String.valueOf(at.size())));};
-            bar.addView(tap("▲",Say.t("Previous match"),18,INK,v->{now[0]=Math.floorMod(now[0]-1,at.size());show.run();}));
-            bar.addView(tap("▼",Say.t("Next match"),18,INK,v->{now[0]=Math.floorMod(now[0]+1,at.size());show.run();}));
-            bar.addView(tap("×",Say.t("Close"),20,MUTED,v->closeFindBar()));
-            for(int i=1;i<bar.getChildCount();i++)bar.getChildAt(i).setPadding(dp(12),dp(6),dp(12),dp(6));
-            findBar=new android.widget.PopupWindow(bar,-2,-2,false);findBar.setElevation(dp(6));
-            findBar.showAtLocation(page,Gravity.TOP|Gravity.END,dp(12),dp(150));
-            show.run();
+            openFind(term,false);
         }},80);
     }
-    void closeFindBar(){if(findBar!=null){try{findBar.dismiss();}catch(RuntimeException gone){/* already */}findBar=null;}}
+
+    /**
+     * Find in this note, from its menu (the owner, 2026-11-04: "We need a search in note function"): the words chosen on the
+     * page, if any, already in the box.
+     */
+    void findInNote() {
+        if(page==null||active==null)return;
+        int a=Math.max(0,Math.min(page.getSelectionStart(),page.getSelectionEnd())),z=Math.max(page.getSelectionStart(),page.getSelectionEnd());
+        String chosen=z>a&&z<=page.length()?page.getText().subSequence(a,z).toString():"";
+        openFind(chosen.indexOf('\n')<0?chosen.trim():"",true);
+    }
+
+    /** Set while the find bar opens another tab: that tab shows the match, not where it was last left. */
+    private boolean findOpensTab;
+
+    /**
+     * The bar over the page: a box for the words, how many there are and which is in hand, the next and the one before, and
+     * past the last match of a tab the next tab holding them (the one before going back). Each place marked on the page;
+     * marks only, never written: the note's words are not touched by looking.
+     */
+    private void openFind(String term,boolean typing) {
+        closeFindBar();
+        if(page==null)return;
+        LinearLayout bar=new LinearLayout(this);bar.setGravity(Gravity.CENTER_VERTICAL);bar.setPadding(dp(10),dp(2),dp(4),dp(2));
+        GradientDrawable back=new GradientDrawable();back.setColor(CARD);back.setCornerRadius(dp(12));back.setStroke(Math.max(1,dp(1)),LINE);bar.setBackground(back);
+        final android.widget.EditText words=new android.widget.EditText(this);
+        words.setHint(Say.t("Find in this note"));words.setSingleLine(true);words.setTextSize(15);words.setTextColor(INK);
+        words.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);words.setBackground(null);
+        words.setText(term==null?"":term);
+        bar.addView(words,new LinearLayout.LayoutParams(dp(150),-2));
+        final TextView count=label("",QUIET,MUTED);bar.addView(count);
+        final List<int[]> at=new ArrayList<>();final int[] now={-1};
+        final List<Object> marks=new ArrayList<>();
+        final Runnable unmark=()->{if(page!=null)for(Object one:marks)page.getText().removeSpan(one);marks.clear();};
+        final Runnable show=()->{
+            unmark.run();if(page==null)return;
+            for(int i=0;i<at.size();i++){int[] one=at.get(i);if(one[1]>page.length())continue;
+                Object mark=new android.text.style.BackgroundColorSpan(i==now[0]?0xFFFFAA3C:0xFFFFE082);
+                page.getText().setSpan(mark,one[0],one[1],android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);marks.add(mark);}
+            if(now[0]>=0&&at.get(now[0])[1]<=page.length())page.bringPointIntoView(at.get(now[0])[0]);
+            count.setText(at.isEmpty()?(words.getText().toString().trim().isEmpty()?"":Say.t("Not found")):Say.t("{0} of {1}",String.valueOf(now[0]+1),String.valueOf(at.size())));
+        };
+        final Runnable look=()->{
+            at.clear();now[0]=-1;
+            String text=page==null?"":page.getText().toString().toLowerCase(java.util.Locale.ROOT),
+                wanted=words.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
+            if(!wanted.isEmpty())for(int from=text.indexOf(wanted);from>=0;from=text.indexOf(wanted,from+wanted.length()))at.add(new int[]{from,from+wanted.length()});
+            if(!at.isEmpty())now[0]=0;
+            show.run();
+        };
+        final java.util.function.IntConsumer step=by->{
+            String said=words.getText().toString().trim();
+            int next=now[0]+by;
+            if(!said.isEmpty()&&(at.isEmpty()||next<0||next>=at.size())&&findOtherTab(said,by)) {
+                // The marks were on the words that left the page; found again on the tab now open.
+                marks.clear();
+                page.post(()->{look.run();if(by<0&&!at.isEmpty()){now[0]=at.size()-1;show.run();}});
+                return;
+            }
+            if(at.isEmpty())return;
+            now[0]=Math.floorMod(next,at.size());show.run();
+        };
+        words.addTextChangedListener(new TextWatcher(){
+            public void beforeTextChanged(CharSequence s,int a,int b,int c){} public void onTextChanged(CharSequence s,int a,int b,int c){}
+            public void afterTextChanged(Editable s){look.run();}});
+        words.setOnEditorActionListener((v,action,event)->{step.accept(1);return true;});
+        bar.addView(tap("▲",Say.t("Previous match"),18,INK,v->step.accept(-1)));
+        bar.addView(tap("▼",Say.t("Next match"),18,INK,v->step.accept(1)));
+        bar.addView(tap("×",Say.t("Close"),20,MUTED,v->closeFindBar()));
+        for(int i=2;i<bar.getChildCount();i++)bar.getChildAt(i).setPadding(dp(12),dp(6),dp(12),dp(6));
+        android.widget.PopupWindow shown=new android.widget.PopupWindow(bar,-2,-2,true);shown.setElevation(dp(6));
+        shown.setOnDismissListener(()->{unmark.run();if(findBar==shown)findBar=null;});
+        findBar=shown;
+        shown.showAtLocation(page,Gravity.TOP|Gravity.END,dp(12),dp(150));
+        look.run();
+        if(typing){words.requestFocus();words.setSelection(words.length());
+            words.postDelayed(()->{InputMethodManager keys=(InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);if(keys!=null)keys.showSoftInput(words,0);},150);}
+    }
+
+    /** The next tab that way holding the words, opened; false where no other tab holds them. */
+    private boolean findOtherTab(String term,int by) {
+        if(page==null||active==null)return false;
+        String body=whole();if(!Sections.tabbed(body))return false;
+        List<Sections.Section> all=Sections.of(body);int n=all.size();String t=term.toLowerCase(java.util.Locale.ROOT);
+        for(int k=1;k<n;k++){int i=Math.floorMod(tab+by*k,n);Sections.Section s=all.get(i);
+            if(body.substring(s.start,s.end).toLowerCase(java.util.Locale.ROOT).contains(t)){findOpensTab=true;try{switchTab(i);}finally{findOpensTab=false;}return true;}}
+        return false;
+    }
+    void closeFindBar(){if(findBar!=null){android.widget.PopupWindow was=findBar;findBar=null;try{was.dismiss();}catch(RuntimeException gone){/* already */}}}
 
     /** The last search asked for, so a fast typist asks the notebook once rather than once a letter. */
     private Runnable looking;
@@ -6323,7 +6801,7 @@ public final class MainActivity extends Activity {
      */
     View shareBadge(final NoteStore.Branch branch,int px) {
         if(branch.scope()==null)return null;
-        // A file wears a mark only once it is shared on its own (decision 92): the many that are only here stay as they were.
+        // A file wears a mark only once it is shared, on its own (decision 92) or by the folder keeping it: the many that are only here stay as they were.
         if(branch.kind==NoteStore.Branch.Kind.FILE&&(branch.state==null||branch.state==Sharing.State.HERE))return null;
         // The same ring the bar and the line under a title wear, by the same rule (Branch.mark). It used to be
         // a mark of its own that said which way a thing was going - so a note had one drawing on the shelf and
@@ -7286,7 +7764,7 @@ public final class MainActivity extends Activity {
             network.submit(()->Post.groupsChanged(this,store,keys(),changed),sent->{
                 refresh();refreshOwed();
                 if(sent.failed>0){busyDone(job,null);tellUnsent(sent);}else busyDone(job,done);
-            },e->{busyDone(job,null);alert(Say.t("Saved on this phone. Nothing was sent. {0}",e.getMessage()==null?"":e.getMessage()).trim());});
+            },e->{busyDone(job,null);tellUnsent(failedSend(e));});
         },e->{busyDone(job,null);alert(e instanceof IllegalStateException||e instanceof IllegalArgumentException
             ?Say.t("{0} Nothing was changed.",e.getMessage()):"Could not save that. Nothing was changed.");});
     }
@@ -7498,7 +7976,7 @@ public final class MainActivity extends Activity {
             if(to.isEmpty()){busyDone(job,Parlons.said(removed,Post.here(),new ArrayList<>(),new ArrayList<>(),new ArrayList<>()));return;}
             busySay(job,"Sending to my devices\u2026");
             network.submit(()->Post.sendParlons(this,store,keys(),who.address,to,Post.here()),said->busyDone(job,said),
-                e->{busyDone(job,null);alert(Say.t(removed?"Removed on this phone. Nothing was sent. {0}":"Saved on this phone. Nothing was sent. {0}",e.getMessage()==null?"":e.getMessage()).trim());});
+                e->{busyDone(job,Post.owedAll(this,Later.Kind.PARLONS,who.address,to,Post.here()));});
         },e->{busyDone(job,null);alert(e instanceof IllegalStateException||e instanceof IllegalArgumentException
             ?Say.t("{0} Nothing was changed.",e.getMessage()):"Could not save that. Nothing was changed.");});
     }
@@ -7859,7 +8337,7 @@ public final class MainActivity extends Activity {
             if(own.isEmpty()){busyDone(job,Called.said(Post.here(),new ArrayList<>(),new ArrayList<>(),new ArrayList<>()));return;}
             busySay(job,"Sending to my devices…");
             network.submit(()->Post.sendCalled(this,store,keys(),who.address,own,Post.here()),said->busyDone(job,said),
-                e->{busyDone(job,null);alert("Saved on this phone. Nothing was sent.");});
+                e->{busyDone(job,Post.owedAll(this,Later.Kind.CALLED,who.address,own,Post.here()));});
         },e->{busyDone(job,null);alert(e instanceof IllegalStateException&&e.getMessage()!=null?Say.t("{0} Nothing was changed.",e.getMessage()):"Could not save that name. Nothing was changed.");});
     }
 
@@ -7881,7 +8359,7 @@ public final class MainActivity extends Activity {
             if(own.isEmpty()){busyDone(job,Called.said(Post.here(),new ArrayList<>(),new ArrayList<>(),new ArrayList<>()));return;}
             busySay(job,"Sending to my devices…");
             network.submit(()->Post.sendCalled(this,store,keys(),null,own,Post.here()),said->busyDone(job,said),
-                e->{busyDone(job,null);alert("Saved on this phone. Nothing was sent.");});
+                e->{busyDone(job,Post.owedAll(this,Later.Kind.CALLED,"",own,Post.here()));});
         },e->{busyDone(job,null);alert("Could not save that name. Nothing was changed.");});
     }
 
@@ -7966,10 +8444,14 @@ public final class MainActivity extends Activity {
             // The code and the address it holds, called Your code as on the PC (it was Your address here); first on the page
             // (the owner, 2026-10-28: "in Mon profil, put the code as the first element on the top"; decision 273).
             final LinearLayout codePart=section(body,parts,"Your code","qr-code","The code and address other people and devices reach this phone by.");
-            if(address.isEmpty())
-                codePart.addView(under(!Node.allowedOnTheNetwork(this)?"This app is not allowed on the network, so it has no address."
-                    :Node.onlyMine(this)?"Not on a Wi-Fi network, so no other device can reach this phone. With notes only between your devices, pairing needs both on the same Wi-Fi."
+            if(address.isEmpty()) {
+                // What to do first, with the button that opens where it is done (the owner, 2026-11-07: "present the solution
+                // instead of presenting the problem").
+                codePart.addView(under(!Node.allowedOnTheNetwork(this)?"Allow Mininotes on the network in the phone's settings: until then it has no address."
+                    :Node.onlyMine(this)?"Join the Wi-Fi your other devices are on: with notes only between your devices, nothing reaches this phone without it."
                     :"No relay has answered yet, so nothing can reach this phone."));
+                networkFix(codePart);
+            }
             else {
                 // The code sits in the middle of its own width, with the same air above and below it as
                 // the headings have, so it reads as one thing on the page rather than a picture dropped in.
@@ -8036,6 +8518,7 @@ public final class MainActivity extends Activity {
                 !address.isEmpty()?(mineOnly?"On this Wi-Fi, only between your devices":"Connected"):allowed?(mineOnly?"Not on a Wi-Fi network":"Connecting\u2026"):"Not connected",
                 !address.isEmpty()?"":allowed?(mineOnly?"Notes wait until your devices are on the same Wi-Fi, or this phone can reach your PC.":"It can take a few seconds to find the network.")
                     :"This app is not allowed on the network. Allow it in the phone's settings.");
+            if(address.isEmpty())networkFix(connectionPart);
             if(owed>0)connectionPart.addView(under(owed==1?"1 note is waiting to go.":Say.t("{0} notes are waiting to go.",owed)));
             // Said only while it is true: this phone reached its owner's PC this round or the last few, and what
             // the PC kept for it came from there (see Home).
@@ -8064,6 +8547,7 @@ public final class MainActivity extends Activity {
             both.addView(gap(0),new LinearLayout.LayoutParams(dp(10),dp(1)));
             both.addView(pill("Import",()->pick(IMPORT)),new LinearLayout.LayoutParams(0,-2,1f));
             backupPart.addView(both);
+            backupPart.addView(tapRow("Backups…",()->{if(over[0]!=null)over[0].dismiss();backups();}));
 
             scroll[0]=scrolling(body);
             final AlertDialog box=new Box().setTitle("My profile")
@@ -8152,6 +8636,19 @@ public final class MainActivity extends Activity {
     }
 
     /** One of a pair of things you can do, the same size as the other and sitting beside it. */
+    /**
+     * The button that opens where a network trouble is put right: the app's own settings where it is not allowed on the
+     * network, the Wi-Fi panel where notes go only between my devices and no Wi-Fi is joined; nothing otherwise.
+     */
+    private void networkFix(LinearLayout part) {
+        Intent opens;String says;
+        if(!Node.allowedOnTheNetwork(this)){says="Open the app's settings";opens=new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.fromParts("package",getPackageName(),null));}
+        else if(Node.onlyMine(this)){says="Open Wi-Fi settings";opens=new Intent(android.os.Build.VERSION.SDK_INT>=29?android.provider.Settings.Panel.ACTION_WIFI:android.provider.Settings.ACTION_WIFI_SETTINGS);}
+        else return;
+        TextView button=pill(says,()->{try{startActivity(opens);}catch(RuntimeException none){alert("This phone has no settings page for that.");}});
+        LinearLayout.LayoutParams at=new LinearLayout.LayoutParams(-2,-2);at.setMargins(0,dp(8),0,dp(4));
+        part.addView(button,at);
+    }
     private TextView pill(String words,Runnable does) {
         TextView one=label(words,READING,INK);
         one.setGravity(Gravity.CENTER);
@@ -8804,6 +9301,18 @@ public final class MainActivity extends Activity {
             toast("Copied");
         }),new LinearLayout.LayoutParams(0,-2,1f));
         body.addView(both);
+
+        // What this phone did lately, from its own log (see LogKeep): handed over only by the person, where they choose
+        // (the owner, 2026-11-04: "Will the user be able to provide their log").
+        body.addView(part("THE LOG"));
+        body.addView(under("What this phone did lately, in times and counts, never a note's words. Shared only where you send it."));
+        body.addView(tapRow("Share the log",()->background.submit(()->{PhoneLog.keep(this);return null;},done->{
+            Uri log=Lending.ofLog();
+            Intent send=new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_STREAM,log)
+                .putExtra(Intent.EXTRA_SUBJECT,"Mininotes log").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            send.setClipData(android.content.ClipData.newRawUri("mininotes-log.txt",log));
+            try{startActivity(Intent.createChooser(send,Say.t("Share the log")));}catch(Exception none){alert("Nothing on this phone can take the log.");}
+        },e->alert("The log could not be read."))));
 
         final String log=Feedback.log(SOURCE);
         if(!log.isEmpty()) {
@@ -10010,6 +10519,9 @@ public final class MainActivity extends Activity {
         final TextView set=label(shown+"  ▾",QUIET,MUTED);
         set.setMaxLines(2);set.setEllipsize(TextUtils.TruncateAt.END);set.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);
         set.setPadding(dp(12),0,0,0);
+        // At most half the screen, so a long choice wraps beside its name instead of pushing the name out (the owner's
+        // screenshot, 2026-11-07: "Opened with" gone beside "A password for the backups", its ▾ on a line of its own).
+        set.setMaxWidth(getResources().getDisplayMetrics().widthPixels/2);
         LinearLayout.LayoutParams right=new LinearLayout.LayoutParams(-2,-2);right.gravity=Gravity.CENTER_VERTICAL;
         entry.addView(set,right);
         entry.setBackgroundResource(touchFeedback());
@@ -10256,7 +10768,7 @@ public final class MainActivity extends Activity {
             // Gone, and asked for. That they have it is theirs to say: the mark turns to a tick when they do.
             else busyDone(job,"Sent. The tick comes when they answer.");
         },e->{busyDone(job,null);saidState();
-            if(job==0&&isOpen(kind,id))noteFailed(e);else alert("Could not sync. "+(e.getMessage()==null?"":e.getMessage()));});
+            if(job==0&&isOpen(kind,id))noteFailed(e);else tellUnsent(failedSend(e));});
     }
 
     /**
@@ -10421,7 +10933,7 @@ public final class MainActivity extends Activity {
         }
         // Anything else is not somebody: a bare address has no keys, so nothing could ever be sealed for it, and any other
         // picture of a code (a web address, a ticket) was kept as a contact that could never be reached (the connect review).
-        alert("That is not a Mininotes code. Nothing was kept.");
+        alert("Scan the code shown in People and devices on the other device: this one is not a Mininotes code. Nothing was kept.");
     }
 
     /** One person's standing in one thing, set and sent. */
@@ -10464,7 +10976,7 @@ public final class MainActivity extends Activity {
             noteSays(to==null?NoteLine.sending(namesShown()):NoteLine.sending(java.util.Collections.singletonList(to)),NoteLine.Tone.GOING,null);
             network.submit(()->Post.changed(this,store,keys(),kind,target),
                 done->{saidState();refresh();refreshOwed();if(isOpen(kind,target))noteSent(done,false);else if(done.failed>0)tellUnsent(done);},
-                e->{if(isOpen(kind,target))noteFailed(e);else alert("Nothing was sent. "+(e.getMessage()==null?"":e.getMessage()));});
+                e->{if(isOpen(kind,target))noteFailed(e);else tellUnsent(failedSend(e));});
             return;
         }
         final int job=going!=0?going:busy(sending);
@@ -10825,13 +11337,13 @@ public final class MainActivity extends Activity {
             return Pairing.reachable(permanent)?permanent:"";
         },said->{
             if(said.isEmpty()) {
-                if(address[1]!=null)((TextView)address[1]).setText(Node.allowedOnTheNetwork(this)
-                    ?Node.onlyMine(this)?"Not on a Wi-Fi network. With notes only between your devices, pairing needs both on the same Wi-Fi."
+                if(address[1]!=null)((TextView)address[1]).setText(Say.t(Node.allowedOnTheNetwork(this)
+                    ?Node.onlyMine(this)?"Join the same Wi-Fi as the other device: with notes only between your devices, pairing needs both on it."
                     :"No relay answered yet, so nothing can reach this phone. Check the network and open "
                         +"this again."
                     // Said in the words of the thing to go and change, because nothing here can change it.
                     :"This app is not allowed on the network, so it can reach no relay and has no address. "
-                        +"Allow it in Settings \u2192 Apps \u2192 Mininotes \u2192 Permissions.");
+                        +"Allow it in Settings \u2192 Apps \u2192 Mininotes \u2192 Permissions."));
                 return;
             }
             keepMyAddress(said);
@@ -10932,7 +11444,10 @@ public final class MainActivity extends Activity {
 
     /** Why one file was not kept. Its own kind, so nothing another app's provider throws is mistaken for it. */
     private static final class Refused extends Exception {
-        Refused(String line){super(line,null,false,false);}
+        /** Turned away for its size alone: too big to keep, not too big to send straight to a device (decision 327). */
+        final boolean big;
+        Refused(String line){this(line,false);}
+        Refused(String line,boolean big){super(line,null,false,false);this.big=big;}
     }
 
     /**
@@ -10959,18 +11474,26 @@ public final class MainActivity extends Activity {
         final int job=from.isEmpty()?0:busy(Given.adding(from.size()));
         background.submit(()->{
             List<String> turned=new ArrayList<>(refused),ids=new ArrayList<>();String only=null;int kept=0;
-            for(Uri one:from)try{NoteStore.Held held=keepOne(kind,what,one);only=held.name;ids.add(held.id);kept++;}catch(Refused no){turned.add(no.getMessage());}
+            List<Uri> big=new ArrayList<>();
+            for(Uri one:from)try{NoteStore.Held held=keepOne(kind,what,one);only=held.name;ids.add(held.id);kept++;}catch(Refused no){turned.add(no.getMessage());if(no.big)big.add(one);}
             // Kept they are, whatever placing them says: failing, they stand in the first free cells.
             if(placed!=null&&!ids.isEmpty())try{placed.accept(ids);}catch(RuntimeException unplaced){/* kept, in the first free cells */}
             ranAfter();
-            return new Object[]{kept,only,turned};
+            return new Object[]{kept,only,turned,big};
         },done->{
             int kept=(Integer)done[0];
             @SuppressWarnings("unchecked") List<String> turned=(List<String>)done[2];
+            @SuppressWarnings("unchecked") List<Uri> big=(List<Uri>)done[3];
             if(job!=0)busyDone(job,Given.added(kept,(String)done[1],turned.size()));
             // On Home a file kept with Home or a collection is one of its icons, so Home is drawn again with it.
             if(kept>0){showFiles();filesChanged(kind,what);if(shelves)refresh();}
-            if(!turned.isEmpty())alert(Given.refusals(turned));
+            // Too big to keep, not too big to send: the way to send it, as the PC's box has (the owner, 2026-11-07: "present
+            // the solution instead of presenting the problem"; decision 327).
+            if(!big.isEmpty())new Box().setTitle("Send it straight to a device")
+                .setMessage(Say.t("A file over 25 MB can be sent straight to a device instead, up to 2 GB, without being kept here.")+"\n\n"+Given.refusals(turned))
+                .setPositiveButton("Send to a device…",(d,w)->chooseDevice(big,new ArrayList<>()))
+                .setNegativeButton("Close",null).show();
+            else if(!turned.isEmpty())alert(Given.refusals(turned));
         },e->{ranAfter();if(job!=0)busyDone(job,"Could not add the files");alert("Could not keep those files. Nothing was changed.");});
     }
 
@@ -11000,7 +11523,7 @@ public final class MainActivity extends Activity {
                 }
             }
         } catch(Exception unsaid){/* the copy below reads it or says it could not */}
-        if(said>most)throw new Refused(Given.refusal(name,tooBig));
+        if(said>most)throw new Refused(Given.refusal(name,tooBig),said<=Big.MOST);
         if(store.weight()+Math.max(0,said)>Attachment.PLENTY)throw new Refused(Given.refusal(name,Given.FULL));
         NoteStore.Held held=store.opening(kind,what,name,type,Math.max(0,said));
         File landing=store.fileFor(held.id);
@@ -11024,7 +11547,7 @@ public final class MainActivity extends Activity {
             // copied a moment ago and not yet written down as anybody's.
             //noinspection ResultOfMethodCallIgnored
             landing.delete();
-            throw new Refused(Given.refusal(held.name,over[0]?tooBig:Given.UNREADABLE));
+            throw new Refused(Given.refusal(held.name,over[0]?tooBig:Given.UNREADABLE),over[0]);
         }
         // Every way a file comes in comes through here (attach, paste, a drop, a share from another app, a photo taken in
         // the picker, Home, a folder, Temp, Shared with me, a sending): a picture made smaller, anything else packed, before
@@ -11555,6 +12078,65 @@ public final class MainActivity extends Activity {
     }
 
     /**
+     * Several files on the clipboard at once, one item each, in the order ticked, lent as one is (the owner, 2026-11-07: "we
+     * should be able to select multiple elements like images in Temp to be able to copy them all at once"). One: as Copy.
+     */
+    void copyFiles(List<NoteStore.Held> files) {
+        if(files.isEmpty())return;
+        if(files.size()==1){copyFile(files.get(0).id,files.get(0).name);return;}
+        try {
+            android.content.ClipData clip=null;
+            for(NoteStore.Held one:files) {
+                Uri at=Lending.of(one.id);
+                if(clip==null)clip=android.content.ClipData.newUri(getContentResolver(),one.name,at);else clip.addItem(new android.content.ClipData.Item(at));
+            }
+            ((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(clip);
+            toast(Say.t("{0} files copied",String.valueOf(files.size())));
+        } catch(Exception e){alert(Say.t("{0} could not be copied.",Say.t("{0} files",String.valueOf(files.size()))));}
+    }
+
+    /** Which files Save on my phone… is saving, several at once, while the phone's own picker asks for a folder. */
+    private List<NoteStore.Held> savingSeveral;
+
+    /**
+     * Save on my phone… for several files (Choose several…'s More…): the phone's own picker asks for one folder, and each goes
+     * in it under its own name. One: as Save on my phone… for one, its own picker naming it.
+     */
+    void saveCopiesOf(List<NoteStore.Held> files) {
+        if(files.isEmpty())return;
+        if(files.size()==1){NoteStore.Held one=files.get(0);saveCopyOf(one.id,one.name,one.kind);return;}
+        savingSeveral=new ArrayList<>(files);
+        try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION),SAVE_SEVERAL);}
+        catch(Exception none){savingSeveral=null;alert("Could not save a copy there");}
+    }
+
+    /** The folder picked for several copies: each written in it, through the busy strip, which says how it ended. */
+    private void saveCopies(final Uri tree) {
+        final List<NoteStore.Held> files=savingSeveral;savingSeveral=null;
+        if(files==null||files.isEmpty())return;
+        final int job=busy(Say.t("Saving {0} files…",String.valueOf(files.size())));
+        background.submit(()->{
+            android.content.ContentResolver resolver=getContentResolver();
+            Uri folder=android.provider.DocumentsContract.buildDocumentUriUsingTree(tree,android.provider.DocumentsContract.getTreeDocumentId(tree));
+            String called="";
+            try(Cursor about=resolver.query(folder,new String[]{android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME},null,null,null)) {
+                if(about!=null&&about.moveToFirst()&&!about.isNull(0))called=about.getString(0);
+            } catch(Exception unnamed){/* said without its name */}
+            for(NoteStore.Held one:files) {
+                // A name already in the folder: the phone's own storage gives the copy another, as it does for any app.
+                Uri made=android.provider.DocumentsContract.createDocument(resolver,folder,one.kind==null||one.kind.isEmpty()?"application/octet-stream":one.kind,one.name);
+                if(made==null)throw new java.io.FileNotFoundException(one.name);
+                try(OutputStream out=resolver.openOutputStream(made,"w")) {
+                    if(out==null)throw new IllegalStateException("No output stream");
+                    PhoneLock.copyOut(store.fileFor(one.id),out);
+                }
+            }
+            return called;
+        },called->busyDone(job,called.isEmpty()?Say.t("Saved"):Say.t("{0} files saved in {1}",String.valueOf(files.size()),called)),
+            e->{busyDone(job,null);alert("Could not save a copy there");});
+    }
+
+    /**
      * Send with Parlons!, beside Copy wherever a file is (the owner, 2026-10-29; decision 280). Parlons! takes a file shared from
      * another app since its 0.6.15x (seen on the Pro, 0.6.152, 2026-11-03; decision 318), so the file is handed to it, and Parlons!
      * asks which chat. A Parlons! from before refuses it: then, as before, the file is copied, Parlons! opened, and a word says to
@@ -11723,10 +12305,18 @@ public final class MainActivity extends Activity {
      */
     private void sendTo(final List<Uri> files,final List<String> refused,final Drop.Device to) {
         final int job=busy(Drop.sending(to.name,Math.min(files.size(),Drop.FILES_MOST)));
+        final int[] offered={0};
         background.submit(()->{
             List<String> turned=new ArrayList<>(refused);List<NoteStore.Held> kept=new ArrayList<>();
             for(Uri one:files) {
                 if(kept.size()>=Drop.FILES_MOST){turned.add(Given.refusal(one.getLastPathSegment(),Drop.TOO_MANY));continue;}
+                // Over 16 MB, up to 2 GB: offered from where it is, never copied in, only to a device reached directly (decision 327).
+                long size=sizeOf(one);
+                // An app that does not say how big it is: counted here, so a big one goes the big way instead of being refused
+                // as over 16 MB and "Nothing was sent" said (2026-11-07).
+                if(size<=0)size=counted(one);
+                if(size>Big.MOST){turned.add(Given.refusal(nameOf(one),Big.TOO_BIG));continue;}
+                if(Big.goes(size)){offerBig(one,size,to);offered[0]++;continue;}
                 try {
                     NoteStore.Held held=copyIn(NoteStore.Branch.Kind.PAGE,"",one,Enclosure.MOST,Drop.TOO_BIG);
                     if(held.bytes<=0){store.fileFor(held.id).delete();turned.add(Given.refusal(held.name,Drop.EMPTY));continue;}
@@ -11739,11 +12329,68 @@ public final class MainActivity extends Activity {
             final String id=(String)done[0];
             @SuppressWarnings("unchecked") List<String> turned=(List<String>)done[1];
             if(!turned.isEmpty())alert(Drop.notSent(turned));
-            if(id==null){busyDone(job,"Nothing was sent");return;}
+            if(id==null){busyDone(job,offered[0]>0?null:"Nothing was sent");return;}
             network.submit(()->Post.sendNow(this,store,keys(),id),said->{busyDone(job,said);dropBoxChanged();},
                 e->busyDone(job,Say.t("Waiting for {0}. They go when {0} can be reached",to.name)));
         },e->{busyDone(job,"Could not read the files. Nothing was sent.");});
     }
+
+    /** How big what another app handed over says it is; 0 where it does not say. */
+    private long sizeOf(Uri file) {
+        try(Cursor about=getContentResolver().query(file,new String[]{android.provider.OpenableColumns.SIZE},null,null,null)) {
+            if(about!=null&&about.moveToFirst()&&!about.isNull(0))return Math.max(0,about.getLong(0));
+        } catch(Exception unsaid){/* not said */}
+        return 0;
+    }
+    /** How big it is, read through, up to just past the most a big file may be; 0 where it cannot be read. Blocking. */
+    private long counted(Uri file) {
+        try(InputStream in=getContentResolver().openInputStream(file)) {
+            if(in==null)return 0;
+            long n=0;byte[] buffer=new byte[1<<16];
+            for(int got;(got=in.read(buffer))>0&&n<=Big.MOST;)n+=got;
+            return n;
+        } catch(Exception unreadable){return 0;}
+    }
+    /** Its name, as the other app gives it. */
+    private String nameOf(Uri file) {
+        try(Cursor about=getContentResolver().query(file,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)) {
+            if(about!=null&&about.moveToFirst()&&!about.isNull(0))return about.getString(0);
+        } catch(Exception unsaid){/* not said */}
+        String last=file.getLastPathSegment();return last==null?"file":last;
+    }
+
+    /** A big file offered to that device, read from where it is when they save it (see Big). Blocking: the worker calls it. */
+    private void offerBig(Uri file,long size,Drop.Device to){offerBig(file,size,to,System.currentTimeMillis(),true);}
+    /**
+     * @param since when the first try was: tried again every two minutes for a day while it is not reached (Big.AGAIN_EVERY)
+     * @param asked whether the person is looking: the box with the way to send it shows then, and only once
+     */
+    private void offerBig(final Uri file,final long size,final Drop.Device to,final long since,final boolean asked) {
+        final String name=Attachment.named(nameOf(file));
+        Big.Heard heard=new Big.Heard(){
+            @Override public void saved(){runOnUiThread(()->toast(Say.t("{1} saved “{0}”",name,to.name)));}
+            @Override public void refused(){runOnUiThread(()->toast(Say.t("{1} refused “{0}”",name,to.name)));}
+        };
+        String said=Post.offerBig(this,store,keys(),to.address,name,getContentResolver().getType(file),size,PhoneBig.from(this,file),heard);
+        runOnUiThread(()->{
+            Runnable was=bigWaiting.remove(file);if(was!=null)handler.removeCallbacks(was);
+            if(said==null){toast(Say.t("“{0}” offered to {1}. It goes when they press Save.",name,to.name));return;}
+            if(!Big.notReached(said)){alert(said);return;}
+            // Not reached: the way to send it, and tried again by itself while Mininotes runs (the owner, 2026-11-07: "present
+            // the solution instead of presenting the problem").
+            if(!Big.tryAgain(since,System.currentTimeMillis())){toast(Big.gaveUp(name,to.name));return;}
+            Runnable again=()->{bigWaiting.remove(file);network.submit(()->{offerBig(file,size,to,since,false);return null;},done->{},e->{});};
+            bigWaiting.put(file,again);handler.postDelayed(again,Big.AGAIN_EVERY);
+            if(!asked)return;
+            new Box().setTitle(Big.sendTitle(name,to.name)).setMessage(Big.steps(to.name))
+                .setPositiveButton("Try again",(d,w)->{Runnable mine=bigWaiting.remove(file);if(mine!=null)handler.removeCallbacks(mine);
+                    network.submit(()->{offerBig(file,size,to,since,true);return null;},done->{},e->{});})
+                .setNeutralButton("Stop trying",(d,w)->{Runnable mine=bigWaiting.remove(file);if(mine!=null)handler.removeCallbacks(mine);toast(Say.t("“{0}” was not sent",name));})
+                .setNegativeButton("Close",null).show();
+        });
+    }
+    /** Big files not reached yet, each with what offers it again. */
+    private final java.util.Map<Uri,Runnable> bigWaiting=new java.util.HashMap<>();
 
     /** Something about files sent or received on their own: said, asked, and Home, where they land, drawn again. */
     private void filesNews(Post.Landed landed) {
@@ -11916,12 +12563,18 @@ public final class MainActivity extends Activity {
         }
         // A file from the phone's storage to stamp, or picked again to verify (decision 230), whatever came back.
         if(request==PhoneStamp.PICK){PhoneStamp.picked(this,result==RESULT_OK&&data!=null?data.getData():null);return;}
+        // A folder for the Backup page's backups (decision 329).
+        if(request==PhoneBackups.PICK){if(result==RESULT_OK&&data!=null)backupFolderPicked(data.getData());return;}
+        // A key file: written where it was put, then the place kept; or read, to open a backup (step 3 of decision 329).
+        if(request==KEY_SAVE){keyFileWritten(result==RESULT_OK&&data!=null?data.getData():null);return;}
+        if(request==KEY_OPEN){keyFileRead(result==RESULT_OK&&data!=null?data.getData():null);return;}
         if(result!=RESULT_OK||data==null)return;
         if(request==ATTACH){final String place=attachingPlace;attachingPlace=null;
             keepFiles(attachingTo,attachingToId,picked(data),new ArrayList<>(),place==null?null:ids->{for(String id:ids)intoPlaceNow(NoteStore.Branch.Kind.FILE,id,place);});return;}
         if(request==PICTURE){picker().pictured(data.getData());return;}
         if(request==SEND_FILES){chooseDevice(picked(data),new ArrayList<>());return;}
         if(request==SAVE_COPY&&data.getData()!=null){saveCopy(data.getData());return;}
+        if(request==SAVE_SEVERAL&&data.getData()!=null){saveCopies(data.getData());return;}
         if(request==REPLACE){final NoteStore.Branch file=replacing;replacing=null;if(file!=null&&data.getData()!=null)replaceWith(file,data.getData());return;}
         if(data.getData()==null)return;final Uri file=data.getData();
         if(request==EXPORT){final boolean sealed=backupPassword!=null||PhoneLock.locked(this);
@@ -12064,7 +12717,7 @@ public final class MainActivity extends Activity {
                 byte[] rest=new byte[8192];while(in.read(rest)!=-1){/* drained */}
             }
             if(opening[0]!=null){opening[0].join();if(failed[0]!=null)throw new IllegalArgumentException("That backup could not be opened: "+failed[0].getMessage());}
-            if(text==null){if(staged!=null)staged.delete();throw new IllegalArgumentException("That zip is not a Mininotes backup.");}
+            if(text==null){if(staged!=null)staged.delete();throw new IllegalArgumentException("Choose the backup Mininotes made: that zip is not a Mininotes backup.");}
             int count;
             try{count=store.importBackup(text,replacing);}catch(Exception refused){if(staged!=null)staged.delete();throw refused;}
             if(staged!=null)PrivateScreen.slots().adopt(staged);
@@ -12173,6 +12826,8 @@ public final class MainActivity extends Activity {
         if(sleepSwitch!=null)sleepSaid();
         // In front again: what waits for an answer and was not said yet is asked now (decision 109), invitations too.
         askWaiting();askInvites();
+        // The Backup page's backups looked at by Android every half hour or so, while one has a time (decision 329).
+        PhoneBackups.plan(this);
         // And whether a contact is in trouble, said at the top (decision 188).
         lookForTroubles(true);
         // And what was saved in another app into a file lent by Open to edit is taken in.
@@ -12365,6 +13020,8 @@ public final class MainActivity extends Activity {
         handler.removeCallbacks(idleCheck);
         int minutes=PhoneLock.locked(this)?PhoneLock.minutes(this):0;
         if(minutes>0)handler.postDelayed(awayRelock,minutes*60_000L);
+        // Left: the backups made when leaving Mininotes, in a job of their own soon (decision 329).
+        PhoneBackups.soon(this);
         Listening.unwatch(watching);beenAway=true;super.onStop();}
 
     // ---- locking again when not used ---------------------------------------------------------------------

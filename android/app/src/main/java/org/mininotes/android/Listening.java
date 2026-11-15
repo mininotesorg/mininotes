@@ -122,6 +122,10 @@ public final class Listening extends Service {
      */
     static synchronized void hear(Context any) {
         final Context app=any.getApplicationContext();
+        // The phone's own log kept in a file, locked or not: it holds no note's words (see LogKeep).
+        PhoneLog.start(app);
+        // Big files offered here, asked about in a notification (decision 327).
+        PhoneBig.listen(app);
         // Locked, and nobody has opened it: what arrives is kept as it came, sealed for this phone, until it is.
         if(!PhoneLock.open(app)) {
             if(!hearing)hearing=Node.listen(app,message->PhoneLock.keepArriving(app,message));
@@ -139,6 +143,8 @@ public final class Listening extends Service {
             store.myAgreement=Point.shorten(keys.agreement().getPublic());
             store.myName=Node.nameHere(app);
             store.myAddress=app.getSharedPreferences("settings",Context.MODE_PRIVATE).getString("address","");
+            // And any contact holding this phone's own key, kept before it was known, gone (decision 324).
+            store.forgetSelf();
         } catch(Exception notNow){return;}
         if(hearing&&heardForReal)return;
         // What was handed over and never answered is sent again from the node's own upkeep, so it goes on
@@ -212,6 +218,8 @@ public final class Listening extends Service {
     @Override public IBinder onBind(Intent intent){return null;}
 
     @Override public int onStartCommand(Intent intent,int flags,int startId) {
+        // Save or Refuse pressed on a big file's notification: done on a thread of its own, the service going on as it was.
+        PhoneBig.heard(this,intent);
         if(intent!=null&&STOP.equals(intent.getAction())) {
             // From the notification: the way out is where the thing is. Remembered, so it stays off.
             switchOn(this,false);Waking.stop(this);
@@ -245,8 +253,8 @@ public final class Listening extends Service {
             new Intent(this,Listening.class).setAction(STOP),PendingIntent.FLAG_IMMUTABLE);
         return new Notification.Builder(this,STAYING)
             .setSmallIcon(R.drawable.ic_listening)
-            .setContentTitle("Listening for notes")
-            .setContentText("So a note can arrive while the pad is closed.")
+            .setContentTitle(Say.t("Listening for notes"))
+            .setContentText(Say.t("So a note can arrive while the pad is closed."))
             .setContentIntent(opening(this,""))
             .setOngoing(true).setShowWhen(false)
             .addAction(new Notification.Action.Builder(null,"Stop listening",stop).build())

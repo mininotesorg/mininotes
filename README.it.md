@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 bfd9bcfd1e0b8071f5b694aeec3d5a2e71a5283194b4168d12a53daee11cb960 -->
+<!-- Translated from README.md, SHA-256 974676a5b8610c2363af3db0224eda7faba1672b112ebb1cbb9ccb2ca928a31e -->
 
 # Mininotes
 
@@ -45,6 +45,46 @@ Wi-Fi.
 ## 1. Novità
 
 Le più recenti per prime. Ogni versione è uguale sul telefono e sul PC, salvo dove è indicato diversamente.
+
+### 0.4.057
+
+- **Backup su un altro dei tuoi dispositivi**, come il tuo server Linux: *Backup…*, *Aggiungi un posto…*, poi sceglilo
+  in *Dove*. Il backup viene sigillato qui e inviato quando quel dispositivo si può raggiungere direttamente, anche un
+  telefono con i dati mobili; uno che non arriva riprende più tardi da dove si era fermato. Il PC tiene anche ciò che
+  gli mandano gli altri tuoi dispositivi.
+- **Il tuo server di backup**: un piccolo Mininotes per un server Linux che tiene i tuoi backup e non può aprirli. *Il
+  tuo server…* nella pagina Backup mostra la riga che lo installa, e la
+  [guida](https://github.com/mininotesorg/server).
+
+### 0.4.056
+
+- **La pagina Backup** (*Impostazioni*, *Il mio profilo* o il menu): backup fatti da soli nelle cartelle che scegli,
+  ognuno con cosa contiene, quando (ogni giorno, settimana o mese, quando Mininotes si chiude, o solo quando lo chiedi),
+  quanti ne vengono tenuti e cosa li apre: il blocco del quaderno, una password per i backup, o 12 parole create per
+  loro. Sempre sigillati.
+- Niente più bozze di recupero: il testo che non può entrare nella sua nota diventa note, "(seguito)" o "(copia)".
+
+### 0.4.054 e 0.4.055
+
+- **I file grandi**, da 16 MB a 2 GB, vanno direttamente a un altro dispositivo sulla stessa rete, mai tramite un relay,
+  e lì vengono salvati in Download.
+- *Cerca in questa nota*; una scheda si apre dove l'avevi lasciata; il log si può condividere da *Feedback*.
+
+### Dalla 0.4.043 alla 0.4.053
+
+- Viaggia solo ciò che è cambiato in una nota; *Cronologia…* dice come ogni cosa ha raggiunto ogni dispositivo; i tuoi
+  relay su tutti i tuoi dispositivi insieme; le tue versioni più recenti vengono sempre tenute; una vecchia copia non
+  viene mai più rimescolata.
+
+### Dalla 0.4.035 alla 0.4.042
+
+- Telefoni più silenziosi; dispositivi d'accordo su ciò che ognuno ha; *Rimuovi* su una sola cosa, anche dentro una
+  cartella condivisa; più file insieme; sincronizzazione più rapida.
+
+### Dalla 0.4.032 alla 0.4.034
+
+- Un solo + per aggiungere chiunque o uno dei tuoi dispositivi; *Accetta tutto senza chiedere* nella pagina di una
+  persona; un blocco Temp che resta; un profilo più chiaro.
 
 ### 0.4.031
 
@@ -285,8 +325,8 @@ Su nessuno dei due serve altro: il nodo Maxima che trasporta le tue note è dent
   dock.
 - **Recenti** elenca ciò che hai aperto di recente: sul lato sul PC, in Home sul telefono. *Rimuovi da Recenti* (un clic
   destro sul PC) toglie qualcosa dall'elenco; non viene eliminato nulla. Sul telefono, scorri verso l'alto dal dock, o
-  tocca la maniglia appena sopra, per sfogliare Recenti come schede: tocca una scheda per aprirla, scorrila via o premi
-  Indietro per chiudere.
+  tocca la maniglia appena sopra, per sfogliare Recenti come schede: tocca una scheda per aprirla, lanciala verso l'alto
+  per toglierla da Recenti, o premi Indietro.
 - **Temp** è per ciò che ti serve solo per un po', e per passare cose tra i tuoi dispositivi e le persone che scegli: il
   contenuto va a loro e sparisce ovunque alla scadenza.
 - **Condivisi con me** contiene ciò che altri hanno condiviso con te, in attesa della tua risposta (vedi
@@ -304,11 +344,10 @@ Su nessuno dei due serve altro: il nodo Maxima che trasporta le tue note è dent
 
 ## 5. I tuoi dispositivi
 
-Collega il telefono e il PC una volta sola (*Persone e dispositivi*, poi *Aggiungi il mio dispositivo*, e scansiona con
-uno il codice dell'altro). Da allora, ciò che condividi con i tuoi dispositivi si aggiorna da solo su tutti, nei due
-sensi, pochi secondi dopo che smetti di scrivere. Un tuo dispositivo può essere impostato su *Può leggere* se deve solo
-guardare. Ogni dispositivo ha la sua disposizione: dove metti una nota su uno non la sposta sull'altro, e ognuno ha il
-suo dock.
+Collega il telefono e il PC una volta sola (*Persone e dispositivi*, +, scansiona con uno il codice dell'altro, *Uno dei
+miei dispositivi*). Da allora, ciò che condividi con i tuoi dispositivi si aggiorna da solo su tutti, nei due sensi,
+pochi secondi dopo che smetti di scrivere. Cosa riceve ognuno si sceglie sulla sua riga. Ogni dispositivo ha la sua
+disposizione: dove metti una nota su uno non la sposta sull'altro, e ognuno ha il suo dock.
 
 ## 6. Condividere con altre persone
 
@@ -339,9 +378,8 @@ Si trovano entrambi in fondo a *Sincronizzazione e condivisione* nel menu.
 - **Persone e dispositivi** elenca le persone che hai aggiunto, i tuoi dispositivi e i tuoi gruppi, ognuno su una sua
   pagina. La pagina di una persona mostra ciò che condividi con lei e ti permette di darle un'immagine a tua scelta, che
   vedi solo tu. Le impostazioni di un gruppo stanno dietro la sua ›.
-- **Il + accanto a Persone** ti collega a qualcuno: scansiona il suo codice, incolla il suo link, o *Condividi il mio
-  link…* per inviare il tuo in un messaggio o in una chat. **Il + accanto a I miei dispositivi** aggiunge un altro dei
-  tuoi dispositivi.
+- **Il +** aggiunge qualcuno o uno dei tuoi dispositivi: scansiona il suo codice, incolla il suo link, o *Condividi il
+  mio link…* per inviare il tuo.
 - **Il mio profilo** contiene ciò che è tuo:
   - il tuo **nome** e la tua **immagine**, che vanno alle persone con cui sei collegato;
   - il tuo **indirizzo Parlons!**, inviato da solo ai tuoi contatti;
@@ -420,9 +458,10 @@ Si trovano entrambi in fondo a *Sincronizzazione e condivisione* nel menu.
 - **Il file di una nota nel cestino.** Un file tolto da una nota va subito nel cestino, senza domande, e viene tolto
   dalla nota su tutti i tuoi dispositivi e per tutti quelli a cui va la nota. *Rimetti a posto* lo riporta ovunque. Se
   ne va per sempre solo quando il cestino viene svuotato.
-- **Backup.** *Esporta backup* scrive un unico file con tutte le cartelle, note e file. Senza il blocco (vedi
-  [Privacy, cifratura e sicurezza](#14-privacy-cifratura-e-sicurezza)), chiede una password per quel backup. *Aggiungi
-  da backup* ne recupera uno e chiede se aggiungere a ciò che c'è o sostituirlo.
+- **Backup.** *Backup…* (*Impostazioni*, *Il mio profilo*) fa da solo backup sigillati, ogni giorno, settimana o mese, o
+  quando Mininotes si chiude, in una cartella o su un altro dei tuoi dispositivi, come il tuo [server di
+  backup](https://github.com/mininotesorg/server). Il blocco, una password o 12 parole li aprono. *Aggiungi da un
+  backup* ne recupera uno.
 
 ## 12. L'Agente: chiedi, e viene fatto
 
@@ -440,11 +479,8 @@ di portarti nel posto giusto. Un tocco fuori dalla sua finestra lo chiude.
 Con un account [Integritas](https://docs.integritas.technology/), un file o una nota può essere marcato sulla blockchain
 di Minima dal suo menu. Lascia il dispositivo solo la sua impronta (SHA-256), mai il file.
 
-- **Marca su Minima…** registra ora che il file esiste esattamente così com'è: una prova, da quel momento, che esisteva
-  e che da allora non è cambiato. Usa una marcatura del tuo account Integritas.
-- **Verifica su Minima…** controlla un file, in seguito, rispetto a ciò che è stato registrato: se è stato marcato, se è
-  invariato, e in quale blocco e in che data. Non cambia nulla e non costa nulla.
-- **La differenza:** marcare scrive la prova una volta; verificare la rilegge, tutte le volte che vuoi.
+- **Marca su Minima…** registra che esiste esattamente così com'è, con una marcatura del tuo account, e più tardi lo
+  ricontrolla: se è invariato, in quale blocco e quando. Controllare non costa nulla.
 - **La marcatura di una nota** copre il titolo, una riga vuota e poi il testo; rinominarla la segna come cambiata. Le
   marcature fatte prima della 0.4.018 coprono solo il testo: *Nota, solo testo*.
 - **Il mio profilo, Marcatura:** incolla la tua chiave API e premi *Salva*; viene tenuta nel tuo quaderno, bloccata con
@@ -572,7 +608,6 @@ fa subito.
 | Traduci | Traduci questa pagina in un'altra lingua, su questo dispositivo. |
 | Versioni | Tutte le versioni precedenti di questa nota, da guardare o rimettere a posto. |
 | Marca su Minima | Registra ora sulla blockchain Minima che esiste così com'è. Solo la sua impronta lascia questo dispositivo. |
-| Verifica su Minima | Controlla se è su Minima invariato, e quando è stato registrato. |
 | Temporaneo | Tienilo solo per un po': se ne va quando il suo tempo è scaduto. |
 | Archivio | Mettilo da parte, fuori vista, conservato. |
 | Sposta nel cestino | Mettilo nel cestino. Si può rimettere a posto finché il cestino non viene svuotato. |
@@ -594,9 +629,12 @@ fa subito.
 | Temp | Ciò che è tenuto solo per un po', e va ai tuoi altri dispositivi. |
 | Condivisi con me | Ciò che altri hanno condiviso con te, in attesa della tua risposta. |
 | Cestino | Ciò che è stato messo nel cestino, da rimettere a posto o eliminare per sempre. |
-| Scrittura di recupero | Testo che non è stato possibile salvare nella sua nota, messo da parte. |
 | Esporta backup | Scrivi un unico file con tutte le cartelle, note e file. |
 | Aggiungi da backup | Recupera ciò che contiene un file di backup. |
+| Backup | Dove vanno i backup, quando, quanti ne vengono tenuti e cosa li apre; Esegui backup ora. |
+| Il tuo server | La riga che installa un server di backup su Linux, e la sua guida. |
+| Cronologia | Come ogni cosa ha raggiunto ogni dispositivo di recente: diretta, o tramite quale relay. |
+| Cerca in questa nota | Trova parole in questa nota, scheda dopo scheda. |
 | Condividi Mininotes | Parla di Mininotes a qualcuno. |
 | Aggiorna alla v | Installa la versione più recente. |
 | Feedback | Di' qualcosa su Mininotes, pubblicamente, con il tuo nome. |

@@ -34,6 +34,14 @@ public final class Lending extends ContentProvider {
     static Uri ofNote(String id){return Uri.parse("content://"+AUTHORITY+"/"+NOTE+"/"+Uri.encode(id));}
     private static final String NOTE="note";
 
+    /** The address for this phone's own log (see LogKeep), for Share the log in Feedback; open whether or not the notebook is. */
+    static Uri ofLog(){return Uri.parse("content://"+AUTHORITY+"/"+LOG);}
+    private static final String LOG="log";
+    private static boolean log(Uri uri){java.util.List<String> path=uri==null?java.util.List.of():uri.getPathSegments();return path.size()==1&&LOG.equals(path.get(0));}
+    private byte[] logBytes() throws FileNotFoundException {
+        try{return LogKeep.whole(PhoneLog.folder(getContext()));}catch(java.io.IOException e){throw new FileNotFoundException("No log");}
+    }
+
     /** The note an address names, or null where it names none: an address for a file, or a note not in the notebook. */
     private NoteStore.Note note(Uri uri) throws FileNotFoundException {
         java.util.List<String> path=uri==null?java.util.List.of():uri.getPathSegments();
@@ -67,6 +75,15 @@ public final class Lending extends ContentProvider {
     }
 
     @Override public ParcelFileDescriptor openFile(Uri uri,String mode) throws FileNotFoundException {
+        if(log(uri)) {
+            if(mode!=null&&!mode.equals("r"))throw new FileNotFoundException("Read only");
+            byte[] kept=logBytes();
+            try {
+                ParcelFileDescriptor[] pipe=ParcelFileDescriptor.createPipe();
+                new Thread(()->{try(java.io.OutputStream out=new ParcelFileDescriptor.AutoCloseOutputStream(pipe[1])){out.write(kept);}catch(java.io.IOException gone){/* they stopped reading */}},"mininotes-lending").start();
+                return pipe[0];
+            } catch(java.io.IOException e){throw new FileNotFoundException("Could not open the log");}
+        }
         NoteStore.Note note=note(uri);
         if(note!=null) {
             if(mode!=null&&!mode.equals("r"))throw new FileNotFoundException("Read only");
@@ -98,12 +115,20 @@ public final class Lending extends ContentProvider {
     }
 
     @Override public String getType(Uri uri) {
+        if(log(uri))return "text/plain";
         try{return note(uri)!=null?"text/markdown":asked(uri).kind;}catch(FileNotFoundException e){return null;}
     }
 
     /** What every app asks before opening something: what it is called and how big it is. */
     @Override public Cursor query(Uri uri,String[] wanted,String where,String[] args,String order) {
         String[] columns=wanted==null?new String[]{OpenableColumns.DISPLAY_NAME,OpenableColumns.SIZE}:wanted;
+        if(log(uri)) {
+            long size;try{size=logBytes().length;}catch(FileNotFoundException e){return null;}
+            MatrixCursor answer=new MatrixCursor(columns,1);Object[] row=new Object[columns.length];
+            for(int at=0;at<columns.length;at++)row[at]=OpenableColumns.DISPLAY_NAME.equals(columns[at])?"mininotes-log.txt":OpenableColumns.SIZE.equals(columns[at])?(Object)size:null;
+            answer.addRow(row);
+            return answer;
+        }
         try {
             NoteStore.Note note=note(uri);
             if(note!=null) {

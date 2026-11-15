@@ -416,7 +416,7 @@ final class PrivateScreen {
         PrivateSpace.Thing in=folder.isEmpty()?null:shown.thing(folder);
         if(in==null)folder="";
         if(note!=null&&shown.thing(note)==null)note=null;
-        heading.setText(inBin?"Bin":note!=null?"Private":in!=null?in.name():"Private");
+        heading.setText(inBin?Say.t("Bin"):note!=null?Say.t("Private"):in!=null?in.name():Say.t("Private"));
         plus.setVisibility(inBin?View.GONE:View.VISIBLE);
         if(inBin)middle(binView());
         else if(note!=null)middle(noteView());
@@ -468,7 +468,7 @@ final class PrivateScreen {
         view.setPadding(0,0,0,a.dp(72));
         page=new Pad(a,Tint.known(t.colour)?Tint.over(t.colour,a.LINE,a.wash(t.tone,0.35f,1f),a.darkPaper()):a.LINE);
         page.setGravity(Gravity.TOP);page.setTextColor(a.INK);page.setTextSize(17);page.setLineSpacing(a.dp(6),1f);
-        page.setPadding(0,a.dp(2),0,a.dp(24));page.setHint("Write.");page.setHintTextColor(a.MUTED);page.setContentDescription("Private note");
+        page.setPadding(0,a.dp(2),0,a.dp(24));page.setHint(Say.t("Write."));page.setHintTextColor(a.MUTED);page.setContentDescription("Private note");
         page.setImeOptions(page.getImeOptions()|EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING);
         page.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
         page.copiedPrivately=this::noteCopied;
@@ -854,13 +854,13 @@ final class PrivateScreen {
             if(x.length==0){first.setError("Type the new password.");return;}
             if(!Arrays.equals(x,y)){again.setError("The two are not the same.");Arrays.fill(x,'\0');Arrays.fill(y,'\0');return;}
             Arrays.fill(y,'\0');first.setText("");again.setText("");box.dismiss();
-            final PrivateSpace now=shown;says.setText("Changing the password…");
+            final PrivateSpace now=shown;says.setText(Say.t("Changing the password…"));
             worker.submit(()->{
                 boolean fit=true;
                 try{now.space.rekey(x);}catch(Throwable notDone){fit=false;}
                 finally{Arrays.fill(x,'\0');}
                 final boolean fitted=fit;
-                later.post(()->{if(shown==now){full=!fitted;tick();if(fitted)says.setText("Password changed. Keep Mininotes open until it is all written.");}});
+                later.post(()->{if(shown==now){full=!fitted;tick();if(fitted)says.setText(Say.t("Password changed. Keep Mininotes open until it is all written."));}});
             });
         });
     }
@@ -928,7 +928,7 @@ final class PrivateScreen {
         final List<Uri> chosen=new ArrayList<>();
         if(data.getClipData()!=null)for(int i=0;i<data.getClipData().getItemCount();i++)chosen.add(data.getClipData().getItemAt(i).getUri());
         else if(data.getData()!=null)chosen.add(data.getData());
-        says.setText("Adding…");
+        says.setText(Say.t("Adding…"));
         final android.content.ContentResolver resolver=a.getContentResolver();
         worker.submit(()->{
             final List<Object[]> ready=new ArrayList<>();
@@ -979,7 +979,7 @@ final class PrivateScreen {
             .setNegativeButton(one?"Keep it":"Keep them",null).show());
     }
     private void deleteOriginals(final android.content.ContentResolver resolver,final List<Uri> uris) {
-        says.setText("Deleting the original…");
+        says.setText(Say.t("Deleting the original…"));
         worker.submit(()->{
             int gone=0;boolean refused=false;
             for(Uri u:uris) {
@@ -988,8 +988,8 @@ final class PrivateScreen {
             }
             final int done=gone;final boolean could=!refused;
             later.post(()->{if(says==null)return;
-                says.setText(could?(done==1?"The original was deleted":"The originals were deleted")
-                    :"Mininotes cannot delete it from here: delete it in Files or Gallery");});
+                says.setText(Say.t(could?(done==1?"The original was deleted":"The originals were deleted")
+                    :"Mininotes cannot delete it from here: delete it in Files or Gallery"));});
         });
     }
     private static String nameOf(android.content.ContentResolver resolver,Uri uri) {
@@ -1057,7 +1057,7 @@ final class PrivateScreen {
             try(OutputStream out=resolver.openOutputStream(where,"wt")){if(out==null)throw new java.io.IOException();out.write(bytes);ok=true;}
             catch(Throwable failed){ok=false;}
             final boolean done=ok;
-            later.post(()->{if(says!=null)says.setText(done?"Saved a copy":"Could not save a copy there");});
+            later.post(()->{if(says!=null)says.setText(Say.t(done?"Saved a copy":"Could not save a copy there"));});
         });
     }
     /** The picker came back with nothing: the screen goes on as it was. */

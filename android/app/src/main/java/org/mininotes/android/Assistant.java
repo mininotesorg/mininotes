@@ -505,6 +505,5 @@ final class Assistant {
     }
 
     /** The words of the window's own buttons (decision 213). */
-    static final String THERE="Take me there",AFRESH="New conversation",FULL="Full screen",SMALLER="Exit full screen";
-    static final String KEPT_SAID="Forget this conversation. It is kept on this device for 3 hours after the last message.";
+    static final String THERE="Take me there",FULL="Full screen",SMALLER="Exit full screen";
 }

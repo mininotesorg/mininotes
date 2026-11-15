@@ -8,8 +8,8 @@ final class DesktopEdits {
     static String warning(String title,String body,int tab){return NoteLimit.near(title.length(),body.length(),tab,Sections.of(body).size());}
     static String refusal(NoteStore store,NoteStore.Note base,String title,String body) {
         NoteStore.Note current=store.get(base.id);
-        if(current==null)return "This note no longer exists. Your writing can be kept on this PC.";
-        if(Boolean.TRUE.equals(store.readOnlyHere(base.id)[0]))return "This note is now read only. Your writing can be kept on this PC.";
+        if(current==null)return "This note no longer exists.";
+        if(Boolean.TRUE.equals(store.readOnlyHere(base.id)[0]))return "This note is now read only.";
         String reason=limits(title,body);if(reason!=null)return reason;
         return limits(Merge.merge(base.title,title,current.title).text,Merge.merge(base.body,body,current.body).text);
     }

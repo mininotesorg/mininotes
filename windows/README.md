@@ -16,7 +16,7 @@ Windows x64, JDK 17, and internet access for the first dependency download:
 ```
 
 The script runs the shared and Windows tests and makes
-`dist/latest/Mininotes-Windows-0.4.053.zip` plus its SHA-256 checksum. Extract the whole
+`dist/latest/Mininotes-Windows-0.4.062.zip` plus its SHA-256 checksum. Extract the whole
 ZIP and run `Mininotes/Mininotes.exe`. Keep the runtime and app folders beside
 the executable. No Java installation is required to run this bundle.
 
@@ -30,7 +30,7 @@ page. A Shortcuts page before Ready to install has Create a desktop shortcut, ti
 the answer is kept for the next install and for updates. `main.wxs` there is jpackage's own with
 those pages in it; its comments say what changed.
 
-Android and Windows use the same version number, currently 0.4.053. Installation
+Android and Windows use the same version number, currently 0.4.062. Installation
 and verification are recorded separately for each platform.
 
 This is an unsigned preview, not a published release.
@@ -110,7 +110,7 @@ switch a currently blocked older session safely:
 3. Exit the old app normally through **⋯ → Exit Mininotes** (or the tray's Exit).
    Closing its window may keep it running. Do not kill it or launch the new build
    to force a handover while writing is unpreserved.
-4. Open `dist/latest/Mininotes-Windows-0.4.053/Mininotes.exe` or the local
+4. Open `dist/latest/Mininotes-Windows-0.4.062/Mininotes.exe` or the local
    `dist/latest/Mininotes.lnk`. Paste a preserved oversized edit back into its
    intended note if needed. Wait for **Writing kept on this PC**, then use Recovery
    writing to reopen, export or shorten it. Retain the verified external copy.

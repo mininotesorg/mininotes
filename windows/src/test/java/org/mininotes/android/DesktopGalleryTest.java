@@ -292,7 +292,7 @@ public class DesktopGalleryTest {
             // What the open note's syncing is doing, said after its mark and its people: going, gone, and could not go.
             Object[][] line={{NoteLine.sending(java.util.List.of("Ana's phone")),NoteLine.Tone.GOING,"73-line-sending"},
                 {NoteLine.sent(java.util.List.of("Ana's phone")),NoteLine.Tone.DONE,"74-line-sent"},
-                {NoteLine.couldNot(java.util.List.of(new Unsent.Problem(Unsent.Why.NOT_REACHED,"Ana's phone","Saturday","","")),0),NoteLine.Tone.FAILED,"75-line-could-not"}};
+                {NoteLine.couldNot(java.util.List.of(new Unsent.Problem(Unsent.Why.NOT_REACHED,"Ana's phone","Saturday","","")),0),NoteLine.Tone.GOING,"75-line-could-not"}};
             for(Object[] one:line){SwingUtilities.invokeAndWait(()->pad.noteSays((String)one[0],(NoteLine.Tone)one[1],null));Thread.sleep(200);
                 SwingUtilities.invokeAndWait(()->assertTrue((String)one[2],pad.noteWords.isShowing()));shoot(pad.frame,(String)one[2]);}
             SwingUtilities.invokeAndWait(()->pad.noteSays(null,null,null));

@@ -17,6 +17,7 @@ final class Symbols {
     /** Words a row begins with, lower case, and its glyph: the first that fits wins, so the longer go first. */
     private static final Map<String,String> BY_START=new LinkedHashMap<>();
     static {
+        put("order by","arrow-down-wide-narrow");
         put("remove from recent","clock-fading");
         // The dock on its own (decision 190), and the Agent (decisions 191, 192).
         put("add to the dock","panel-bottom-open");
@@ -132,6 +133,7 @@ final class Symbols {
         put("parlons","message-circle");
         put("help","circle-question-mark");
         put("ask for help","bell");
+        put("find in this note","text-search");
         put("search","search");
         put("all pages","layout-grid");
         put("back to the main page","house");
@@ -160,6 +162,7 @@ final class Symbols {
         // Sent files and the others a list of every menu's words showed had none).
         put("tree","list-tree");
         put("export backup","database-backup");
+        put("backups","folder-clock");
         put("add from backup","archive-restore");
         put("recovery writing","key-round");
         put("feedback","message-square-text");

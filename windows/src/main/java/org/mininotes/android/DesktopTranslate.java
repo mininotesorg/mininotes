@@ -78,7 +78,7 @@ final class DesktopTranslate {
             if(got.statusCode()!=200)throw new IOException("The translation packs are not on GitHub yet (HTTP "+got.statusCode()+").");
             return got.body();
         } catch(InterruptedException e){Thread.currentThread().interrupt();throw new IOException("Stopped.");}
-        catch(IOException offline){throw offline.getMessage()!=null&&offline.getMessage().startsWith("The translation")?offline:new IOException("GitHub could not be reached. Check the connection and try again.");}
+        catch(IOException offline){org.mininotes.desktop.platform.util.Log.w("Mininotes/Translate","the list of packs not read: "+offline);throw offline.getMessage()!=null&&offline.getMessage().startsWith("The translation")?offline:new IOException("GitHub could not be reached. Check the connection and try again.");}
     }
 
     /** How much the packs not here yet weigh, from the list; -1 where a pack is not on it. */
@@ -215,7 +215,9 @@ final class DesktopTranslate {
         java.util.function.Function<String,String> state=code->{
             if(code.equals("en")||Translation.both(code).stream().allMatch(p->have(app,p)))return "✓";
             List<Translation.File> all=listed.get();
-            long size=all==null?-1:missing(app,all,Translation.both(code));
+            // Not read yet, or GitHub out of reach: nothing is known, so nothing is said (the owner's screenshot, 2026-11-09).
+            if(all==null)return "";
+            long size=missing(app,all,Translation.both(code));
             return size>0?"↓ "+megabytes(size):Say.t("not available yet");
         };
         for(JComboBox<String> box:List.of(fromBox,toBox))box.setRenderer(new DefaultListCellRenderer(){
@@ -228,14 +230,16 @@ final class DesktopTranslate {
                 JLabel side=new JLabel(mark);side.setFont(list.getFont().deriveFont(12f));
                 boolean ready=mark.equals("✓");
                 side.setForeground(ready?DesktopUi.ACCENT:DesktopUi.QUIET);
-                if(!ready&&!mark.startsWith("↓")&&!selected)name.setForeground(DesktopUi.QUIET);
+                if(!ready&&!mark.isEmpty()&&!mark.startsWith("↓")&&!selected)name.setForeground(DesktopUi.QUIET);
                 line.setBackground(name.getBackground());side.setBorder(BorderFactory.createEmptyBorder(0,0,0,6));
                 line.add(name);line.add(side,BorderLayout.EAST);
                 line.getAccessibleContext().setAccessibleName(value+", "+(ready?Say.t("on this PC"):mark));
                 return line;
             }
         });
-        app.network.submit(DesktopTranslate::list,all->{listed.set(all);fromBox.repaint();toBox.repaint();},none->{});
+        // The open list as well as the two boxes: a box repainted leaves the list it has dropped down as it was.
+        Runnable remark=()->{for(JComboBox<String> one:List.of(fromBox,toBox)){one.repaint();if(one.getUI().getAccessibleChild(one,0) instanceof javax.swing.plaf.basic.ComboPopup open)open.getList().repaint();}};
+        app.network.submit(DesktopTranslate::list,all->{listed.set(all);remark.run();},none->{});
         String guessed=Translation.guess(text),mine=Translation.PACKS.containsKey(Say.language())?Say.language():"en";
         String into=mine.equals(guessed)?(guessed.equals("en")?"fr":"en"):mine;
         fromBox.setSelectedIndex(codes.indexOf(guessed));toBox.setSelectedIndex(codes.indexOf(into));
@@ -250,12 +254,13 @@ final class DesktopTranslate {
         DesktopUi.Text said=DesktopUi.quiet(" ");
         JButton fetchPacks=DesktopUi.primary("Download",()->{});fetchPacks.setVisible(false);
         JButton stop=DesktopUi.button("Stop",()->{});stop.setVisible(false);
+        JButton retry=DesktopUi.primary("Try again",()->{});retry.setVisible(false);
 
         JPanel body=DesktopUi.column();
         DesktopUi.add(body,languages);DesktopUi.gap(body,DesktopUi.M);
         DesktopUi.add(body,scroll);DesktopUi.gap(body,DesktopUi.S);
         JPanel under=new JPanel(new BorderLayout(8,0));under.setOpaque(false);under.add(said);
-        JPanel side=DesktopUi.actions(stop,fetchPacks);under.add(side,BorderLayout.EAST);
+        JPanel side=DesktopUi.actions(stop,retry,fetchPacks);under.add(side,BorderLayout.EAST);
         DesktopUi.add(body,under);
 
         boolean writes=app.page.isEditable();
@@ -274,7 +279,7 @@ final class DesktopTranslate {
         go[0]=()->{
             int ask=++asked[0];
             String from=codes.get(fromBox.getSelectedIndex()),to=codes.get(toBox.getSelectedIndex());
-            result.setText("");copy.setEnabled(false);put.setEnabled(false);tabbed.setEnabled(false);fetchPacks.setVisible(false);
+            result.setText("");copy.setEnabled(false);put.setEnabled(false);tabbed.setEnabled(false);fetchPacks.setVisible(false);retry.setVisible(false);
             if(from.equals(to)){said.setText(Say.t("Choose two different languages."));return;}
             List<Translation.Pair> pairs=Translation.steps(from,to);
             boolean here=pairs.stream().allMatch(p->have(app,p));
@@ -282,6 +287,7 @@ final class DesktopTranslate {
                 said.setText(Say.t("Looking for the language packs…"));
                 app.network.submit(DesktopTranslate::list,all->{
                     if(ask!=asked[0])return;
+                    listed.set(all);remark.run();
                     long size=missing(app,all,pairs);
                     if(size<0){said.setText(unavailable(app,from,to));return;}
                     said.setText(Say.t("The packs for these languages are not on this PC yet: {0} to download, once.",megabytes(size)));
@@ -294,7 +300,12 @@ final class DesktopTranslate {
                             done->{stop.setVisible(false);if(box.isDisplayable())go[0].run();},
                             error->{stop.setVisible(false);said.setText(error.getMessage()==null?Say.t("The packs could not be downloaded."):Say.t(error.getMessage()));fetchPacks.setVisible(true);});
                     });
-                },error->{if(ask==asked[0])said.setText(unavailable(app,from,to));});
+                },error->{
+                    if(ask!=asked[0])return;
+                    // The list not read is not a language missing: why, and the way on.
+                    said.setText(Say.t(error.getMessage()==null?"GitHub could not be reached. Check the connection and try again.":error.getMessage()));
+                    retry.setVisible(true);box.getRootPane().setDefaultButton(retry);
+                });
                 return;
             }
             said.setText(Say.t("Translating…"));stop.setVisible(true);
@@ -305,6 +316,7 @@ final class DesktopTranslate {
                 copy.setEnabled(true);put.setEnabled(writes);tabbed.setEnabled(writes);
             },error->{if(ask!=asked[0])return;stop.setVisible(false);said.setText(error.getMessage()==null?Say.t("It could not be translated."):Say.t(error.getMessage()));});
         };
+        retry.addActionListener(e->go[0].run());
         stop.addActionListener(e->{stopped.set(true);Process p=running.getAndSet(null);if(p!=null)p.destroyForcibly();said.setText(Say.t("Stopped."));stop.setVisible(false);});
         fromBox.addActionListener(e->go[0].run());toBox.addActionListener(e->go[0].run());
         copy.addActionListener(e->{Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new java.awt.datatransfer.StringSelection(result.getText()),null);said.setText(Say.t("Copied."));});

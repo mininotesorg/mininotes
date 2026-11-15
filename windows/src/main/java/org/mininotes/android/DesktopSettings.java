@@ -77,6 +77,14 @@ final class DesktopSettings {
         DesktopUi.add(body,DesktopLock.panel(app,box));
         DesktopUi.gap(body,DesktopUi.L);
 
+        // Backup: where backups go, when, and what opens them, on a page of its own (decision 329; the owner, 2026-11-05:
+        // "The backup setup page should be available from the general setting").
+        DesktopUi.add(body,DesktopUi.heading("Backup"));DesktopUi.gap(body,DesktopUi.S);
+        int folders=DesktopBackups.places(app).size();
+        DesktopUi.add(body,DesktopUi.card(null,DesktopUi.row(DesktopUi.body(folders==0?Say.t("No place for backups yet"):folders==1?Say.t("1 place for backups"):Say.t("{0} places for backups",String.valueOf(folders))),
+            DesktopUi.button("Backups…",()->{box[0].dispose();DesktopBackups.open(app);}))));
+        DesktopUi.gap(body,DesktopUi.L);
+
         // Sync: whether notes go by themselves, and how soon after the writing stops.
         DesktopUi.add(body,DesktopUi.heading("Sync"));DesktopUi.gap(body,DesktopUi.S);
         int[] waits={NoteStore.RIGHT_AWAY,3,10,30,120};String[] names={"Right away","After 3 seconds","After 10 seconds","After 30 seconds","After 2 minutes"};
@@ -384,6 +392,9 @@ final class DesktopSettings {
         adds[0]=DesktopUi.button("Add",adding);typed.addActionListener(e->adding.run());
         card.add(DesktopUi.row(typed,adds[0]));
         DesktopUi.add(card,said);
+        // How to have one of your own (the owner's OK, 2026-11-07, of "Your own relay… in Settings, Relays").
+        DesktopUi.gap(card,4);
+        DesktopUi.add(card,DesktopUi.actions(DesktopUi.button("Your own relay…",()->DesktopBackups.ownRelay(app,SwingUtilities.getWindowAncestor(card)))));
         // The same relays on every device of the owner's (decision 316): what is chosen here goes to them at the next round.
         JCheckBox same=DesktopUi.toggle(Relays.SAME,Node.relaysSame(app.context));
         DesktopUi.gap(card,DesktopUi.S);card.add(DesktopUi.switchRow(Relays.SAME,same));

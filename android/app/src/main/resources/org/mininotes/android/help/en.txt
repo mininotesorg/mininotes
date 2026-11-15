@@ -59,7 +59,7 @@
 ? add a person
 ? connect with a friend
 ? pair with someone
-! Open People and devices and press + by People, or ask me "add a contact". Then either scan their code (or paste their link), or show them your code (or send them your link) for them to scan. Once both have accepted, they are in your People and you can share with them.
+! In People and devices, press the round +, or ask me "add a contact". Scan their code or paste their link, or press Show my code for them to scan yours. Then choose Someone else, put them in a group if you like, and choose what they get. Once both have accepted, you can share with them.
 > ADD_CONTACT
 @ PEOPLE
 
@@ -70,7 +70,8 @@
 ? add another device
 ? my devices
 ? sync my devices
-! Your own devices, your phone and your PC for example, are linked the same way as a person: in People and devices, Add my device, then scan the code of one on the other. Once linked, everything you choose to share with your devices keeps itself up to date on all of them. A device of yours can be set to Can read if it should only look.
+! Your own devices, your phone and your PC for example, are linked with the same round + in People and devices: scan the code of one on the other (Show my code shows it), then choose One of my devices and what it gets: Nothing yet, or everything to read or to write.
+! Once linked, everything you share with your devices keeps itself up to date on all of them. A device of yours can be set to Can read if it should only look.
 @ PEOPLE
 
 # whatsnew
@@ -79,7 +80,7 @@
 ? what changed
 ? new things
 ? the new window
-! New lists what changed since you last looked: notes others wrote in, things shared with you, files that came. Each opens with one click, and opening it is what makes it no longer new. On the PC it is the new button at the top; on the phone it is in the menu. Ask me "what is new?" for a quick list.
+! New lists what changed since you last looked: notes others wrote in, things shared with you, files that came. Each opens with one click, and opening it is what makes it no longer new. The cross at the end of a line takes it off the list without opening it. On the PC it is the new button at the top; on the phone it is in the menu. Ask me "what is new?" for a quick list.
 > WHAT_NEW
 
 # todo
@@ -142,7 +143,12 @@
 ? does it need internet
 ? same wifi
 ? how does it travel
-! Notes travel between devices sealed end to end, through Maxima relays, or straight from door to door when both devices are on the same network. The relays only pass on sealed messages they cannot read. Connection details are in your Profile.
+? add a relay
+? my own relay
+? turn off the public relays
+! Notes travel between devices sealed end to end, through Maxima relays, or straight from door to door when both devices are on the same network. The relays only pass on sealed messages they cannot read.
+! In Settings, Relays: Use the public relays turns them on or off, Add a relay adds one of your own, and Your own relay… shows how to set one up on a server. The same on all my devices gives your other devices the same choice.
+@ SETTINGS
 
 # filelink
 = Sharing a file through Mininotes
@@ -168,8 +174,22 @@
 ? temporary
 ? note to self
 ? send to my other devices
-! Temp is for things you only need for a while, and to pass things between your own devices, like notes to self. What you put in Temp goes to your other devices and is gone everywhere when its time is up. Temporary… in a thing's menu sets how long.
+? notepad
+? keep something in temp
+? until I delete it
+! Temp is for things you only need for a while, and to pass things between your own devices, like notes to self. What you put in Temp goes to your other devices and is gone everywhere when its time is up. Temporary… in a thing's menu sets how long; Until I delete it keeps it there until you delete it.
+! The Notepad stays in Temp: its words are cleared once Temp's time has passed since you last wrote in it. Stays in Temp, in a note's menu, does the same for any note in Temp. Temp: a notepad that stays, in Settings, turns the Notepad on or off.
 @ TEMP
+
+# several
+= Choosing several files
+? choose several files
+? select several files
+? copy several files
+? select all
+? multiple files
+! Choose several…, in a file's menu, lets you tick other files in the same place, then copy, send, save or move them to the bin at once.
+! On the PC you can also Ctrl+click, Shift+click, Ctrl+A or drag a box over them, then Ctrl+C to copy them, or right click for the rest.
 
 # archive
 = Archive and Bin
@@ -191,14 +211,37 @@
 ? history of a note
 ! Every version of a note is kept. Versions, in the note's menu, lists them, newest first, and puts any of them back. Whatever arrives from someone else is kept as a version too, so nobody's writing is ever lost.
 
+# history
+= History
+? history
+? what did mininotes do
+? did my note reach my phone
+? log of what happened
+? how did it go through
+! History…, in Sync and sharing, lists what Mininotes did, newest first: which note or file reached which device, and how (direct, or through a relay), what came from whom, and when a device could be reached again. Press a line to open the note or file. Nothing from your private space is in it.
+
 # backup
 = Backups
 ? backup
+? how do I back up
+? automatic backup
+? backup every day
 ? export backup
-? recovery writing
 ? save my notes
 ? restore from backup
-! Export backup, in the menu under Backup, writes one file with every folder, note and file. Add from backup brings one back, and asks whether to add to what is here or replace it. On the PC, Recovery writing… shows writing that could not be saved into its note and was kept aside, so you can put it back.
+! Backups…, in the menu, in Settings or in My profile, opens the Backup page. Add a place… sets each place: Where (a folder, or another of your devices), What, When (Only when I ask, each day, week or month at an hour, or each time Mininotes closes or you leave it), how many of the newest to keep, and what opens them: the notebook's lock, a password for the backups, 12 recovery words, a key file you save apart from them (on a USB key, say), or This device only, which only this device can open. Putting one back asks for the password or the words, or Use a key file…; one made for this device only opens there without asking.
+! Backups are always encrypted. Each place has Back up now, and a Back up here switch to turn it off and on. Add from backup… brings one back, and asks whether to add to what is here or replace it. Writing that cannot go into its note is never lost: it becomes a note named "(continued)" or "(copy)".
+@ BACKUP
+
+# backupserver
+= Backing up to another device or a server
+? back up to my pc
+? back up to another device
+? backup server
+? my own server
+? linux server
+! On the Backup page, Add a place… then choose one of your devices under Where. The backup is sealed here and sent when that device can be reached directly; one that stops halfway goes on later. The PC keeps what your other devices send it.
+! Your own server… shows how to install a small Mininotes on a Linux server, which keeps your backups and cannot open them, and how to link it.
 @ BACKUP
 
 # colour
@@ -256,6 +299,22 @@
 ! The search field at the foot of Home finds notes, folders and files by their words. Tree shows every folder and note at once. You can also ask me: "find soup".
 > FIND
 
+# findinnote
+= Finding words in a note
+? find in this note
+? search in a note
+? find a word in my note
+? ctrl f
+! Find in this note, in the note's ⋮ menu, finds words in the note in front of you and marks each one. On the PC, Ctrl+F over a note or a right click opens it too. Past the last one it goes on into the next tab that has the words.
+
+# linkmenu
+= Holding a link
+? long press on a link
+? copy a link
+? hold a link
+? link opens by mistake
+! On the phone, hold a link in a note: Copy link, Open link and Share link appear beside it, and nothing opens. On the PC, a right click on a link gives Open link and Copy link.
+
 # invitations
 = Shared with me
 ? shared with me
@@ -264,6 +323,15 @@
 ? invitation
 ! Something another person shares with you waits in Shared with me until you accept it. Before accepting you see what it is and who sent it, and you choose where to put it. Refuse tells them, quietly.
 @ SHARED_WITH_ME
+
+# withoutasking
+= Accepting without asking
+? accept everything without asking
+? accept automatically
+? stop asking me to accept
+? accept files from a contact
+! Accept everything without asking, on a person's page in People and devices, lets their files, notes and folders come in at once, without waiting in Shared with me. After you accept something by hand, Mininotes may offer it: Accept without asking, or Keep asking. Your own devices never ask.
+@ PEOPLE
 
 # groups
 = Groups
@@ -322,6 +390,13 @@
 ! Your Parlons! address, in My profile, is set once and sent by itself to everybody you are paired with, so they can chat with you in one tap.
 @ PARLONS
 
+# sendparlons
+= Sending with Parlons!
+? send with parlons
+? send a note in parlons
+? share a file in a parlons chat
+! On the phone, Send with Parlons!, in a note's menu or a file's, hands it to Parlons!, which asks which chat. A note goes as a Markdown file named after its title.
+
 # describe
 = Describing what each thing does
 ? describe what each thing does
@@ -348,3 +423,13 @@
 ? file transfers
 ! Sent files…, in the menu, lists the files you sent and those on their way to you, with where each one stands.
 @ SENT_FILES
+
+# bigfiles
+= Big files
+? send a big file
+? large file
+? file too big
+? send a video
+? send to a device
+! Send to a device…, in a file's menu, sends it straight to one of your devices or to someone, up to 2 GB, without keeping it in Mininotes. They are asked Save or Refuse, and it is saved in their Downloads.
+! A file over 16 MB goes only directly, never through a relay: both devices need Mininotes open and must reach each other, which is easiest on the same Wi-Fi.

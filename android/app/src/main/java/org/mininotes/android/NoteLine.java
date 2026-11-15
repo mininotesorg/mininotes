@@ -69,14 +69,19 @@ final class NoteLine {
     static String couldNot(List<Unsent.Problem> problems,int sent) {
         Unsent.Problem first=Unsent.first(problems);
         if(first!=null&&first.why==Unsent.Why.LINKING)return Unsent.linking(first.who);
-        if(sent>0)return Say.t("Some of it went. See why");
-        if(first!=null&&!first.who.isEmpty()&&Unsent.distinct(problems).size()==1)return Say.t("Could not reach {0}. See why",first.who);
+        // What stays waiting and goes by itself is said as waiting, not as a failure (the owner, 2026-11-07: "present the
+        // solution instead of presenting the problem"); the tap says how to let it go.
+        boolean waits=Unsent.waits(problems);
+        if(sent>0)return waits?Say.t("Some of it went, the rest waits. See how"):Say.t("Some of it went. See why");
+        boolean one=first!=null&&!first.who.isEmpty()&&Unsent.distinct(problems).size()==1;
+        if(waits)return one?Say.t("◷ Waits for {0}. See how",first.who):Say.t("◷ Waits to go. See how");
+        if(one)return Say.t("Could not reach {0}. See why",first.who);
         return Say.t("Could not go. See why");
     }
 
-    /** The colour of what couldNot says: amber for a link that is on its way, red for the rest. */
+    /** The colour of what couldNot says: amber for what is on its way or waits to go by itself, red for the rest. */
     static Tone couldNotTone(List<Unsent.Problem> problems) {
         Unsent.Problem first=Unsent.first(problems);
-        return first!=null&&first.why==Unsent.Why.LINKING?Tone.GOING:Tone.FAILED;
+        return first!=null&&first.why==Unsent.Why.LINKING||Unsent.waits(problems)?Tone.GOING:Tone.FAILED;
     }
 }

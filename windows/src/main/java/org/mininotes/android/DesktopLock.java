@@ -343,7 +343,9 @@ final class DesktopLock {
      * The twelve words, in one block that can be selected whole, with a button to copy them. The first
      * time, the lock waits for "I have written them down"; shown again later, there is nothing to press.
      */
-    static boolean showWords(Window owner,List<String> words,boolean first) {
+    static boolean showWords(Window owner,List<String> words,boolean first){return showWords(owner,words,first,false);}
+    /** With {@code backups}, the words made for the Backup page's backups (decision 329), said as what they open. */
+    static boolean showWords(Window owner,List<String> words,boolean first,boolean backups) {
         JDialog[] box={null};boolean[] done={false};
         StringBuilder laid=new StringBuilder();
         for(int i=0;i<words.size();i++){String one=String.format("%2d. %-10s",i+1,words.get(i));laid.append(one);laid.append(i%3==2?"\n":"   ");}
@@ -363,12 +365,12 @@ final class DesktopLock {
             });clear.setRepeats(false);clear.start();
         });
         JPanel body=DesktopUi.column();
-        DesktopUi.add(body,DesktopUi.note(first
+        DesktopUi.add(body,DesktopUi.note(backups?"Write these 12 words on paper, in this order, and keep them in a safe place. They open these backups on any phone or PC, and nothing else can.":first
             ?"Write these 12 words on paper, in this order, and keep them in a safe place, away from this PC. With them you can open your notes if you forget the password."
             :"Your 12 recovery words, in order. Keep them in a safe place, away from this PC.",400,DesktopUi.INK,DesktopUi.BODY));
         DesktopUi.gap(body,DesktopUi.M);DesktopUi.add(body,DesktopUi.card(null,block));DesktopUi.gap(body,DesktopUi.S);
         DesktopUi.add(body,DesktopUi.actions(copy));DesktopUi.gap(body,4);DesktopUi.add(body,copied);DesktopUi.gap(body,DesktopUi.M);
-        DesktopUi.add(body,warning());
+        if(!backups)DesktopUi.add(body,warning());
         JButton go=DesktopUi.primary("I have written them down",()->{done[0]=true;box[0].dispose();});
         box[0]=DesktopUi.sheet(owner,first?"Your recovery words":"Recovery words",body,first?DesktopUi.footer(go):null,true);
         if(first)box[0].getRootPane().setDefaultButton(go);
@@ -397,8 +399,18 @@ final class DesktopLock {
         said.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(DesktopUi.LINE),BorderFactory.createEmptyBorder(8,10,8,10)));
         DesktopUi.Text wrong=DesktopUi.quiet(" ");
         JPanel body=DesktopUi.column();
-        DesktopUi.add(body,DesktopUi.note("This backup is locked. Type its password, or the 12 recovery words of the notebook it came from.",380,DesktopUi.INK,DesktopUi.BODY));
+        DesktopUi.add(body,DesktopUi.note("This backup is locked. Type its password or its 12 recovery words, or use its key file.",380,DesktopUi.INK,DesktopUi.BODY));
         DesktopUi.gap(body,12);DesktopUi.add(body,said);DesktopUi.gap(body,6);DesktopUi.add(body,wrong);
+        // A key file (step 3 of decision 329): read, and its secret tried as the password is.
+        JButton file=DesktopUi.button("Use a key file…",()->{
+            java.nio.file.Path got=DesktopPick.openOne(box[0],"Use a key file");if(got==null)return;
+            String secret;try{secret=Backups.secretIn(java.nio.file.Files.size(got)>4096?null:java.nio.file.Files.readAllBytes(got));}catch(java.io.IOException unreadable){secret=null;}
+            if(secret==null){wrong.setForeground(DesktopUi.WARN);wrong.setText(Say.t("Choose the key file Mininotes saved: that is not one."));return;}
+            byte[] opened=Backups.openWith(lock,java.util.List.of(secret));
+            if(opened==null){wrong.setForeground(DesktopUi.WARN);wrong.setText(Say.t("That key file does not open this backup."));return;}
+            key[0]=opened;box[0].dispose();
+        });
+        DesktopUi.gap(body,DesktopUi.S);DesktopUi.add(body,DesktopUi.actions(file));
         JButton go=DesktopUi.primary("Open the backup",()->{
             wrong.setForeground(DesktopUi.QUIET);wrong.setText(Say.t("Opening…"));wrong.paintImmediately(wrong.getVisibleRect());
             String typed=said.getText();
@@ -539,7 +551,8 @@ final class DesktopLock {
         };
     }
     /** Three of the words, asked back, so the lock is not put on until they are really written down. */
-    static boolean checkWords(Window owner,List<String> words) {
+    static boolean checkWords(Window owner,List<String> words){return checkWords(owner,words,"Lock the notebook");}
+    static boolean checkWords(Window owner,List<String> words,String yes) {
         List<Integer> order=new ArrayList<>();for(int i=0;i<words.size();i++)order.add(i);
         Collections.shuffle(order,new SecureRandom());List<Integer> asked=new ArrayList<>(order.subList(0,3));Collections.sort(asked);
         JDialog[] box={null};boolean[] ok={false};
@@ -548,7 +561,7 @@ final class DesktopLock {
         DesktopUi.add(body,DesktopUi.note("To be sure they are written down, type these three of your words.",380,DesktopUi.INK,DesktopUi.BODY));DesktopUi.gap(body,12);
         for(int i=0;i<3;i++){fields[i]=new JTextField(18);fields[i].setName("word"+(asked.get(i)+1));body.add(DesktopUi.row(DesktopUi.body("Word "+(asked.get(i)+1)),fields[i]));}
         DesktopUi.gap(body,6);DesktopUi.add(body,wrong);
-        JButton go=DesktopUi.primary("Lock the notebook",()->{
+        JButton go=DesktopUi.primary(yes,()->{
             for(int i=0;i<3;i++)if(!fields[i].getText().trim().equalsIgnoreCase(words.get(asked.get(i)))){wrong.setText(Say.t("Word {0} is not right. Check what you wrote down.",asked.get(i)+1));return;}
             ok[0]=true;box[0].dispose();
         });

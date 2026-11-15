@@ -377,7 +377,7 @@ final class PeopleBox {
             Set<String> theirs=r.groupsOf(one.address);
             for(final Groups.Group group:r.groups) {
                 final boolean in=theirs.contains(group.id);
-                chips.addView(chip(group.name,in,one.name+(in?" is in ":" is not in ")+group.name+". Tap to "+(in?"take them out.":"put them in."),()->put(one,group,!in)));
+                chips.addView(chip(group.name,in,in?Say.t("{0} is in {1}. Tap to take them out.",one.name,group.name):Say.t("{0} is not in {1}. Tap to put them in.",one.name,group.name),()->put(one,group,!in)));
             }
             if(several)chips.setPadding(a.dp(24),0,0,a.dp(8));
             body.addView(chips,new LinearLayout.LayoutParams(-1,-2));

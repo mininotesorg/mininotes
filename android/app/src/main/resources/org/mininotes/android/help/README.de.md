@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 bfd9bcfd1e0b8071f5b694aeec3d5a2e71a5283194b4168d12a53daee11cb960 -->
+<!-- Translated from README.md, SHA-256 974676a5b8610c2363af3db0224eda7faba1672b112ebb1cbb9ccb2ca928a31e -->
 
 # Mininotes
 
@@ -44,6 +44,48 @@ Alles reist Ende zu Ende versiegelt über das Minima-Netzwerk oder direkt von Ge
 ## 1. Neuigkeiten
 
 Das Neueste zuerst. Jede Version ist auf Telefon und PC gleich, sofern nichts anderes dasteht.
+
+### 0.4.057
+
+- **Auf ein anderes deiner Geräte sichern**, etwa auf deinen eigenen Linux-Server: *Sicherungen…*, *Ort hinzufügen…*,
+  dann wähle es unter *Wohin*. Die Sicherung wird hier versiegelt und gesendet, sobald das Gerät direkt erreichbar ist,
+  auch ein Telefon mit mobilen Daten; eine, die nicht ankommt, geht später dort weiter, wo sie aufgehört hat. Der PC
+  behält auch, was deine anderen Geräte ihm schicken.
+- **Dein eigener Sicherungsserver**: ein kleines Mininotes für einen Linux-Server, das deine Sicherungen aufbewahrt und
+  sie nicht öffnen kann. *Ihr eigener Server…* auf der Seite Sicherungen zeigt die Zeile, die es installiert, und die
+  [Anleitung](https://github.com/mininotesorg/server).
+
+### 0.4.056
+
+- **Die Seite Sicherungen** (*Einstellungen*, *Mein Profil* oder das Menü): Sicherungen, die von selbst in die Ordner
+  deiner Wahl gehen, jede mit dem, was hineinkommt, wann (täglich, wöchentlich oder monatlich, beim Schließen von
+  Mininotes oder nur auf Wunsch), wie viele bleiben und was sie öffnet: die Sperre des Notizbuchs, ein Passwort für die
+  Sicherungen oder 12 eigens dafür erzeugte Wörter. Immer versiegelt.
+- Keine Wiederherstellungsentwürfe mehr: Geschriebenes, das nicht in seine Notiz kann, wird zu Notizen, „(Fortsetzung)“
+  oder „(Kopie)“.
+
+### 0.4.054 bis 0.4.055
+
+- **Große Dateien**, 16 MB bis 2 GB, gehen direkt an ein anderes Gerät im selben Netz, nie über ein Relay, und landen
+  dort in Downloads.
+- *In dieser Notiz suchen*; ein Tab öffnet sich dort, wo du ihn verlassen hast; das Protokoll lässt sich über *Feedback*
+  teilen.
+
+### 0.4.043 bis 0.4.053
+
+- Nur was sich in einer Notiz geändert hat, wird übertragen; *Verlauf…* zeigt, wie jedes Ding jedes Gerät erreicht hat;
+  deine eigenen Relays auf allen deinen Geräten auf einmal; deine eigenen neuesten Versionen bleiben immer erhalten;
+  eine alte Kopie wird nie wieder zurückgemischt.
+
+### 0.4.035 bis 0.4.042
+
+- Ruhigere Telefone; Geräte, die sich einig sind, was jedes hat; *Entfernen* für ein einzelnes Ding, auch in einem
+  geteilten Ordner; mehrere Dateien auf einmal; schnellere Synchronisierung.
+
+### 0.4.032 bis 0.4.034
+
+- Ein + für jeden und für deine eigenen Geräte; *Alles ohne Nachfrage annehmen* auf der Seite einer Person; ein
+  Temp-Notizblock, der bleibt; ein klareres Profil.
 
 ### 0.4.031
 
@@ -290,7 +332,7 @@ Auf beiden braucht es sonst nichts: Der Maxima-Knoten, der deine Notizen trägt,
 - **Zuletzt** listet, was du zuletzt geöffnet hast: an der Seite auf dem PC, auf Start auf dem Telefon. *Aus Zuletzt
   entfernen* (Rechtsklick auf dem PC) nimmt etwas von der Liste; nichts wird gelöscht. Auf dem Telefon wisch vom Dock
   nach oben oder tippe auf den Griff darüber, um Zuletzt als Karten durchzublättern: Tippe auf eine Karte zum Öffnen,
-  wisch sie weg oder drück Zurück zum Schließen.
+  wirf sie nach oben, um sie aus Zuletzt zu nehmen, oder drück Zurück.
 - **Temp** ist für das, was du nur eine Weile brauchst, und um Dinge an deine eigenen Geräte und die Menschen deiner
   Wahl weiterzugeben: Was darin liegt, geht an sie und ist überall weg, wenn seine Zeit um ist.
 - **Mit mir geteilt** enthält, was andere mit dir teilen, bis du antwortest (siehe [Mit anderen teilen](#6-mit-anderen-teilen)).
@@ -307,11 +349,10 @@ Auf beiden braucht es sonst nichts: Der Maxima-Knoten, der deine Notizen trägt,
 
 ## 5. Deine eigenen Geräte
 
-Verknüpfe dein Telefon und deinen PC einmal (*Personen und Geräte*, dann *Mein Gerät hinzufügen*, und scanne den Code
-des einen mit dem anderen). Ab dann bleibt, was du mit deinen Geräten teilst, auf allen von selbst aktuell, in beide
-Richtungen, wenige Sekunden nach dem Schreiben. Soll ein Gerät von dir nur ansehen, stell es auf *Kann lesen*. Jedes
-Gerät behält sein eigenes Layout: Wo du eine Notiz auf einem hinlegst, ändert nichts auf dem anderen, und jedes hat sein
-eigenes Dock.
+Verknüpfe dein Telefon und deinen PC einmal (*Personen und Geräte*, +, scanne den Code des einen mit dem anderen, *Eines
+meiner Geräte*). Ab dann bleibt, was du mit deinen Geräten teilst, auf allen von selbst aktuell, in beide Richtungen,
+wenige Sekunden nach dem Schreiben. Was jedes bekommt, wählst du in seiner Zeile. Jedes Gerät behält sein eigenes
+Layout: Wo du eine Notiz auf einem hinlegst, ändert nichts auf dem anderen, und jedes hat sein eigenes Dock.
 
 ## 6. Mit anderen teilen
 
@@ -340,8 +381,8 @@ Beide stehen im Menü am Ende von *Synchronisieren und Teilen*.
 - **Personen und Geräte** listet die Personen, die du hinzugefügt hast, deine eigenen Geräte und deine Gruppen, jedes
   auf einer eigenen Seite. Die Seite einer Person zeigt, was du mit ihr teilst, und gibt ihr auf Wunsch ein Bild, das
   nur du siehst. Die Einstellungen einer Gruppe liegen hinter ihrem ›.
-- **Das + bei Personen** verbindet dich mit jemandem: Scanne den Code, füge den Link ein oder sende mit *Meinen Link
-  teilen* deinen per Nachricht oder Chat. **Das + bei Meine Geräte** fügt ein weiteres eigenes Gerät hinzu.
+- **Das +** fügt jemanden oder eines deiner Geräte hinzu: Scanne den Code, füge den Link ein oder sende mit *Meinen Link
+  teilen* deinen.
 - **Mein Profil** enthält, was dir gehört:
   - deinen **Namen** und dein **Bild**, die an die Personen gehen, mit denen du gekoppelt bist;
   - deine **Parlons!-Adresse**, die von selbst an deine Kontakte geht;
@@ -419,9 +460,10 @@ Beide stehen im Menü am Ende von *Synchronisieren und Teilen*.
 - **Eine Datei einer Notiz im Papierkorb.** Eine aus einer Notiz genommene Datei kommt sofort, ohne Rückfrage, in den
   Papierkorb und verschwindet auf all deinen Geräten und für alle, die die Notiz bekommen, aus der Notiz. *Zurücklegen*
   bringt sie überall zurück. Endgültig weg ist sie erst mit dem Leeren des Papierkorbs.
-- **Sicherungen.** *Sicherung exportieren* schreibt eine Datei mit allen Ordnern, Notizen und Dateien. Ohne die Sperre
-  (siehe [Privatsphäre, Verschlüsselung und Sicherheit](#14-privatsphäre-verschlüsselung-und-sicherheit)) fragt es nach einem Passwort für sie. *Aus Sicherung
-  hinzufügen* holt eine zurück und fragt, ob sie Vorhandenes ergänzt oder ersetzt.
+- **Sicherungen.** *Sicherungen…* (*Einstellungen*, *Mein Profil*) macht von selbst versiegelte Sicherungen, täglich,
+  wöchentlich, monatlich oder beim Schließen von Mininotes, in einen Ordner oder auf ein anderes deiner Geräte, etwa
+  deinen eigenen [Sicherungsserver](https://github.com/mininotesorg/server). Die Sperre, ein Passwort oder 12
+  Wörter öffnen sie. *Aus einer Sicherung hinzufügen* holt eine zurück.
 
 ## 12. Der Agent: fragen und erledigen lassen
 
@@ -438,11 +480,8 @@ an die richtige Stelle zu bringen. Ein Tipp außerhalb seines Fensters schließt
 Mit einem [Integritas](https://docs.integritas.technology/)-Konto lässt sich eine Datei oder Notiz über ihr Menü auf der
 Minima-Blockchain stempeln. Nur ihr Fingerabdruck (SHA-256) verlässt das Gerät, nie die Datei.
 
-- **Auf Minima stempeln…** hält jetzt fest, dass die Datei genau so existiert, wie sie ist: ein Beweis, dass es sie ab
-  diesem Moment gab und sie sich seitdem nicht geändert hat. Es verbraucht einen Stempel deines Integritas-Kontos.
-- **Auf Minima prüfen…** prüft eine Datei später gegen das Festgehaltene: ob sie gestempelt wurde, unverändert ist, und
-  in welchem Block und an welchem Datum. Es ändert nichts und kostet nichts.
-- **Der Unterschied:** Stempeln schreibt den Beweis einmal; Prüfen liest ihn zurück, so oft du willst.
+- **Auf Minima stempeln…** hält mit einem Stempel deines Kontos fest, dass es genau so existiert, wie es ist, und prüft
+  es später wieder: ob es unverändert ist, in welchem Block und wann. Prüfen kostet nichts.
 - **Der Stempel einer Notiz** umfasst ihren Titel, eine Leerzeile, dann ihren Text; Umbenennen markiert sie als
   geändert. Stempel vor 0.4.018 umfassen nur den Text: *Notiz, nur Text*.
 - **Mein Profil, Stempeln:** Füge deinen API-Schlüssel ein und drück *Speichern*; er liegt in deinem Notizbuch, mit ihm
@@ -570,7 +609,6 @@ einer ohne tut es sofort.
 | Übersetzen | Übersetze diese Seite in eine andere Sprache, auf diesem Gerät. |
 | Versionen | Jede frühere Version dieser Notiz, zum Ansehen oder Zurücklegen. |
 | Auf Minima stempeln | Halte jetzt auf der Minima-Blockchain fest, dass es so existiert, wie es ist. Nur sein Fingerabdruck verlässt dieses Gerät. |
-| Auf Minima prüfen | Prüfe, ob es unverändert auf Minima ist und wann es festgehalten wurde. |
 | Temporär | Behalte es nur eine Weile: Es geht, wenn seine Zeit um ist. |
 | Archiv | Leg es weg, außer Sicht, aufbewahrt. |
 | In den Papierkorb | Leg es in den Papierkorb. Es kann zurückgelegt werden, bis der Papierkorb geleert wird. |
@@ -592,9 +630,12 @@ einer ohne tut es sofort.
 | Temp | Was nur eine Weile bleibt und an deine anderen Geräte geht. |
 | Mit mir geteilt | Was andere mit dir geteilt haben und auf deine Antwort wartet. |
 | Papierkorb | Was in den Papierkorb gelegt wurde, zum Zurücklegen oder endgültig Löschen. |
-| Wiederherstellungsschrift | Geschriebenes, das nicht in seiner Notiz gespeichert werden konnte, beiseitegelegt. |
 | Sicherung exportieren | Schreibe eine Datei mit allen Ordnern, Notizen und Dateien. |
 | Aus Sicherung hinzufügen | Hol zurück, was eine Sicherungsdatei enthält. |
+| Sicherungen | Wohin Sicherungen gehen, wann, wie viele bleiben und was sie öffnet; Jetzt sichern. |
+| Ihr eigener Server | Die Zeile, die einen Sicherungsserver unter Linux installiert, und seine Anleitung. |
+| Verlauf | Wie jedes Ding jedes Gerät zuletzt erreicht hat: direkt oder über welches Relay. |
+| In dieser Notiz suchen | Finde Wörter in dieser Notiz, Tab für Tab. |
 | Mininotes teilen | Erzähl jemandem von Mininotes. |
 | Aktualisieren auf v | Installiere die neuere Version. |
 | Feedback | Sag öffentlich etwas über Mininotes, unter deinem Namen. |

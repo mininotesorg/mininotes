@@ -303,7 +303,7 @@ final class Folder {
             a.store.touch(NoteStore.Branch.Kind.TEMP,NoteStore.TEMP);
             // And what it shows, seen: no "new" left on it to tap away one by one (decision 286).
             a.store.seenInTemp();
-            List<NoteStore.Branch> temp=a.store.asDrawn(a.store.temporaryShown(System.currentTimeMillis()));a.store.dress(temp);got.put("card",temp);return;
+            List<NoteStore.Branch> temp=a.store.asDrawn(a.store.temporaryShown(System.currentTimeMillis()));a.store.dress(temp);got.put("card",a.store.inOrder(NoteStore.TEMP,temp));return;
         }
         if(end.kind==NoteStore.Branch.Kind.RECENT) {
             List<NoteStore.Branch> lately=a.store.asDrawn(a.store.recent(System.currentTimeMillis()-a.recentDays()*86_400_000L));a.store.dress(lately);got.put("card",lately);return;
@@ -327,7 +327,7 @@ final class Folder {
             if(step.kind==NoteStore.Branch.Kind.COLLECTION&&!a.store.stillThere(step.kind,step.id)){got.put("keep",at);return;}
         }
         String in=a.store.collectionOfBook(end.id);
-        List<NoteStore.Branch> holds=a.store.contents(end.id);
+        List<NoteStore.Branch> holds=a.store.inOrder(end.id,a.store.contents(end.id));
         got.put("card",holds);
         // Shown as an album here: its pictures, newest first, of those it shows (decision 217).
         if(a.store.album(end.id))got.put("album",Album.shown(Album.pictures(a.store.filesOf(NoteStore.Branch.Kind.COLLECTION,end.id)),holds));

@@ -19,56 +19,65 @@ public class DesktopAdaptiveTest {
         await(()->pad.page.isEditable()&&pad.store.latest()!=null);settle();
     }
     @After public void close() throws Exception {if(pad!=null&&pad.frame.isDisplayable()){SwingUtilities.invokeAndWait(()->pad.shutdown(false));await(()->!pad.frame.isDisplayable());}}
-    @Test public void navigationWaitsForFullDraftAndNewerTypingIsKeptBeforeLeaving() throws Exception {
+    /** Every note whose title starts so, wherever it is: what a writing too long, or a note gone, was made into (decision 328). */
+    private java.util.List<NoteStore.Note> titled(String start){java.util.List<NoteStore.Note> out=new java.util.ArrayList<>();
+        try(var c=pad.store.getReadableDatabase().rawQuery("SELECT id FROM notes WHERE deleted=0 AND substr(title,1,?)=?",new String[]{String.valueOf(start.length()),start})){while(c.moveToNext())out.add(pad.store.get(c.getString(0)));}return out;}
+    @Test public void navigationWaitsForTheWholeWritingAndATooLongOneGoesOnInANoteBeside() throws Exception {
         String id=pad.store.latest().id;CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);
         pad.disk.submit(()->{entered.countDown();assertTrue(release.await(15,TimeUnit.SECONDS));return null;},done->{},error->{throw new AssertionError(error);});assertTrue(entered.await(10,TimeUnit.SECONDS));
-        String first="x".repeat(24001),latest=first+"\nnewer local writing";
-        try{SwingUtilities.invokeAndWait(()->{pad.title.setText("Recovery test");pad.page.setText(first);pad.goHome();assertTrue(pad.onPage());pad.page.setText(latest);});}
+        String first="x".repeat(20000)+"\n"+"y".repeat(4001),latest=first+"\nnewer local writing";
+        try{SwingUtilities.invokeAndWait(()->{pad.title.setText("Split test");pad.page.setText(first);pad.goHome();assertTrue(pad.onPage());pad.page.setText(latest);});}
         finally{release.countDown();}
-        await(()->!pad.onPage());settle();assertEquals(latest,DesktopRecovery.get(pad.store,id).body());assertEquals("",pad.store.get(id).body);
-        var d=DesktopRecovery.get(pad.store,id);SwingUtilities.invokeAndWait(()->pad.reopenWriting(d));await(()->pad.onPage()&&pad.page.getText().equals(latest));settle();
-        SwingUtilities.invokeAndWait(()->{pad.page.setText("Shortened intentionally");pad.save(null);});await(()->pad.store.get(id).body.equals("Shortened intentionally"));settle();assertTrue(DesktopRecovery.all(pad.store).isEmpty());
-        SwingUtilities.invokeAndWait(()->{pad.page.setText(first);pad.save(null);});await(()->DesktopRecovery.get(pad.store,id)!=null);settle();
-        SwingUtilities.invokeAndWait(()->{pad.page.setText("Shortened intentionally");pad.save(null);});await(()->DesktopRecovery.all(pad.store).isEmpty());settle();
+        await(()->!pad.onPage());settle();
+        String kept=pad.store.get(id).body;var rest=titled("Split test (continued");assertEquals(1,rest.size());
+        assertTrue("what fits stays in the note",kept.startsWith("x".repeat(20000)+"\n"));
+        assertEquals("the rest beside it","y".repeat(4001),rest.get(0).body);
+        assertTrue("and the newer writing is kept too",kept.contains("newer local writing"));
+        assertTrue("nothing kept aside",DesktopRecovery.all(pad.store).isEmpty());
     }
-    @Test public void failureBlocksHomeAndExitThenSuccessfulDraftSurvivesRestart() throws Exception {
-        String id=pad.store.latest().id;DesktopRecovery.all(pad.store);
-        pad.store.getWritableDatabase().execSQL("CREATE TRIGGER refuse_draft BEFORE INSERT ON desktop_recovery BEGIN SELECT RAISE(ABORT,'test disk full'); END");
-        boolean[] left={false};SwingUtilities.invokeAndWait(()->{pad.title.setText("t".repeat(161));pad.page.setText("Complete local body");pad.save(()->left[0]=true);});
-        await(()->pad.noteWords.getText().startsWith("Not saved"));assertFalse(left[0]);assertTrue(pad.onPage());assertTrue(DesktopRecovery.all(pad.store).isEmpty());
-        SwingUtilities.invokeAndWait(pad::goHome);settle();assertTrue(pad.onPage());
-        pad.store.getWritableDatabase().execSQL("DROP TRIGGER refuse_draft");
-        SwingUtilities.invokeAndWait(()->pad.save(()->left[0]=true));await(()->left[0]);settle();assertEquals(161,DesktopRecovery.get(pad.store,id).title().length());assertEquals("",pad.store.get(id).body);
+    @Test public void aTitleTooLongIsSavedWholeAtTheTopOfTheWordsAndSurvivesRestart() throws Exception {
+        String id=pad.store.latest().id;String name="t".repeat(161);
+        boolean[] left={false};SwingUtilities.invokeAndWait(()->{pad.title.setText(name);pad.page.setText("Complete local body");pad.save(()->left[0]=true);});
+        await(()->left[0]);settle();
+        assertEquals(160,pad.store.get(id).title.length());assertEquals(name+"\nComplete local body",pad.store.get(id).body);
         SwingUtilities.invokeAndWait(()->pad.shutdown(false));await(()->!pad.frame.isDisplayable());
         SwingUtilities.invokeAndWait(()->{try{pad=new Desktop(folder,true);pad.show();}catch(Exception e){throw new RuntimeException(e);}});await(()->pad.store.latest()!=null);settle();
-        var d=DesktopRecovery.get(pad.store,id);assertNotNull(d);assertEquals("Complete local body",d.body());
-        SwingUtilities.invokeAndWait(()->pad.reopenWriting(d));await(()->pad.page.getText().equals(d.body()));settle();assertEquals(d.title(),pad.title.getText());
+        assertEquals(name+"\nComplete local body",pad.store.get(id).body);
     }
-    @Test public void oversizedStoredNoteDisplaysInFullAndEditsEnterRecovery() throws Exception {
-        NoteStore.Note large=new NoteStore.Note();large.book=Things.HOME;large.title="Oversized stored synthetic note";large.body="😀 tea ".repeat(5000);pad.store.save(large);
+    @Test public void aDraftAnOlderPcKeptIsANoteOnHomeAtTheNextStart() throws Exception {
+        String id=pad.store.latest().id;String body="kept aside by 0.4.055 "+"z".repeat(30000);
+        DesktopRecovery.keep(pad.store,pad.store.get(id),"Old draft",body,null,"long");
+        SwingUtilities.invokeAndWait(()->pad.shutdown(false));await(()->!pad.frame.isDisplayable());
+        SwingUtilities.invokeAndWait(()->{try{pad=new Desktop(folder,true);pad.show();}catch(Exception e){throw new RuntimeException(e);}});await(()->pad.store.latest()!=null);settle();
+        assertTrue(DesktopRecovery.all(pad.store).isEmpty());
+        var copy=titled("Old draft (copy)");assertEquals(1,copy.size());var more=titled("Old draft (continued");assertEquals(1,more.size());
+        assertEquals("every letter of it, in two notes",body,copy.get(0).body+more.get(0).body);
+    }
+    @Test public void oversizedStoredNoteDisplaysInFullAndAnEditGoesOnInANoteBeside() throws Exception {
+        NoteStore.Note large=new NoteStore.Note();large.book=Things.HOME;large.title="Oversized stored synthetic note";large.body="😀 tea\n".repeat(5000);pad.store.save(large);
         SwingUtilities.invokeAndWait(()->pad.open(large.id));await(()->pad.page.getText().equals(large.body));settle();assertEquals(large.body.length(),pad.page.getDocument().getLength());
-        SwingUtilities.invokeAndWait(pad::goHome);await(()->!pad.onPage());settle();assertTrue(DesktopRecovery.all(pad.store).isEmpty());
+        SwingUtilities.invokeAndWait(pad::goHome);await(()->!pad.onPage());settle();assertEquals("opened and left, it is as it was",large.body,pad.store.get(large.id).body);
         SwingUtilities.invokeAndWait(()->pad.open(large.id));await(()->pad.page.getText().equals(large.body));settle();
         SwingUtilities.invokeAndWait(()->{pad.page.append("Last new words");pad.goHome();});await(()->!pad.onPage());settle();
-        assertEquals(large.body+"Last new words",DesktopRecovery.get(pad.store,large.id).body());assertEquals(large.body,pad.store.get(large.id).body);
+        var rest=titled("Oversized stored synthetic note (continued");assertEquals(1,rest.size());
+        assertEquals(large.body+"Last new words",pad.store.get(large.id).body+rest.get(0).body);
+        assertNull(NoteLimit.over(0,pad.store.get(large.id).body));
     }
     @Test public void autosaveShortcutOpenCreateAndExitKeepEachCompleteEdit() throws Exception {
         String id=pad.store.latest().id;
         NoteStore.Note other=new NoteStore.Note();other.book=Things.HOME;other.title="Other synthetic note";other.body="Saved other writing";pad.store.save(other);
-        SwingUtilities.invokeAndWait(()->pad.title.setText("a".repeat(161)));
-        await(()->DesktopRecovery.get(pad.store,id)!=null);settle();
-        assertEquals(161,DesktopRecovery.get(pad.store,id).title().length());
         SwingUtilities.invokeAndWait(()->{pad.page.setText("Shortcut keeps this complete body");pad.frame.getRootPane().getActionMap().get("control S").actionPerformed(new ActionEvent(pad.frame,0,"control S"));});
-        await(()->DesktopRecovery.get(pad.store,id).body().equals("Shortcut keeps this complete body"));settle();
+        await(()->"Shortcut keeps this complete body".equals(pad.store.get(id).body));settle();
         SwingUtilities.invokeAndWait(()->{pad.page.setText("Opening another note keeps this too");pad.open(other.id);});
-        await(()->pad.page.getText().equals("Saved other writing"));settle();assertEquals("Opening another note keeps this too",DesktopRecovery.get(pad.store,id).body());
+        await(()->pad.page.getText().equals("Saved other writing"));settle();assertEquals("Opening another note keeps this too",pad.store.get(id).body);
         SwingUtilities.invokeAndWait(()->{pad.page.setText("b".repeat(24001));pad.newNoteIn(Things.HOME);});
-        await(()->pad.onPage()&&pad.page.getText().isEmpty());settle();assertEquals(24001,DesktopRecovery.get(pad.store,other.id).body().length());
+        await(()->pad.onPage()&&pad.page.getText().isEmpty());settle();
+        assertEquals(24001,pad.store.get(other.id).body.length()+titled("Other synthetic note (continued").get(0).body.length());
         String created=pad.store.latest().id;
-        SwingUtilities.invokeAndWait(()->{pad.page.setText("exit "+"c".repeat(24001));pad.save(()->pad.shutdown(false));});
+        SwingUtilities.invokeAndWait(()->{pad.page.setText("exit "+"c".repeat(100));pad.save(()->pad.shutdown(false));});
         await(()->!pad.frame.isDisplayable());
         var context=new org.mininotes.desktop.platform.content.Context(folder.toFile());
-        try(NoteStore reopened=new NoteStore(context)){assertEquals("exit "+"c".repeat(24001),DesktopRecovery.get(reopened,created).body());}
+        try(NoteStore reopened=new NoteStore(context)){assertEquals("exit "+"c".repeat(100),reopened.get(created).body);}
     }
     @Test public void homeFractionAndHiddenFootSurviveResizeAndFractionalWheel() throws Exception {
         var left=pad.store.addCollection("Left page");var right=pad.store.addCollection("Right page");
@@ -137,17 +146,6 @@ public class DesktopAdaptiveTest {
         });settle();
         assertEquals(Layout.cell(0,0),pad.store.contents(Things.HOME).stream().filter(t->t.id.equals(thing.id)).findFirst().get().cell);
         SwingUtilities.invokeAndWait(()->{DesktopHome.Tile reloaded=pad.home.grid.tiles.stream().filter(t->t.thing.id.equals(thing.id)).findFirst().get();assertEquals(original,reloaded.getBounds());});
-    }
-    @Test public void recoveryActionIsAvailableAfterLeavingAndRendersItsCompleteOptions() throws Exception {
-        SwingUtilities.invokeAndWait(()->{pad.title.setText("Synthetic recovery writing");pad.page.setText("tea 😀 ".repeat(5000));pad.goHome();});await(()->!pad.onPage());settle();
-        assertEquals(1,DesktopRecovery.all(pad.store).size());CountDownLatch captured=new CountDownLatch(1);
-        SwingUtilities.invokeLater(()->{
-            javax.swing.Timer capture=new javax.swing.Timer(100,e->{for(Window w:pad.frame.getOwnedWindows())if(w instanceof JDialog dialog&&dialog.isShowing()&&dialog.getTitle().equals("Recovery writing")){
-                ((javax.swing.Timer)e.getSource()).stop();try{
-                    var scale=dialog.getGraphicsConfiguration().getDefaultTransform();var image=new java.awt.image.BufferedImage((int)Math.ceil(dialog.getWidth()*scale.getScaleX()),(int)Math.ceil(dialog.getHeight()*scale.getScaleY()),java.awt.image.BufferedImage.TYPE_INT_RGB);var g=image.createGraphics();g.transform(scale);dialog.paint(g);g.dispose();Path path=Path.of("build","verification","adaptive","recovery-actions.png");Files.createDirectories(path.getParent());javax.imageio.ImageIO.write(image,"png",path.toFile());
-                }catch(Exception error){throw new RuntimeException(error);}finally{dialog.dispose();captured.countDown();}
-            }});capture.setRepeats(true);capture.start();pad.recoveryWriting();
-        });assertTrue(captured.await(15,TimeUnit.SECONDS));assertEquals(1,DesktopRecovery.all(pad.store).size());
     }
     @Test public void renderedSizesAndRewrappedReadingKeepTheirCharacterAnchor() throws Exception {
         String body=java.util.stream.IntStream.rangeClosed(1,150).mapToObj(i->"Synthetic line "+i+": Tea, café and room to write. This wraps when the window is narrower.").collect(java.util.stream.Collectors.joining("\n"));

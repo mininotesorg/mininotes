@@ -63,7 +63,7 @@ public class CalledTest {
     @Test public void theWordsSayWhereItWasSaved() {
         assertEquals("Saved on this phone",Called.said("this phone",List.of(),List.of(),List.of()));
         assertEquals("Saved, and sent to Test phone",Called.said("this PC",List.of("Test phone"),List.of(),List.of()));
-        assertEquals("Saved on this PC. Pro could not be reached now: save again later",
+        assertEquals("Saved on this PC. It goes to Pro by itself once Mininotes is open there",
             Called.said("this PC",List.of(),List.of("Pro"),List.of()));
         assertEquals("Saved, and sent to Test phone. Old tablet needs an update of Mininotes first",
             Called.said("this PC",List.of("Test phone"),List.of(),List.of("Old tablet")));

@@ -53,6 +53,18 @@ public class TempNotepadTest {
         assertTrue(phone.notepadOn(PERSON));
     }
 
+    /** Not counted on Temp's icon: always there, it would be a 1 over a Temp with nothing else in it (decision 326). */
+    @Test public void theNotepadIsNotCountedOnTempsIcon() throws Exception {
+        NoteStore store=notebook("count");
+        store.notepadOnce(PERSON);
+        assertEquals("the notepad alone: no count",0,store.temporaryCount());
+        NoteStore.Note n=store.get(NoteStore.notepadId(PERSON));n.body="Synthetic words";n.updated=System.currentTimeMillis();store.save(n);
+        assertEquals("written in, still not counted",0,store.temporaryCount());
+        NoteStore.Note other=new NoteStore.Note();other.book=Things.HOME;other.title="Synthetic for a while";other.body="Synthetic";other.updated=System.currentTimeMillis();store.save(other);
+        store.makeTemporary(NoteStore.Branch.Kind.PAGE,other.id,System.currentTimeMillis()+store.tempSpan());
+        assertEquals("what comes and goes is counted",1,store.temporaryCount());
+    }
+
     @Test public void itsWordsGoInTempsTimeWithAVersionKeptAndTheNoteStays() throws Exception {
         NoteStore store=notebook("pad");
         store.notepadOnce(PERSON);

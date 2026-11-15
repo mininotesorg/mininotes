@@ -28,12 +28,19 @@ public class NoteLineTest {
 
     @Test public void whatCouldNotGoPointsAtWhy() {
         Unsent.Problem ana=new Unsent.Problem(Unsent.Why.NOT_REACHED,"Ana","Shopping","","");
-        assertEquals("Could not reach Ana. See why",NoteLine.couldNot(List.of(ana),0));
-        assertEquals(NoteLine.Tone.FAILED,NoteLine.couldNotTone(List.of(ana)));
-        assertEquals("Some of it went. See why",NoteLine.couldNot(List.of(ana),1));
+        // Not reached goes by itself once they are there: said as waiting, amber (the owner, 2026-11-07, solution first).
+        assertEquals("◷ Waits for Ana. See how",NoteLine.couldNot(List.of(ana),0));
+        assertEquals(NoteLine.Tone.GOING,NoteLine.couldNotTone(List.of(ana)));
+        assertEquals("Some of it went, the rest waits. See how",NoteLine.couldNot(List.of(ana),1));
         assertEquals("Could not go. See why",NoteLine.couldNot(List.of(),0));
         Unsent.Problem bo=new Unsent.Problem(Unsent.Why.NOT_REACHED,"Bo","Shopping","","");
-        assertEquals("Could not go. See why",NoteLine.couldNot(List.of(ana,bo),0));
+        assertEquals("◷ Waits to go. See how",NoteLine.couldNot(List.of(ana,bo),0));
+        // What does not go by itself is still said as not gone, red.
+        Unsent.Problem old=new Unsent.Problem(Unsent.Why.TOO_OLD,"Ana","Shopping","","");
+        assertEquals("Could not reach Ana. See why",NoteLine.couldNot(List.of(old),0));
+        assertEquals(NoteLine.Tone.FAILED,NoteLine.couldNotTone(List.of(old)));
+        assertEquals("Some of it went. See why",NoteLine.couldNot(List.of(ana,old),1));
+        assertEquals("Could not go. See why",NoteLine.couldNot(List.of(ana,new Unsent.Problem(Unsent.Why.OTHER,"","","","Disk full")),0));
         // Being linked with is on its way, not wrong: amber, and said as the round says it.
         Unsent.Problem linking=new Unsent.Problem(Unsent.Why.LINKING,"Graphene","Shopping","","");
         assertEquals("Linking with Graphene… it goes once they answer.",NoteLine.couldNot(List.of(linking),0));

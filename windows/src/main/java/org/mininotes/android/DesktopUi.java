@@ -231,7 +231,9 @@ final class DesktopUi {
         private Dimension size(Container target,boolean preferred) {
             synchronized(target.getTreeLock()) {
                 // The width it has, or the nearest the box gives it; none yet, one line, as FlowLayout measures.
-                int width=0;for(Container up=target;up!=null&&width==0;up=up.getParent())width=up.getWidth();
+                // Never a window's own: before it is laid out it is a narrow guess (133 for a new box), and the rows measured
+                // against it stayed in the column above, a card left three buttons tall (the Backup page, decision 329).
+                int width=0;for(Container up=target;up!=null&&!(up instanceof Window)&&width==0;up=up.getParent())width=up.getWidth();
                 Insets in=target.getInsets();int hgap=getHgap(),vgap=getVgap();
                 int most=width<=0?Integer.MAX_VALUE:width-in.left-in.right-2*hgap;
                 int wide=0,tall=0,rowWide=0,rowTall=0,rows=0;
@@ -241,8 +243,7 @@ final class DesktopUi {
                     if(rowWide>0&&rowWide+hgap+d.width>most){wide=Math.max(wide,rowWide);tall+=rowTall;rows++;rowWide=0;rowTall=0;}
                     rowWide+=(rowWide>0?hgap:0)+d.width;rowTall=Math.max(rowTall,d.height);
                 }
-                if(rowWide>0){wide=Math.max(wide,rowWide);tall+=rowTall;rows++;}
-                return new Dimension(wide+in.left+in.right+2*hgap,tall+(rows+1)*vgap+in.top+in.bottom);
+                if(rowWide>0){wide=Math.max(wide,rowWide);tall+=rowTall;rows++;}                return new Dimension(wide+in.left+in.right+2*hgap,tall+(rows+1)*vgap+in.top+in.bottom);
             }
         }
     }

@@ -51,7 +51,7 @@ public class SymbolsEverywhereTest {
     }
 
     @Test public void everySymbolIsOneThisBuildCanDraw() {
-        for(String words:List.of("Rename…","Delete","Tree","Export backup…","Add from backup…","Feedback…","Sent files…","Recovery writing…","Move to bin","Colour"))
+        for(String words:List.of("Rename…","Delete","Tree","Export backup…","Add from backup…","Feedback…","Sent files…","Move to bin","Colour"))
             assertTrue(words,Icons.known(Symbols.of(words)));
     }
 }

@@ -43,11 +43,12 @@ public class DesktopPageFollowsTest {
     }
 
     /** Revision 75 from the phone, written into the notebook the way Post.arrived writes it - the page not told yet. */
-    private void landQuietly(String body) throws Exception {
+    private void landQuietly(String body) throws Exception{landQuietly(body,Arriving.What.NEWER);}
+    private void landQuietly(String body,Arriving.What expected) throws Exception {
         Arriving.What[] what={null};
         pad.disk.submit(()->pad.store.landed("n",PHONE,75,"Transfer",body,book,74L).what,said->what[0]=said,e->{throw new AssertionError(e);});
         await(()->what[0]!=null);
-        assertEquals(Arriving.What.NEWER,what[0]);
+        assertEquals(expected,what[0]);
     }
     private void told() throws Exception {SwingUtilities.invokeAndWait(()->pad.arrived(new Post.Landed("Test phone updated a note.",null,"n")));}
 
@@ -98,19 +99,16 @@ public class DesktopPageFollowsTest {
         start();
         String tooLong="\n"+"x".repeat(24_001);
         SwingUtilities.invokeAndWait(()->{try{pad.page.getDocument().insertString(pad.page.getDocument().getLength(),tooLong,null);}catch(Exception e){throw new RuntimeException(e);}});
-        await(()->DesktopRecovery.get(pad.store,"n")!=null);
-        assertEquals(OLD+tooLong,DesktopRecovery.get(pad.store,"n").body());
-        landQuietly(NEW);told();
+        // Too long for one note (decision 328): what fits is written in, the rest goes on in notes beside it.
+        await(()->(OLD+"\n").equals(pad.store.get("n").body));settle();
+        java.util.List<Integer> beside=new java.util.ArrayList<>();
+        try(var c=pad.store.getReadableDatabase().rawQuery("SELECT body FROM notes WHERE deleted=0 AND instr(title,'(continued')>0",null)){while(c.moveToNext()){String b=c.getString(0);assertTrue(b.matches("x+"));beside.add(b.length());}}
+        java.util.Collections.sort(beside);assertEquals("every letter typed, in two notes",java.util.List.of(1,24_000),beside);
+        // What fits was written in, so the phone's revision meets the PC's own and the two are put together.
+        landQuietly(NEW,Arriving.What.MERGED);told();
         await(()->onEdt(()->pad.page.getText().startsWith("good?\nwhat about now?")));settle();
         assertFalse("the old line is not back on the page",onEdt(pad.page::getText).contains("still not?"));
-        assertTrue("and the typing is still there",onEdt(pad.page::getText).endsWith(tooLong));
-        assertEquals("nothing of it written",NEW,pad.store.get("n").body);
-        await(()->DesktopRecovery.get(pad.store,"n").body().equals(NEW+tooLong));settle();
-        var draft=DesktopRecovery.get(pad.store,"n");assertEquals(NEW,draft.base().body);assertEquals(75,draft.base().revision);
-        assertEquals("invalid local writing never becomes a shared revision",75,pad.store.get("n").revision);
-        assertEquals(DesktopRecovery.KEPT,onEdt(()->pad.noteWords.getText()));
-        SwingUtilities.invokeAndWait(pad::goHome);await(()->!pad.onPage());settle();
-        assertEquals("navigation preserves both arrival and complete local writing",NEW+tooLong,DesktopRecovery.get(pad.store,"n").body());
+        assertTrue("nothing is kept aside",DesktopRecovery.all(pad.store).isEmpty());
     }
 
     /** A save asked for on a page showing old text nobody typed - the tab closing, Ctrl+S - writes nothing. */

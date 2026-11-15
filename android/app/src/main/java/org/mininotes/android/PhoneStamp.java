@@ -340,13 +340,21 @@ final class PhoneStamp {
                     android.widget.Button cancel=dialog.getButton(AlertDialog.BUTTON_NEGATIVE);if(cancel!=null)cancel.setVisibility(View.GONE);}
             }
         }
-        void stamp() {
+        /** Tries made by itself after Integritas did not answer; pressing Stamp or Try again starts over. */
+        private int retried;
+        void stamp(){retried=0;stamping();}
+        private void stamping() {
             sending=true;problem=null;draw();
             // No account linked yet: My profile at Stamping; this box stays (decision 253).
             a.background.submit(()->a.store.secret(KEY),key->{if(key.isEmpty()){sending=false;draw();account(a,null);return;}a.network.submit(()->{long made=send(a,key,subject);return a.store.stampRow(made);},r->{
                 sending=false;row=r;n=r.n();draw();a.stampLineAgain();a.filesAgain();
                 notice(a,r.confirmed()?Say.t("{0} is on Minima: block {1}",named(r),String.valueOf(r.block())):Say.t("Sent to Integritas, waiting for Minima"));
-            },e->{sending=false;problem=Say.t(e.getMessage()==null?"Integritas could not be reached. Try again in a moment.":e.getMessage());draw();});},e->a.alert(MainActivity.READ_FAILED));
+            },e->{sending=false;
+                if(Integritas.retries(e,retried)&&dialog!=null&&dialog.isShowing()) {
+                    problem=Say.t(Integritas.NO_ANSWER);retried++;
+                    body.postDelayed(()->{if(dialog!=null&&dialog.isShowing()&&row==null&&!sending)stamping();},Integritas.RETRY_EVERY);
+                } else problem=Say.t(e.getMessage()==null?"Integritas could not be reached. Try again in a moment.":e.getMessage());
+                draw();});},e->a.alert(MainActivity.READ_FAILED));
         }
         private void step(String mark,String words,int colour) {
             TextView t=a.label("",MainActivity.READING,colour);t.setText(mark+"  "+Say.t(words));t.setTypeface(t.getTypeface(),android.graphics.Typeface.BOLD);

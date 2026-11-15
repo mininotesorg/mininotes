@@ -94,9 +94,12 @@ final class DesktopFolder extends JComponent {
         // A right-click on the card itself, not on an icon: what can be made in it, then the collection's own menu.
         MouseAdapter room=new MouseAdapter(){
             // A press on the empty room lets go of the icons chosen there (decision 292), as Explorer's does.
-            public void mousePressed(MouseEvent e){home.clearChoice();if(e.isPopupTrigger()&&thing!=null)pad.roomMenu(thing,e.getComponent(),e.getX(),e.getY());}
-            public void mouseReleased(MouseEvent e){if(e.isPopupTrigger()&&thing!=null)pad.roomMenu(thing,e.getComponent(),e.getX(),e.getY());}
+            public void mousePressed(MouseEvent e){if(!e.isControlDown())home.clearChoice();if(SwingUtilities.isLeftMouseButton(e)&&e.getComponent()==grid)grid.bandStart(e);if(e.isPopupTrigger()&&thing!=null)pad.roomMenu(thing,e.getComponent(),e.getX(),e.getY());}
+            public void mouseReleased(MouseEvent e){if(e.getComponent()==grid)grid.bandEnd();if(e.isPopupTrigger()&&thing!=null)pad.roomMenu(thing,e.getComponent(),e.getX(),e.getY());}
+            // A box dragged over the empty room chooses what it covers (the owner, 2026-11-07).
+            public void mouseDragged(MouseEvent e){if(e.getComponent()==grid)grid.bandDrag(e);}
         };
+        grid.addMouseMotionListener(room);
         for(JComponent part:new JComponent[]{card,grid,head,album,albumView})part.addMouseListener(room);scroll.getViewport().addMouseListener(room);
         card.getInputMap(WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).put(KeyStroke.getKeyStroke("F2"),"rename");
         card.getActionMap().put("rename",new AbstractAction(){public void actionPerformed(ActionEvent e){startNaming();}});
@@ -172,7 +175,12 @@ final class DesktopFolder extends JComponent {
     /** The Favourites icon, clicked: the favourites the dock has no room for. */
     void openFavourites(){positions.clear();trail.clear();trail.add(DesktopHome.favouritesPlace());nameNext=null;draw();}
     /** The archive or the bin, clicked on Home: what waits in it. */
-    void openPlace(NoteStore.Branch place){positions.clear();trail.clear();trail.add(place);nameNext=null;draw();}
+    void openPlace(NoteStore.Branch place) {
+        positions.clear();trail.clear();trail.add(place);nameNext=null;
+        // Temp takes what is let go on it from the moment it opens, not only once its things are read (decision 325).
+        if(place.kind==NoteStore.Branch.Kind.TEMP){putClientProperty(DesktopHome.KEEPS,place);card.putClientProperty(DesktopHome.KEEPS,place);grid.putClientProperty(DesktopHome.KEEPS,place);}
+        draw();
+    }
     /** A collection inside the card, clicked: the same card, one level in. */
     void into(NoteStore.Branch collection){into(collection,false);}
     void into(NoteStore.Branch collection,boolean name){if(!isOpen()){open(collection,name);return;}holdPosition();trail.add(step(collection));nameNext=name?collection.id:null;draw();}
@@ -251,7 +259,7 @@ final class DesktopFolder extends JComponent {
         if(end.kind==NoteStore.Branch.Kind.TOOLS){got.put("card",home.inTools(pad.store.awayCount(false),pad.store.awayCount(true),pad.store.temporaryCount()));return;}
         // Temp opened, so used: in Recent (decision 229).
         // And what it shows, seen: no "new" left on it to click away one by one (decision 286).
-        if(end.kind==NoteStore.Branch.Kind.TEMP){pad.store.touch(NoteStore.Branch.Kind.TEMP,NoteStore.TEMP);pad.store.seenInTemp();List<NoteStore.Branch> temp=pad.store.asDrawn(pad.store.temporaryShown(System.currentTimeMillis()));pad.store.dress(temp);got.put("card",temp);return;}
+        if(end.kind==NoteStore.Branch.Kind.TEMP){pad.store.touch(NoteStore.Branch.Kind.TEMP,NoteStore.TEMP);pad.store.seenInTemp();List<NoteStore.Branch> temp=pad.store.asDrawn(pad.store.temporaryShown(System.currentTimeMillis()));pad.store.dress(temp);got.put("card",pad.store.inOrder(NoteStore.TEMP,temp));return;}
         if(end.kind==NoteStore.Branch.Kind.RECENT){List<NoteStore.Branch> lately=pad.store.asDrawn(pad.store.recent(System.currentTimeMillis()-pad.recentDays()*86_400_000L));pad.store.dress(lately);got.put("card",lately);return;}
         // Shared with me: the files shown there, kept on Home, and what is still coming to it (decision 94); and first, what
         // waits for an answer (decision 109).
@@ -266,7 +274,7 @@ final class DesktopFolder extends JComponent {
         // The trail is kept across a trip to a note, and what it names can have been put away since.
         for(int at=0;at<path.size();at++)if(path.get(at).kind==NoteStore.Branch.Kind.COLLECTION&&!pad.store.stillThere(path.get(at).kind,path.get(at).id)){got.put("keep",at);return;}
         String in=pad.store.collectionOfBook(end.id);
-        List<NoteStore.Branch> holds=pad.store.contents(end.id);
+        List<NoteStore.Branch> holds=pad.store.inOrder(end.id,pad.store.contents(end.id));
         got.put("card",holds);
         // Shown as an album here: its pictures, newest first, of those it shows (decision 217).
         if(pad.store.album(end.id))got.put("album",Album.shown(Album.pictures(pad.store.filesOf(NoteStore.Branch.Kind.COLLECTION,end.id)),holds));

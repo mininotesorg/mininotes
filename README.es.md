@@ -1,4 +1,4 @@
-<!-- Translated from README.md, SHA-256 bfd9bcfd1e0b8071f5b694aeec3d5a2e71a5283194b4168d12a53daee11cb960 -->
+<!-- Translated from README.md, SHA-256 974676a5b8610c2363af3db0224eda7faba1672b112ebb1cbb9ccb2ca928a31e -->
 
 # Mininotes
 
@@ -44,6 +44,47 @@ sellado de extremo a extremo por la red Minima, o directamente de dispositivo a 
 ## 1. Novedades
 
 Lo más reciente primero. Cada versión es igual en el teléfono y en el PC salvo que se indique otra cosa.
+
+### 0.4.057
+
+- **Copia de seguridad en otro de tus dispositivos**, como tu propio servidor Linux: *Copias de seguridad…*, *Añadir un
+  lugar…*, y luego elígelo en *Dónde*. La copia se sella aquí y se envía cuando ese dispositivo se puede alcanzar
+  directamente, también un teléfono con datos móviles; una que no llega sigue más tarde desde donde se quedó. El PC
+  también guarda lo que le envían tus otros dispositivos.
+- **Tu propio servidor de copias**: un pequeño Mininotes para un servidor Linux que guarda tus copias y no puede
+  abrirlas. *Tu propio servidor…*, en la página Copias de seguridad, muestra la línea que lo instala, y la
+  [guía](https://github.com/mininotesorg/server).
+
+### 0.4.056
+
+- **La página Copias de seguridad** (*Ajustes*, *Mi perfil* o el menú): copias que se hacen solas en las carpetas que
+  elijas, cada una con lo que incluye, cuándo (cada día, semana o mes, al cerrar Mininotes, o solo cuando lo pidas),
+  cuántas se guardan y qué las abre: el bloqueo del cuaderno, una contraseña para las copias, o 12 palabras creadas para
+  ellas. Siempre selladas.
+- Se acabaron los borradores de recuperación: lo escrito que no puede entrar en su nota se convierte en notas,
+  "(continuación)" o "(copia)".
+
+### 0.4.054 a 0.4.055
+
+- **Archivos grandes**, de 16 MB a 2 GB, van directos a otro dispositivo de la misma red, nunca por un relé, y se
+  guardan allí en Descargas.
+- *Buscar en esta nota*; una pestaña se abre donde la dejaste; el registro se puede compartir desde *Comentarios*.
+
+### 0.4.043 a 0.4.053
+
+- Solo viaja lo que cambió en una nota; *Historial…* dice cómo llegó cada cosa a cada dispositivo; tus propios relés en
+  todos tus dispositivos a la vez; tus versiones más nuevas siempre se conservan; una copia antigua nunca se vuelve a
+  mezclar.
+
+### 0.4.035 a 0.4.042
+
+- Teléfonos más tranquilos; dispositivos de acuerdo en lo que tiene cada uno; *Quitar* en una sola cosa, incluso dentro
+  de una carpeta compartida; varios archivos a la vez; sincronización más rápida.
+
+### 0.4.032 a 0.4.034
+
+- Un solo + para añadir a cualquiera o a uno de tus dispositivos; *Aceptar todo sin preguntar* en la página de una
+  persona; un bloc Temp que se queda; un perfil más claro.
 
 ### 0.4.031
 
@@ -280,8 +321,8 @@ En ninguno de los dos hace falta nada más: el nodo Maxima que lleva tus notas e
   dock.
 - **Recientes** muestra lo último que abriste: en el lateral en el PC, en Inicio en el teléfono. *Quitar de Recientes*
   (clic derecho en el PC) lo quita de la lista sin eliminar nada. En el teléfono, desliza hacia arriba desde el dock, o
-  toca el asa de encima, para pasar Recientes como tarjetas: toca una para abrirla, deslízala para descartarla o pulsa
-  Atrás para cerrar.
+  toca el asa de encima, para pasar Recientes como tarjetas: toca una para abrirla, lánzala hacia arriba para quitarla
+  de Recientes, o pulsa Atrás.
 - **Temp** es para lo que solo necesitas un tiempo, y para pasar cosas entre tus dispositivos y las personas que elijas:
   lo que hay dentro les llega y desaparece en todas partes al acabar su plazo.
 - **Compartido conmigo** guarda lo que otros compartieron contigo, esperando tu respuesta (ver [Compartir con otras
@@ -300,10 +341,10 @@ En ninguno de los dos hace falta nada más: el nodo Maxima que lleva tus notas e
 
 ## 5. Tus propios dispositivos
 
-Vincula tu teléfono y tu PC una vez (*Personas y dispositivos*, luego *Añadir mi dispositivo*, y escanea con uno el
-código del otro). Desde entonces, lo que compartes con tus dispositivos se mantiene al día en todos, en los dos
-sentidos, unos segundos después de que dejes de escribir. Un dispositivo tuyo puede ponerse en *Puede leer* si solo debe
-mirar. Cada uno tiene su disposición: mover una nota en uno no la mueve en el otro, y cada uno tiene su dock.
+Vincula tu teléfono y tu PC una vez (*Personas y dispositivos*, +, escanea con uno el código del otro, *Uno de mis
+dispositivos*). Desde entonces, lo que compartes con tus dispositivos se mantiene al día en todos, en los dos sentidos,
+unos segundos después de que dejes de escribir. Lo que recibe cada uno se elige en su línea. Cada uno tiene su
+disposición: mover una nota en uno no la mueve en el otro, y cada uno tiene su dock.
 
 ## 6. Compartir con otras personas
 
@@ -333,8 +374,8 @@ Los dos están al final de *Sincronización y compartir* en el menú.
 - **Personas y dispositivos** muestra las personas que añadiste, tus dispositivos y tus grupos, cada uno en su página.
   La de una persona muestra lo que compartes con ella y te deja ponerle una imagen, que solo ves tú. Los ajustes de un
   grupo están tras su ›.
-- **El + junto a Personas** conecta con alguien: escanea su código, pega su enlace o usa *Compartir mi enlace* para
-  enviar el tuyo por mensaje o chat. **El + junto a Mis dispositivos** añade otro dispositivo tuyo.
+- **El +** añade a alguien o a uno de tus dispositivos: escanea su código, pega su enlace o usa *Compartir mi enlace*
+  para enviar el tuyo.
 - **Mi perfil** guarda lo que es tuyo:
   - tu **nombre** y tu **imagen**, que llegan a las personas con las que estás vinculado;
   - tu **Dirección de Parlons!**, que se envía sola a tus contactos;
@@ -412,10 +453,10 @@ Los dos están al final de *Sincronización y compartir* en el menú.
 - **Un archivo de una nota en la papelera.** Un archivo quitado de una nota va a la papelera al instante, sin preguntar,
   y sale de la nota en todos tus dispositivos y para todos a quienes llega la nota. *Devolver* lo recupera en todas
   partes. Solo desaparece para siempre cuando se vacía la papelera.
-- **Copias de seguridad.** *Exportar copia de seguridad* escribe un solo archivo con todas las carpetas, notas y
-  archivos. Sin el bloqueo (ver [Privacidad, cifrado y seguridad](#14-privacidad-cifrado-y-seguridad)), pide una
-  contraseña para esa copia. *Añadir desde copia de seguridad* recupera una y pregunta si añadirla a lo que hay o
-  reemplazarlo.
+- **Copias de seguridad.** *Copias de seguridad…* (*Ajustes*, *Mi perfil*) hace copias selladas por sí sola, cada día,
+  semana o mes, o al cerrar Mininotes, en una carpeta o en otro de tus dispositivos, como tu propio [servidor de
+  copias](https://github.com/mininotesorg/server). El bloqueo, una contraseña o 12 palabras las abren. *Añadir
+  desde una copia de seguridad* recupera una.
 
 ## 12. El Agente: pide, y se hace
 
@@ -432,11 +473,8 @@ adecuado. Pulsar fuera de su cuadro lo cierra.
 Con una cuenta de [Integritas](https://docs.integritas.technology/), un archivo o una nota puede sellarse en la
 blockchain de Minima desde su menú. Solo sale del dispositivo su huella (SHA-256), nunca el archivo.
 
-- **Sellar en Minima…** registra ahora que el archivo existe tal como está: una prueba, desde ese momento, de que
-  existía y no ha cambiado. Usa un sello de tu cuenta de Integritas.
-- **Verificar en Minima…** comprueba un archivo, más tarde, frente a lo registrado: si se selló, si no ha cambiado, y en
-  qué bloque y fecha. No cambia nada ni cuesta nada.
-- **La diferencia:** sellar escribe la prueba una vez; verificar la lee, tantas veces como quieras.
+- **Sellar en Minima…** registra que existe tal como está, con un sello de tu cuenta, y más tarde lo comprueba de nuevo:
+  si no ha cambiado, en qué bloque y cuándo. Comprobarlo no cuesta nada.
 - **El sello de una nota** cubre su título, una línea vacía y luego su texto; cambiarle el nombre la marca como
   cambiada. Los sellos hechos antes de 0.4.018 cubren solo el texto: *Nota, solo texto*.
 - **Mi perfil, Sellado:** pega tu clave API y pulsa *Guardar*; se guarda en tu cuaderno, bloqueada con él, y nunca va en
@@ -562,7 +600,6 @@ ellos actúa al momento.
 | Traducir | Traduce esta página a otro idioma, en este dispositivo. |
 | Versiones | Todas las versiones anteriores de esta nota, para verlas o devolverlas. |
 | Sellar en Minima | Registra ahora en la blockchain de Minima que existe tal como está. Solo su huella sale de este dispositivo. |
-| Verificar en Minima | Comprueba si está en Minima sin cambios, y cuándo se registró. |
 | Temporal | Guárdalo solo un tiempo: se va cuando se acaba su plazo. |
 | Archivados | Guárdalo aparte, fuera de la vista, conservado. |
 | Mover a la papelera | Ponlo en la papelera. Se puede devolver hasta que se vacíe la papelera. |
@@ -584,9 +621,12 @@ ellos actúa al momento.
 | Temp | Lo que solo se guarda un tiempo, y va a tus otros dispositivos. |
 | Compartido conmigo | Lo que otros compartieron contigo, esperando tu respuesta. |
 | Papelera | Lo que se puso en la papelera, para devolverlo o eliminarlo definitivamente. |
-| Escritura de recuperación | Lo escrito que no se pudo guardar en su nota, guardado aparte. |
 | Exportar copia de seguridad | Escribe un solo archivo con todas las carpetas, notas y archivos. |
 | Añadir desde copia de seguridad | Recupera lo que contiene un archivo de copia de seguridad. |
+| Copias de seguridad | Adónde van las copias, cuándo, cuántas se guardan y qué las abre; Hacer copia ahora. |
+| Tu propio servidor | La línea que instala un servidor de copias en Linux, y su guía. |
+| Historial | Cómo llegó últimamente cada cosa a cada dispositivo: directa, o por qué relé. |
+| Buscar en esta nota | Busca palabras en esta nota, pestaña tras pestaña. |
 | Compartir Mininotes | Cuéntale a alguien sobre Mininotes. |
 | Actualizar a la v | Instala la versión más reciente. |
 | Comentarios | Di algo sobre Mininotes, en público, con tu nombre. |
